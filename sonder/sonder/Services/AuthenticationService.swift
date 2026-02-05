@@ -24,8 +24,9 @@ final class AuthenticationService {
     private let supabase = SupabaseConfig.client
 
     // Debug mode - set to true to bypass authentication during development
+    // NOTE: Must be false for Supabase RLS to work (need real auth session)
     #if DEBUG
-    private let debugBypassAuth = true
+    private let debugBypassAuth = false
     #else
     private let debugBypassAuth = false
     #endif

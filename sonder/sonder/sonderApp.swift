@@ -17,6 +17,10 @@ struct sonderApp: App {
     // Services
     @State private var authService = AuthenticationService()
     @State private var syncEngine: SyncEngine?
+    @State private var locationService = LocationService()
+    @State private var googlePlacesService = GooglePlacesService()
+    @State private var placesCacheService: PlacesCacheService?
+    @State private var photoService = PhotoService()
 
     init() {
         // Configure Google Sign-In
@@ -28,7 +32,8 @@ struct sonderApp: App {
                 User.self,
                 Place.self,
                 Log.self,
-                Trip.self
+                Trip.self,
+                RecentSearch.self
             ])
 
             let modelConfiguration = ModelConfiguration(
@@ -44,7 +49,7 @@ struct sonderApp: App {
             fatalError("Could not initialize ModelContainer: \(error)")
         }
     }
-    
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -55,11 +60,13 @@ struct sonderApp: App {
                 }
             }
             .environment(authService)
+            .environment(locationService)
+            .environment(googlePlacesService)
+            .environment(photoService)
+            .environment(syncEngine ?? createSyncEngine())
+            .environment(placesCacheService ?? createPlacesCacheService())
             .onAppear {
-                // Initialize sync engine after model context is available
-                if syncEngine == nil {
-                    syncEngine = SyncEngine(modelContext: modelContainer.mainContext)
-                }
+                initializeServices()
             }
             .onOpenURL { url in
                 // Handle Google Sign-In callback URL
@@ -67,5 +74,31 @@ struct sonderApp: App {
             }
         }
         .modelContainer(modelContainer)
+    }
+
+    // MARK: - Service Initialization
+
+    private func initializeServices() {
+        // Initialize sync engine
+        if syncEngine == nil {
+            let engine = SyncEngine(modelContext: modelContainer.mainContext)
+            engine.photoService = photoService
+            syncEngine = engine
+        }
+
+        // Initialize places cache service
+        if placesCacheService == nil {
+            placesCacheService = PlacesCacheService(modelContext: modelContainer.mainContext)
+        }
+    }
+
+    private func createSyncEngine() -> SyncEngine {
+        let engine = SyncEngine(modelContext: modelContainer.mainContext)
+        engine.photoService = photoService
+        return engine
+    }
+
+    private func createPlacesCacheService() -> PlacesCacheService {
+        PlacesCacheService(modelContext: modelContainer.mainContext)
     }
 }
