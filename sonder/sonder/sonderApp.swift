@@ -21,6 +21,9 @@ struct sonderApp: App {
     @State private var googlePlacesService = GooglePlacesService()
     @State private var placesCacheService: PlacesCacheService?
     @State private var photoService = PhotoService()
+    @State private var socialService: SocialService?
+    @State private var feedService: FeedService?
+    @State private var wantToGoService: WantToGoService?
 
     init() {
         // Configure Google Sign-In
@@ -33,7 +36,9 @@ struct sonderApp: App {
                 Place.self,
                 Log.self,
                 Trip.self,
-                RecentSearch.self
+                RecentSearch.self,
+                Follow.self,
+                WantToGo.self
             ])
 
             let modelConfiguration = ModelConfiguration(
@@ -65,8 +70,25 @@ struct sonderApp: App {
             .environment(photoService)
             .environment(syncEngine ?? createSyncEngine())
             .environment(placesCacheService ?? createPlacesCacheService())
+            .environment(socialService ?? createSocialService())
+            .environment(feedService ?? createFeedService())
+            .environment(wantToGoService ?? createWantToGoService())
             .onAppear {
                 initializeServices()
+            }
+            .onChange(of: authService.currentUser?.id) { _, newID in
+                // Load social counts when user becomes authenticated
+                if let userID = newID {
+                    Task {
+                        await socialService?.refreshCounts(for: userID)
+                    }
+                }
+            }
+            .task {
+                // Also load counts on initial app launch if already authenticated
+                if let userID = authService.currentUser?.id {
+                    await socialService?.refreshCounts(for: userID)
+                }
             }
             .onOpenURL { url in
                 // Handle Google Sign-In callback URL
@@ -90,6 +112,19 @@ struct sonderApp: App {
         if placesCacheService == nil {
             placesCacheService = PlacesCacheService(modelContext: modelContainer.mainContext)
         }
+
+        // Initialize social services
+        if socialService == nil {
+            socialService = SocialService(modelContext: modelContainer.mainContext)
+        }
+
+        if feedService == nil {
+            feedService = FeedService(modelContext: modelContainer.mainContext)
+        }
+
+        if wantToGoService == nil {
+            wantToGoService = WantToGoService(modelContext: modelContainer.mainContext)
+        }
     }
 
     private func createSyncEngine() -> SyncEngine {
@@ -100,5 +135,17 @@ struct sonderApp: App {
 
     private func createPlacesCacheService() -> PlacesCacheService {
         PlacesCacheService(modelContext: modelContainer.mainContext)
+    }
+
+    private func createSocialService() -> SocialService {
+        SocialService(modelContext: modelContainer.mainContext)
+    }
+
+    private func createFeedService() -> FeedService {
+        FeedService(modelContext: modelContainer.mainContext)
+    }
+
+    private func createWantToGoService() -> WantToGoService {
+        WantToGoService(modelContext: modelContainer.mainContext)
     }
 }

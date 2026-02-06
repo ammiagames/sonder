@@ -180,6 +180,7 @@ final class AuthenticationService {
         let user = User(
             id: id,
             username: username,
+            email: email,
             isPublic: false
         )
 

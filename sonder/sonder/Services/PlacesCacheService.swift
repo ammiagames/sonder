@@ -14,6 +14,9 @@ import SwiftData
 final class PlacesCacheService {
     private let modelContext: ModelContext
 
+    /// Triggers view updates when recent searches change
+    private(set) var recentSearchesVersion = 0
+
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
     }
@@ -58,6 +61,7 @@ final class PlacesCacheService {
         if let search = try? modelContext.fetch(descriptor).first {
             modelContext.delete(search)
             try? modelContext.save()
+            recentSearchesVersion += 1
         }
     }
 

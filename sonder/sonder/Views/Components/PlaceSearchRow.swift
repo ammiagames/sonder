@@ -13,12 +13,16 @@ struct PlaceSearchRow: View {
     let address: String
     let photoReference: String?
     let icon: String?
+    let placeId: String?
+    let onBookmark: (() -> Void)?
 
-    init(name: String, address: String, photoReference: String? = nil, icon: String? = nil) {
+    init(name: String, address: String, photoReference: String? = nil, icon: String? = nil, placeId: String? = nil, onBookmark: (() -> Void)? = nil) {
         self.name = name
         self.address = address
         self.photoReference = photoReference
         self.icon = icon
+        self.placeId = placeId
+        self.onBookmark = onBookmark
     }
 
     var body: some View {
@@ -53,6 +57,11 @@ struct PlaceSearchRow: View {
 
             Spacer()
 
+            // Bookmark button (if provided)
+            if let placeId = placeId, onBookmark != nil {
+                BookmarkButton(placeId: placeId, placeName: name, placeAddress: address, photoReference: photoReference)
+            }
+
             Image(systemName: "chevron.right")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.secondary)
@@ -63,17 +72,95 @@ struct PlaceSearchRow: View {
     }
 }
 
+/// Inline bookmark button for search rows
+struct BookmarkButton: View {
+    let placeId: String
+    let placeName: String?
+    let placeAddress: String?
+    let photoReference: String?
+
+    @Environment(AuthenticationService.self) private var authService
+    @Environment(WantToGoService.self) private var wantToGoService
+
+    @State private var isBookmarked = false
+    @State private var isLoading = false
+
+    init(placeId: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil) {
+        self.placeId = placeId
+        self.placeName = placeName
+        self.placeAddress = placeAddress
+        self.photoReference = photoReference
+    }
+
+    var body: some View {
+        Button {
+            toggleBookmark()
+        } label: {
+            Group {
+                if isLoading {
+                    ProgressView()
+                        .frame(width: 24, height: 24)
+                } else {
+                    Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                        .font(.system(size: 18))
+                        .foregroundColor(isBookmarked ? .accentColor : .secondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoading)
+        .onAppear {
+            checkStatus()
+        }
+    }
+
+    private func checkStatus() {
+        guard let userID = authService.currentUser?.id else { return }
+        isBookmarked = wantToGoService.isInWantToGo(placeID: placeId, userID: userID)
+    }
+
+    private func toggleBookmark() {
+        guard let userID = authService.currentUser?.id else { return }
+
+        isLoading = true
+
+        Task {
+            do {
+                try await wantToGoService.toggleWantToGo(
+                    placeID: placeId,
+                    userID: userID,
+                    placeName: placeName,
+                    placeAddress: placeAddress,
+                    photoReference: photoReference,
+                    sourceLogID: nil
+                )
+                isBookmarked.toggle()
+
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
+            } catch {
+                print("Error toggling bookmark: \(error)")
+            }
+            isLoading = false
+        }
+    }
+}
+
 /// Row for recent search with delete action
 struct RecentSearchRow: View {
     let name: String
     let address: String
     let photoReference: String?
+    let placeId: String?
     let onDelete: () -> Void
 
-    init(name: String, address: String, photoReference: String? = nil, onDelete: @escaping () -> Void) {
+    @State private var isDeletePressed = false
+
+    init(name: String, address: String, photoReference: String? = nil, placeId: String? = nil, onDelete: @escaping () -> Void) {
         self.name = name
         self.address = address
         self.photoReference = photoReference
+        self.placeId = placeId
         self.onDelete = onDelete
     }
 
@@ -111,11 +198,32 @@ struct RecentSearchRow: View {
 
             Spacer()
 
-            Button(action: onDelete) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundColor(.secondary)
+            // Bookmark button
+            if let placeId = placeId {
+                BookmarkButton(placeId: placeId, placeName: name, placeAddress: address, photoReference: photoReference)
             }
+
+            // Delete button with press animation
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 20))
+                .foregroundColor(.secondary)
+                .scaleEffect(isDeletePressed ? 0.8 : 1.0)
+                .animation(.easeInOut(duration: 0.1), value: isDeletePressed)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in
+                            if !isDeletePressed {
+                                isDeletePressed = true
+                            }
+                        }
+                        .onEnded { _ in
+                            isDeletePressed = false
+                            // Haptic feedback
+                            let generator = UIImpactFeedbackGenerator(style: .light)
+                            generator.impactOccurred()
+                            onDelete()
+                        }
+                )
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 16)

@@ -12,9 +12,14 @@ import CoreLocation
 struct PlacePreviewView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(LocationService.self) private var locationService
+    @Environment(AuthenticationService.self) private var authService
+    @Environment(WantToGoService.self) private var wantToGoService
 
     let details: PlaceDetails
     let onLog: () -> Void
+
+    @State private var isBookmarked = false
+    @State private var isTogglingBookmark = false
 
     var body: some View {
         ScrollView {
@@ -48,6 +53,55 @@ struct PlacePreviewView: View {
         }
         .navigationTitle("Place Details")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    toggleBookmark()
+                } label: {
+                    if isTogglingBookmark {
+                        ProgressView()
+                    } else {
+                        Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                            .foregroundColor(isBookmarked ? .accentColor : .primary)
+                    }
+                }
+                .disabled(isTogglingBookmark)
+            }
+        }
+        .onAppear {
+            checkBookmarkStatus()
+        }
+    }
+
+    private func checkBookmarkStatus() {
+        guard let userID = authService.currentUser?.id else { return }
+        isBookmarked = wantToGoService.isInWantToGo(placeID: details.placeId, userID: userID)
+    }
+
+    private func toggleBookmark() {
+        guard let userID = authService.currentUser?.id else { return }
+
+        isTogglingBookmark = true
+
+        Task {
+            do {
+                try await wantToGoService.toggleWantToGo(
+                    placeID: details.placeId,
+                    userID: userID,
+                    placeName: details.name,
+                    placeAddress: details.formattedAddress,
+                    photoReference: details.photoReference,
+                    sourceLogID: nil
+                )
+                isBookmarked.toggle()
+
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
+            } catch {
+                print("Error toggling bookmark: \(error)")
+            }
+            isTogglingBookmark = false
+        }
     }
 
     // MARK: - Hero Photo

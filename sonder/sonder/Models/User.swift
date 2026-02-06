@@ -12,23 +12,26 @@ import SwiftData
 final class User {
     @Attribute(.unique) var id: String
     var username: String
+    var email: String?
     var avatarURL: String?
     var bio: String?
     var isPublic: Bool
     var createdAt: Date
     var updatedAt: Date
-    
+
     init(
         id: String,
         username: String,
+        email: String? = nil,
         avatarURL: String? = nil,
         bio: String? = nil,
-        isPublic: Bool = false,
+        isPublic: Bool = true,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
         self.id = id
         self.username = username
+        self.email = email
         self.avatarURL = avatarURL
         self.bio = bio
         self.isPublic = isPublic
@@ -42,6 +45,7 @@ extension User: Codable {
     enum CodingKeys: String, CodingKey {
         case id
         case username
+        case email
         case avatarURL = "avatar_url"
         case bio
         case isPublic = "is_public"
@@ -53,6 +57,7 @@ extension User: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let id = try container.decode(String.self, forKey: .id)
         let username = try container.decode(String.self, forKey: .username)
+        let email = try container.decodeIfPresent(String.self, forKey: .email)
         let avatarURL = try container.decodeIfPresent(String.self, forKey: .avatarURL)
         let bio = try container.decodeIfPresent(String.self, forKey: .bio)
         let isPublic = try container.decodeIfPresent(Bool.self, forKey: .isPublic) ?? false
@@ -61,6 +66,7 @@ extension User: Codable {
         self.init(
             id: id,
             username: username,
+            email: email,
             avatarURL: avatarURL,
             bio: bio,
             isPublic: isPublic,
@@ -73,6 +79,7 @@ extension User: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(username, forKey: .username)
+        try container.encodeIfPresent(email, forKey: .email)
         try container.encodeIfPresent(avatarURL, forKey: .avatarURL)
         try container.encodeIfPresent(bio, forKey: .bio)
         try container.encode(isPublic, forKey: .isPublic)

@@ -55,8 +55,9 @@ struct AddDetailsView: View {
             }
             .padding()
         }
-        .safeAreaInset(edge: .bottom) {
+        .overlay(alignment: .bottom) {
             saveButton
+                .padding(.bottom, 20)
         }
         .navigationTitle("Add Details")
         .navigationBarTitleDisplayMode(.inline)
@@ -263,23 +264,24 @@ struct AddDetailsView: View {
 
     private var saveButton: some View {
         Button(action: save) {
-            HStack {
+            HStack(spacing: 8) {
                 if isSaving {
                     ProgressView()
                         .tint(.white)
                 } else {
+                    Image(systemName: "checkmark")
                     Text("Save")
+                        .fontWeight(.medium)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
             .background(Color.accentColor)
             .foregroundColor(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(Capsule())
+            .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
         }
         .disabled(isSaving)
-        .padding()
-        .background(Color(.systemBackground))
     }
 
     // MARK: - Actions

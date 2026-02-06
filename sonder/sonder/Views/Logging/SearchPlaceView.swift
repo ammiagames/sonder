@@ -23,9 +23,11 @@ struct SearchPlaceView: View {
     @State private var selectedDetails: PlaceDetails?
     @State private var showPreview = false
     @State private var showRatingView = false
+    @State private var showCustomPlace = false
     @State private var isLoadingNearby = false
     @State private var isLoadingDetails = false
     @State private var detailsError: String?
+    @State private var removingPlaceIds: Set<String> = []
 
     var body: some View {
         NavigationStack {
@@ -79,6 +81,14 @@ struct SearchPlaceView: View {
                         dismiss()
                     }
                 }
+
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showCustomPlace = true
+                    } label: {
+                        Image(systemName: "mappin.circle")
+                    }
+                }
             }
             .navigationDestination(isPresented: $showPreview) {
                 if let details = selectedDetails {
@@ -107,6 +117,26 @@ struct SearchPlaceView: View {
         }
         .onAppear {
             loadNearbyPlaces()
+        }
+        .sheet(isPresented: $showCustomPlace) {
+            CreateCustomPlaceView { place in
+                selectedPlace = place
+                showCustomPlace = false
+                // Trigger rating view after a short delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    showRatingView = true
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showRatingView) {
+            if let place = selectedPlace {
+                NavigationStack {
+                    RatePlaceView(place: place) {
+                        showRatingView = false
+                        selectedPlace = nil
+                    }
+                }
+            }
         }
     }
 
@@ -152,18 +182,38 @@ struct SearchPlaceView: View {
         } else if predictions.isEmpty && !searchText.isEmpty {
             let cachedResults = cacheService.searchCachedPlaces(query: searchText)
             if cachedResults.isEmpty {
-                ContentUnavailableView(
-                    "No Results",
-                    systemImage: "magnifyingglass",
-                    description: Text("Try a different search term")
-                )
+                // No results - show option to add own spot
+                VStack(spacing: 20) {
+                    ContentUnavailableView(
+                        "No Results",
+                        systemImage: "magnifyingglass",
+                        description: Text("Try a different search term")
+                    )
+
+                    Button {
+                        showCustomPlace = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "mappin.circle.fill")
+                            Text("Add Your Own Spot")
+                                .fontWeight(.medium)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .clipShape(Capsule())
+                    }
+                }
             } else {
                 sectionHeader("Cached Places")
                 ForEach(cachedResults, id: \.id) { place in
                     PlaceSearchRow(
                         name: place.name,
                         address: place.address,
-                        photoReference: place.photoReference
+                        photoReference: place.photoReference,
+                        placeId: place.id,
+                        onBookmark: {}
                     )
                     .onTapGesture {
                         selectPlace(place)
@@ -175,7 +225,9 @@ struct SearchPlaceView: View {
             ForEach(predictions) { prediction in
                 PlaceSearchRow(
                     name: prediction.mainText,
-                    address: prediction.secondaryText
+                    address: prediction.secondaryText,
+                    placeId: prediction.placeId,
+                    onBookmark: {}
                 )
                 .onTapGesture {
                     selectPrediction(prediction)
@@ -189,8 +241,10 @@ struct SearchPlaceView: View {
 
     @ViewBuilder
     private var nearbySection: some View {
-        // Filter out places already shown in recents
-        let filteredNearby = nearbyPlaces.filter { !recentPlaceIds.contains($0.placeId) }
+        // Filter out places already shown in recents AND places being removed (to avoid duplicate during animation)
+        let filteredNearby = nearbyPlaces.filter {
+            !recentPlaceIds.contains($0.placeId) && !removingPlaceIds.contains($0.placeId)
+        }
 
         if isLoadingNearby {
             sectionHeader("Nearby")
@@ -209,7 +263,9 @@ struct SearchPlaceView: View {
                 PlaceSearchRow(
                     name: place.name,
                     address: place.address,
-                    photoReference: place.photoReference
+                    photoReference: place.photoReference,
+                    placeId: place.placeId,
+                    onBookmark: {}
                 )
                 .onTapGesture {
                     selectNearbyPlace(place)
@@ -256,6 +312,8 @@ struct SearchPlaceView: View {
 
     @ViewBuilder
     private var recentSearchesSection: some View {
+        // Depend on version to trigger re-render when searches change
+        let _ = cacheService.recentSearchesVersion
         let recentSearches = Array(cacheService.getRecentSearches().prefix(5))
 
         if !recentSearches.isEmpty {
@@ -266,13 +324,28 @@ struct SearchPlaceView: View {
                 RecentSearchRow(
                     name: search.name,
                     address: search.address,
-                    photoReference: cachedPlace?.photoReference
+                    photoReference: cachedPlace?.photoReference,
+                    placeId: search.placeId
                 ) {
-                    cacheService.clearRecentSearch(placeId: search.placeId)
+                    // Track as removing so it doesn't appear in nearby during animation
+                    removingPlaceIds.insert(search.placeId)
+
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        cacheService.clearRecentSearch(placeId: search.placeId)
+                    }
+
+                    // Remove from tracking after animation completes
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        removingPlaceIds.remove(search.placeId)
+                    }
                 }
                 .onTapGesture {
                     selectRecentSearch(search)
                 }
+                .transition(.asymmetric(
+                    insertion: .identity,
+                    removal: .move(edge: .trailing).combined(with: .opacity)
+                ))
                 Divider().padding(.leading, 68)
             }
         }

@@ -94,6 +94,13 @@ struct RatePlaceView: View {
         }
         .navigationTitle("Rate Place")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    dismiss()
+                }
+            }
+        }
         .navigationDestination(isPresented: $showAddDetails) {
             if let rating = selectedRating {
                 AddDetailsView(place: place, rating: rating, onLogComplete: onLogComplete)
