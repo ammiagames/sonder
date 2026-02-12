@@ -26,31 +26,31 @@ struct PlaceSearchRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SonderSpacing.sm) {
             // Photo or icon
             if photoReference != nil {
-                PlacePhotoView(photoReference: photoReference, size: 44, cornerRadius: 8)
+                PlacePhotoView(photoReference: photoReference, size: 44, cornerRadius: SonderSpacing.radiusSm)
             } else {
                 Image(systemName: icon ?? "mappin.circle.fill")
                     .font(.system(size: 24))
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(SonderColors.terracotta)
                     .frame(width: 44, height: 44)
-                    .background(Color.accentColor.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .background(SonderColors.terracotta.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
             }
 
             // Place info
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(.body)
+                    .font(SonderTypography.body)
                     .fontWeight(.medium)
-                    .foregroundColor(.primary)
+                    .foregroundColor(SonderColors.inkDark)
                     .lineLimit(1)
 
                 if !address.isEmpty {
                     Text(address)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
                         .lineLimit(1)
                 }
             }
@@ -64,10 +64,10 @@ struct PlaceSearchRow: View {
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.secondary)
+                .foregroundColor(SonderColors.inkLight)
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 16)
+        .padding(.vertical, SonderSpacing.xs)
+        .padding(.horizontal, SonderSpacing.md)
         .contentShape(Rectangle())
     }
 }
@@ -99,11 +99,12 @@ struct BookmarkButton: View {
             Group {
                 if isLoading {
                     ProgressView()
+                        .tint(SonderColors.terracotta)
                         .frame(width: 24, height: 24)
                 } else {
                     Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                         .font(.system(size: 18))
-                        .foregroundColor(isBookmarked ? .accentColor : .secondary)
+                        .foregroundColor(isBookmarked ? SonderColors.terracotta : SonderColors.inkLight)
                 }
             }
         }
@@ -165,17 +166,17 @@ struct RecentSearchRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SonderSpacing.sm) {
             // Photo with clock badge
             ZStack(alignment: .bottomTrailing) {
-                PlacePhotoView(photoReference: photoReference, size: 44, cornerRadius: 8)
+                PlacePhotoView(photoReference: photoReference, size: 44, cornerRadius: SonderSpacing.radiusSm)
 
                 // Clock badge overlay
                 Image(systemName: "clock.fill")
                     .font(.system(size: 12))
                     .foregroundColor(.white)
                     .padding(3)
-                    .background(Color.secondary)
+                    .background(SonderColors.inkMuted)
                     .clipShape(Circle())
                     .offset(x: 4, y: 4)
             }
@@ -183,15 +184,15 @@ struct RecentSearchRow: View {
             // Place info
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(.body)
+                    .font(SonderTypography.body)
                     .fontWeight(.medium)
-                    .foregroundColor(.primary)
+                    .foregroundColor(SonderColors.inkDark)
                     .lineLimit(1)
 
                 if !address.isEmpty {
                     Text(address)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
                         .lineLimit(1)
                 }
             }
@@ -206,7 +207,7 @@ struct RecentSearchRow: View {
             // Delete button with press animation
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 20))
-                .foregroundColor(.secondary)
+                .foregroundColor(SonderColors.inkLight)
                 .scaleEffect(isDeletePressed ? 0.8 : 1.0)
                 .animation(.easeInOut(duration: 0.1), value: isDeletePressed)
                 .gesture(
@@ -225,8 +226,8 @@ struct RecentSearchRow: View {
                         }
                 )
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 16)
+        .padding(.vertical, SonderSpacing.xs)
+        .padding(.horizontal, SonderSpacing.md)
         .contentShape(Rectangle())
     }
 }

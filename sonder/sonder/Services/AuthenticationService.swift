@@ -177,20 +177,46 @@ final class AuthenticationService {
     // MARK: - Helpers
     
     private func createOrUpdateUser(id: String, username: String, email: String) async throws {
-        let user = User(
-            id: id,
-            username: username,
-            email: email,
-            isPublic: false
-        )
-
-        try await supabase
+        // First check if user already exists
+        let existingUsers: [User] = try await supabase
             .from("users")
-            .upsert(user)
+            .select()
+            .eq("id", value: id)
+            .limit(1)
             .execute()
+            .value
+
+        if existingUsers.isEmpty {
+            // New user - create with current timestamp
+            let user = User(
+                id: id,
+                username: username,
+                email: email,
+                isPublic: false,
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+
+            try await supabase
+                .from("users")
+                .insert(user)
+                .execute()
+        } else {
+            // Existing user - only update email if changed, preserve createdAt
+            struct UserUpdate: Codable {
+                let email: String?
+                let updated_at: Date
+            }
+
+            try await supabase
+                .from("users")
+                .update(UserUpdate(email: email, updated_at: Date()))
+                .eq("id", value: id)
+                .execute()
+        }
     }
     
-    private func generateUsername(from email: String) -> String {
+    func generateUsername(from email: String) -> String {
         let components = email.components(separatedBy: "@")
         let baseUsername = components.first ?? "user"
         return baseUsername.lowercased().replacingOccurrences(of: "[^a-z0-9]", with: "", options: .regularExpression)

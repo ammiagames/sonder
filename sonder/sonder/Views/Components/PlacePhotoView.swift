@@ -44,10 +44,16 @@ struct PlacePhotoView: View {
 
     private var placeholder: some View {
         Rectangle()
-            .fill(Color(.systemGray5))
+            .fill(
+                LinearGradient(
+                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .overlay {
                 Image(systemName: "photo")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
             }
     }
 }

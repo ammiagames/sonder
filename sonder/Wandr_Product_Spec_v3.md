@@ -231,9 +231,9 @@ Re-evaluate architecture when approaching 100K MAU or if costs exceed $500/mo.
 
 | Task | Estimate | Dependencies |
 |---|---|---|
-| Follow/unfollow system | 2-3 days | User model |
-| User search + discovery | 2-3 days | Follow system |
-| Feed screen (friends' logs) | 4-5 days | Follow system |
+| Follow/unfollow system | 2-3 days | User model | Done
+| User search + discovery | 2-3 days | Follow system | Done (fuzzy search add?)
+| Feed screen (friends' logs) | 4-5 days | Follow system | (Done)
 | Feed pagination + realtime updates | 2-3 days | Feed screen |
 | Want to Go list + save action | 3-4 days | Feed screen |
 | Push notifications (new follower, friend logged) | 3-4 days | Supabase Edge Functions |

@@ -1,0 +1,192 @@
+//
+//  TripCard.swift
+//  sonder
+//
+//  Created by Michael Song on 2/10/26.
+//
+
+import SwiftUI
+
+/// Card displaying trip summary in the trips list
+struct TripCard: View {
+    let trip: Trip
+    let logCount: Int
+    let isOwner: Bool
+
+    private var hasCoverPhoto: Bool {
+        trip.coverPhotoURL != nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Cover photo or gradient placeholder
+            coverPhotoSection
+                .frame(height: 140)
+                .clipped()
+
+            // Info section
+            VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+                // Name + owner badge
+                HStack {
+                    Text(trip.name)
+                        .font(SonderTypography.headline)
+                        .foregroundColor(SonderColors.inkDark)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    if isOwner {
+                        Text("Owner")
+                            .font(.system(size: 10, weight: .medium))
+                            .padding(.horizontal, SonderSpacing.xs)
+                            .padding(.vertical, 3)
+                            .background(SonderColors.terracotta.opacity(0.15))
+                            .foregroundColor(SonderColors.terracotta)
+                            .clipShape(Capsule())
+                    }
+                }
+
+                // Description
+                if let description = trip.tripDescription, !description.isEmpty {
+                    Text(description)
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
+                        .lineLimit(2)
+                }
+
+                // Date range
+                if let dateText = dateRangeText {
+                    HStack(spacing: SonderSpacing.xxs) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 10))
+                        Text(dateText)
+                            .font(SonderTypography.caption)
+                    }
+                    .foregroundColor(SonderColors.inkMuted)
+                }
+
+                // Stats row
+                HStack(spacing: SonderSpacing.md) {
+                    // Log count
+                    HStack(spacing: SonderSpacing.xxs) {
+                        Image(systemName: "mappin")
+                            .font(.system(size: 10))
+                        Text("\(logCount) \(logCount == 1 ? "place" : "places")")
+                            .font(SonderTypography.caption)
+                    }
+                    .foregroundColor(SonderColors.inkLight)
+
+                    // Collaborators indicator
+                    if !trip.collaboratorIDs.isEmpty {
+                        HStack(spacing: SonderSpacing.xxs) {
+                            Image(systemName: "person.2.fill")
+                                .font(.system(size: 10))
+                            Text("\(trip.collaboratorIDs.count + 1) travelers")
+                                .font(SonderTypography.caption)
+                        }
+                        .foregroundColor(SonderColors.inkLight)
+                    }
+
+                    Spacer()
+                }
+            }
+            .padding(SonderSpacing.md)
+        }
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+        .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
+    }
+
+    // MARK: - Cover Photo Section
+
+    @ViewBuilder
+    private var coverPhotoSection: some View {
+        if let urlString = trip.coverPhotoURL,
+           let url = URL(string: urlString) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure:
+                    placeholderGradient
+                default:
+                    placeholderGradient
+                        .overlay {
+                            ProgressView()
+                                .tint(SonderColors.terracotta)
+                        }
+                }
+            }
+            .id(urlString)
+        } else {
+            placeholderGradient
+        }
+    }
+
+    private var placeholderGradient: some View {
+        LinearGradient(
+            colors: [
+                SonderColors.terracotta.opacity(0.4),
+                SonderColors.ochre.opacity(0.3),
+                SonderColors.sage.opacity(0.2)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .overlay {
+            VStack(spacing: SonderSpacing.xs) {
+                Image(systemName: "suitcase.fill")
+                    .font(.system(size: 32))
+                    .foregroundColor(.white.opacity(0.6))
+
+                Text(trip.name)
+                    .font(SonderTypography.headline)
+                    .foregroundColor(.white.opacity(0.8))
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private var dateRangeText: String? {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+
+        if let start = trip.startDate, let end = trip.endDate {
+            return "\(formatter.string(from: start)) - \(formatter.string(from: end))"
+        } else if let start = trip.startDate {
+            return "From \(formatter.string(from: start))"
+        } else if let end = trip.endDate {
+            return "Until \(formatter.string(from: end))"
+        }
+        return nil
+    }
+}
+
+#Preview {
+    VStack(spacing: 16) {
+        TripCard(
+            trip: Trip(
+                name: "Japan 2024",
+                startDate: Date(),
+                endDate: Date().addingTimeInterval(86400 * 14),
+                createdBy: "user1"
+            ),
+            logCount: 12,
+            isOwner: true
+        )
+
+        TripCard(
+            trip: Trip(
+                name: "Weekend Getaway",
+                createdBy: "user2"
+            ),
+            logCount: 3,
+            isOwner: false
+        )
+    }
+    .padding()
+    .background(SonderColors.cream)
+}

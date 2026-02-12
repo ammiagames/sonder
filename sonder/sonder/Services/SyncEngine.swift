@@ -27,10 +27,12 @@ final class SyncEngine {
     /// Photo service for coordinating photo uploads
     var photoService: PhotoService?
 
-    init(modelContext: ModelContext) {
+    init(modelContext: ModelContext, startAutomatically: Bool = true) {
         self.modelContext = modelContext
-        startNetworkMonitoring()
-        startPeriodicSync()
+        if startAutomatically {
+            startNetworkMonitoring()
+            startPeriodicSync()
+        }
     }
 
     deinit {

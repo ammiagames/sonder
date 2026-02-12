@@ -13,28 +13,29 @@ struct AuthenticationView: View {
     @State private var isSigningInWithGoogle = false
 
     var body: some View {
-        VStack(spacing: 32) {
+        VStack(spacing: SonderSpacing.xxl) {
             Spacer()
 
             // Logo/Branding
-            VStack(spacing: 12) {
+            VStack(spacing: SonderSpacing.sm) {
                 Image(systemName: "map.fill")
                     .font(.system(size: 80))
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(SonderColors.terracotta)
 
                 Text("Sonder")
                     .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .foregroundColor(SonderColors.inkDark)
 
                 Text("Log anything. Remember everywhere.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(SonderTypography.body)
+                    .foregroundColor(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
             }
 
             Spacer()
 
             // Authentication Buttons
-            VStack(spacing: 16) {
+            VStack(spacing: SonderSpacing.md) {
                 #if DEBUG
                 // Debug bypass button - only visible in debug builds
                 Button {
@@ -46,9 +47,9 @@ struct AuthenticationView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
-                    .background(Color.orange)
+                    .background(SonderColors.ochre)
                     .foregroundColor(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
                 }
                 #endif
 
@@ -80,7 +81,7 @@ struct AuthenticationView: View {
                     HStack {
                         if isSigningInWithGoogle {
                             ProgressView()
-                                .tint(.black)
+                                .tint(SonderColors.inkDark)
                         } else {
                             Image(systemName: "g.circle.fill")
                         }
@@ -88,20 +89,21 @@ struct AuthenticationView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
-                    .background(Color.white)
-                    .foregroundColor(.black)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .background(SonderColors.warmGray)
+                    .foregroundColor(SonderColors.inkDark)
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
+                            .stroke(SonderColors.inkLight.opacity(0.3), lineWidth: 1)
                     )
                 }
                 .disabled(isSigningInWithGoogle)
             }
-            .padding(.horizontal, 32)
-            .padding(.bottom, 32)
+            .padding(.horizontal, SonderSpacing.xxl)
+            .padding(.bottom, SonderSpacing.xxl)
         }
         .padding()
+        .background(SonderColors.cream)
     }
 }
 

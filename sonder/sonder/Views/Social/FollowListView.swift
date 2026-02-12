@@ -44,7 +44,7 @@ struct FollowListView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding()
+            .padding(SonderSpacing.md)
 
             // Content
             TabView(selection: $selectedTab) {
@@ -56,6 +56,7 @@ struct FollowListView: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
         }
+        .background(SonderColors.cream)
         .navigationTitle(username)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $selectedUserID) { userID in
@@ -72,13 +73,23 @@ struct FollowListView: View {
         Group {
             if isLoadingFollowers {
                 ProgressView()
+                    .tint(SonderColors.terracotta)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if followers.isEmpty {
-                ContentUnavailableView {
-                    Label("No Followers", systemImage: "person.2")
-                } description: {
+                VStack(spacing: SonderSpacing.md) {
+                    Image(systemName: "person.2")
+                        .font(.system(size: 48))
+                        .foregroundColor(SonderColors.inkLight)
+
+                    Text("No Followers")
+                        .font(SonderTypography.title)
+                        .foregroundColor(SonderColors.inkDark)
+
                     Text("No one is following \(username) yet")
+                        .font(SonderTypography.body)
+                        .foregroundColor(SonderColors.inkMuted)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
                     ForEach(followers, id: \.id) { user in
@@ -91,6 +102,8 @@ struct FollowListView: View {
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(SonderColors.cream)
             }
         }
     }
@@ -101,13 +114,23 @@ struct FollowListView: View {
         Group {
             if isLoadingFollowing {
                 ProgressView()
+                    .tint(SonderColors.terracotta)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if following.isEmpty {
-                ContentUnavailableView {
-                    Label("Not Following Anyone", systemImage: "person.2")
-                } description: {
+                VStack(spacing: SonderSpacing.md) {
+                    Image(systemName: "person.2")
+                        .font(.system(size: 48))
+                        .foregroundColor(SonderColors.inkLight)
+
+                    Text("Not Following Anyone")
+                        .font(SonderTypography.title)
+                        .foregroundColor(SonderColors.inkDark)
+
                     Text("\(username) isn't following anyone yet")
+                        .font(SonderTypography.body)
+                        .foregroundColor(SonderColors.inkMuted)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
                     ForEach(following, id: \.id) { user in
@@ -120,6 +143,8 @@ struct FollowListView: View {
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(SonderColors.cream)
             }
         }
     }

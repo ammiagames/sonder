@@ -31,13 +31,21 @@ struct AddDetailsView: View {
     @State private var showNewTripAlert = false
     @State private var newTripName = ""
 
-    @Query private var trips: [Trip]
+    @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
 
     private let maxNoteLength = 280
 
+    /// Trips the user can add logs to (owned + collaborating)
+    private var availableTrips: [Trip] {
+        guard let userID = authService.currentUser?.id else { return [] }
+        return allTrips.filter { trip in
+            trip.createdBy == userID || trip.collaboratorIDs.contains(userID)
+        }
+    }
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: SonderSpacing.xl) {
                 // Place header (condensed)
                 placeHeader
 
@@ -53,11 +61,13 @@ struct AddDetailsView: View {
                 // Trip selector
                 tripSection
             }
-            .padding()
+            .padding(SonderSpacing.md)
         }
+        .background(SonderColors.cream)
+        .scrollContentBackground(.hidden)
         .overlay(alignment: .bottom) {
             saveButton
-                .padding(.bottom, 20)
+                .padding(.bottom, SonderSpacing.lg)
         }
         .navigationTitle("Add Details")
         .navigationBarTitleDisplayMode(.inline)
@@ -80,36 +90,39 @@ struct AddDetailsView: View {
     // MARK: - Place Header
 
     private var placeHeader: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SonderSpacing.sm) {
             // Rating emoji
             Text(rating.emoji)
                 .font(.system(size: 32))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(place.name)
-                    .font(.headline)
+                    .font(SonderTypography.headline)
+                    .foregroundColor(SonderColors.inkDark)
                     .lineLimit(1)
 
                 Text(rating.displayName)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
             }
 
             Spacer()
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(SonderSpacing.md)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
     }
 
     // MARK: - Photo Section
 
     private var photoSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Photo")
-                .font(.subheadline)
+                .font(SonderTypography.caption)
                 .fontWeight(.semibold)
-                .foregroundColor(.secondary)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
 
             PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
                 if let image = selectedImage {
@@ -117,7 +130,7 @@ struct AddDetailsView: View {
                         .resizable()
                         .scaledToFill()
                         .frame(height: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                         .overlay(alignment: .topTrailing) {
                             Button {
                                 selectedImage = nil
@@ -128,19 +141,20 @@ struct AddDetailsView: View {
                                     .foregroundColor(.white)
                                     .shadow(radius: 2)
                             }
-                            .padding(8)
+                            .padding(SonderSpacing.xs)
                         }
                 } else {
                     HStack {
                         Image(systemName: "camera.fill")
                             .font(.system(size: 24))
                         Text("Add Photo")
+                            .font(SonderTypography.body)
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 120)
-                    .background(Color(.systemGray6))
-                    .foregroundColor(.secondary)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .background(SonderColors.warmGray)
+                    .foregroundColor(SonderColors.inkMuted)
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                 }
             }
         }
@@ -149,25 +163,29 @@ struct AddDetailsView: View {
     // MARK: - Note Section
 
     private var noteSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             HStack {
                 Text("Note")
-                    .font(.subheadline)
+                    .font(SonderTypography.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SonderColors.inkMuted)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
 
                 Spacer()
 
                 Text("\(note.count)/\(maxNoteLength)")
-                    .font(.caption)
-                    .foregroundColor(note.count > maxNoteLength ? .red : .secondary)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(note.count > maxNoteLength ? .red : SonderColors.inkLight)
             }
 
             TextEditor(text: $note)
+                .font(SonderTypography.body)
                 .frame(minHeight: 100)
-                .padding(8)
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(SonderSpacing.xs)
+                .scrollContentBackground(.hidden)
+                .background(SonderColors.warmGray)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                 .onChange(of: note) { _, newValue in
                     if newValue.count > maxNoteLength {
                         note = String(newValue.prefix(maxNoteLength))
@@ -179,11 +197,13 @@ struct AddDetailsView: View {
     // MARK: - Tag Section
 
     private var tagSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Tags")
-                .font(.subheadline)
+                .font(SonderTypography.caption)
                 .fontWeight(.semibold)
-                .foregroundColor(.secondary)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
 
             TagInputView(selectedTags: $tags)
         }
@@ -192,20 +212,24 @@ struct AddDetailsView: View {
     // MARK: - Trip Section
 
     private var tripSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Trip")
-                .font(.subheadline)
+                .font(SonderTypography.caption)
                 .fontWeight(.semibold)
-                .foregroundColor(.secondary)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
 
             Menu {
                 Button("None") {
                     selectedTrip = nil
                 }
 
-                ForEach(trips, id: \.id) { trip in
-                    Button(trip.name) {
-                        selectedTrip = trip
+                if !availableTrips.isEmpty {
+                    ForEach(availableTrips, id: \.id) { trip in
+                        Button(trip.name) {
+                            selectedTrip = trip
+                        }
                     }
                 }
 
@@ -220,16 +244,17 @@ struct AddDetailsView: View {
             } label: {
                 HStack {
                     Text(selectedTrip?.name ?? "Select a trip")
-                        .foregroundColor(selectedTrip != nil ? .primary : .secondary)
+                        .font(SonderTypography.body)
+                        .foregroundColor(selectedTrip != nil ? SonderColors.inkDark : SonderColors.inkMuted)
 
                     Spacer()
 
                     Image(systemName: "chevron.down")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SonderColors.inkLight)
                 }
-                .padding()
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(SonderSpacing.md)
+                .background(SonderColors.warmGray)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
             }
         }
         .alert("New Trip", isPresented: $showNewTripAlert) {
@@ -264,22 +289,22 @@ struct AddDetailsView: View {
 
     private var saveButton: some View {
         Button(action: save) {
-            HStack(spacing: 8) {
+            HStack(spacing: SonderSpacing.xs) {
                 if isSaving {
                     ProgressView()
                         .tint(.white)
                 } else {
                     Image(systemName: "checkmark")
                     Text("Save")
-                        .fontWeight(.medium)
+                        .font(SonderTypography.headline)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(Color.accentColor)
+            .padding(.horizontal, SonderSpacing.lg)
+            .padding(.vertical, SonderSpacing.sm)
+            .background(SonderColors.terracotta)
             .foregroundColor(.white)
             .clipShape(Capsule())
-            .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+            .shadow(color: SonderColors.terracotta.opacity(0.3), radius: 8, y: 4)
         }
         .disabled(isSaving)
     }

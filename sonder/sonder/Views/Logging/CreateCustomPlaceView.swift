@@ -48,13 +48,13 @@ struct CreateCustomPlaceView: View {
                         // Show selected location
                         HStack {
                             Image(systemName: "mappin.circle.fill")
-                                .foregroundColor(.red)
+                                .foregroundColor(SonderColors.terracotta)
                             VStack(alignment: .leading) {
                                 Text("Location set")
-                                    .font(.subheadline)
+                                    .font(SonderTypography.body)
                                 Text("\(coordinate.latitude, specifier: "%.4f"), \(coordinate.longitude, specifier: "%.4f")")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .font(SonderTypography.caption)
+                                    .foregroundColor(SonderColors.inkMuted)
                             }
                             Spacer()
                             Button("Change") {
@@ -179,7 +179,7 @@ struct LocationPickerView: View {
                             Annotation("", coordinate: coordinate) {
                                 Image(systemName: "mappin.circle.fill")
                                     .font(.title)
-                                    .foregroundColor(.red)
+                                    .foregroundColor(SonderColors.terracotta)
                             }
                         }
 
@@ -201,11 +201,12 @@ struct LocationPickerView: View {
                 // Instruction overlay
                 VStack {
                     Text("Tap to place pin")
-                        .font(.subheadline)
+                        .font(SonderTypography.body)
                         .fontWeight(.medium)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial)
+                        .foregroundColor(SonderColors.inkDark)
+                        .padding(.horizontal, SonderSpacing.md)
+                        .padding(.vertical, SonderSpacing.xs)
+                        .background(SonderColors.cream.opacity(0.95))
                         .clipShape(Capsule())
                         .padding(.top, 60)
 

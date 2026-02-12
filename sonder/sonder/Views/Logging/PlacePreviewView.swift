@@ -62,7 +62,7 @@ struct PlacePreviewView: View {
                         ProgressView()
                     } else {
                         Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                            .foregroundColor(isBookmarked ? .accentColor : .primary)
+                            .foregroundColor(isBookmarked ? SonderColors.terracotta : SonderColors.inkDark)
                     }
                 }
                 .disabled(isTogglingBookmark)
@@ -136,11 +136,17 @@ struct PlacePreviewView: View {
 
     private var photoPlaceholder: some View {
         Rectangle()
-            .fill(Color(.systemGray5))
+            .fill(
+                LinearGradient(
+                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .overlay {
                 Image(systemName: "photo")
                     .font(.system(size: 48))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
             }
     }
 
@@ -149,29 +155,30 @@ struct PlacePreviewView: View {
     private var nameSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(details.name)
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(SonderTypography.title)
+                .foregroundColor(SonderColors.inkDark)
 
             Text(details.formattedAddress)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                .font(SonderTypography.subheadline)
+                .foregroundColor(SonderColors.inkMuted)
         }
     }
 
     // MARK: - Stats Row
 
     private var statsRow: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: SonderSpacing.md) {
             // Rating
             if let rating = details.rating {
                 HStack(spacing: 4) {
                     Image(systemName: "star.fill")
-                        .foregroundColor(.yellow)
+                        .foregroundColor(SonderColors.ochre)
                     Text(String(format: "%.1f", rating))
                         .fontWeight(.medium)
+                        .foregroundColor(SonderColors.inkDark)
                     if let count = details.userRatingCount {
                         Text("(\(count))")
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SonderColors.inkMuted)
                     }
                 }
             }
@@ -180,50 +187,54 @@ struct PlacePreviewView: View {
             if let priceLevel = details.priceLevel {
                 Text(priceLevel.displayString)
                     .fontWeight(.medium)
-                    .foregroundColor(.green)
+                    .foregroundColor(SonderColors.sage)
             }
 
             // Distance
             if let distance = distanceFromUser {
                 HStack(spacing: 4) {
                     Image(systemName: "location.fill")
-                        .foregroundColor(.blue)
+                        .foregroundColor(SonderColors.terracotta)
                     Text(formatDistance(distance))
+                        .foregroundColor(SonderColors.inkDark)
                 }
             }
 
             Spacer()
         }
-        .font(.subheadline)
+        .font(SonderTypography.subheadline)
     }
 
     // MARK: - Summary Section
 
     private func summarySection(_ summary: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("About")
-                .font(.headline)
+                .font(SonderTypography.headline)
+                .foregroundColor(SonderColors.inkDark)
 
             Text(summary)
-                .font(.body)
-                .foregroundColor(.secondary)
+                .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkMuted)
         }
     }
 
     // MARK: - Type Tags
 
     private var typeTags: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Category")
-                .font(.headline)
+                .font(SonderTypography.headline)
+                .foregroundColor(SonderColors.inkDark)
 
-            TagFlowLayout(spacing: 8) {
+            TagFlowLayout(spacing: SonderSpacing.xs) {
                 ForEach(displayTypes, id: \.self) { type in
                     Text(type)
-                        .font(.caption)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color(.systemGray6))
+                        .font(SonderTypography.caption)
+                        .padding(.horizontal, SonderSpacing.sm)
+                        .padding(.vertical, SonderSpacing.xs)
+                        .background(SonderColors.warmGray)
+                        .foregroundColor(SonderColors.inkDark)
                         .clipShape(Capsule())
                 }
             }
@@ -235,15 +246,16 @@ struct PlacePreviewView: View {
     private var logButton: some View {
         Button(action: onLog) {
             Text("Log This Place")
-                .font(.headline)
+                .font(SonderTypography.headline)
                 .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.accentColor)
+                .padding(SonderSpacing.md)
+                .background(SonderColors.terracotta)
                 .foregroundColor(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                .shadow(color: SonderColors.terracotta.opacity(0.3), radius: 8, y: 4)
         }
-        .padding()
-        .background(Color(.systemBackground))
+        .padding(SonderSpacing.md)
+        .background(SonderColors.cream)
     }
 
     // MARK: - Helpers

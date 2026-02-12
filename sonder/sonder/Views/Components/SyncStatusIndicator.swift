@@ -38,10 +38,10 @@ struct SyncStatusIndicator: View {
                     .font(.caption2)
             }
         }
-        .foregroundColor(.orange)
+        .foregroundColor(SonderColors.ochre)
         .padding(.horizontal, compact ? 4 : 8)
         .padding(.vertical, compact ? 2 : 4)
-        .background(Color.orange.opacity(0.15))
+        .background(SonderColors.ochre.opacity(0.15))
         .clipShape(Capsule())
     }
 
@@ -55,10 +55,10 @@ struct SyncStatusIndicator: View {
                     .font(.caption2)
             }
         }
-        .foregroundColor(.red)
+        .foregroundColor(SonderColors.terracotta)
         .padding(.horizontal, compact ? 4 : 8)
         .padding(.vertical, compact ? 2 : 4)
-        .background(Color.red.opacity(0.15))
+        .background(SonderColors.terracotta.opacity(0.15))
         .clipShape(Capsule())
     }
 }
@@ -76,10 +76,10 @@ struct PendingSyncBadge: View {
                 Text("\(count) pending")
                     .font(.caption)
             }
-            .foregroundColor(.orange)
+            .foregroundColor(SonderColors.ochre)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(Color.orange.opacity(0.15))
+            .background(SonderColors.ochre.opacity(0.15))
             .clipShape(Capsule())
         }
     }

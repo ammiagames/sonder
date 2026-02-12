@@ -208,10 +208,11 @@ final class SocialService {
 
     // MARK: - User Search
 
-    /// Search for users by username
+    /// Search for users by username with autocomplete
     func searchUsers(query: String) async throws -> [User] {
         guard !query.isEmpty else { return [] }
 
+        // Search by username with partial matching
         let users: [User] = try await supabase
             .from("users")
             .select()
@@ -220,7 +221,20 @@ final class SocialService {
             .execute()
             .value
 
-        return users
+        // Sort results: prefix matches first, then alphabetical
+        let lowercaseQuery = query.lowercased()
+        return users.sorted { user1, user2 in
+            let u1StartsWithQuery = user1.username.lowercased().hasPrefix(lowercaseQuery)
+            let u2StartsWithQuery = user2.username.lowercased().hasPrefix(lowercaseQuery)
+
+            if u1StartsWithQuery && !u2StartsWithQuery {
+                return true
+            } else if !u1StartsWithQuery && u2StartsWithQuery {
+                return false
+            } else {
+                return user1.username.lowercased() < user2.username.lowercased()
+            }
+        }
     }
 
     /// Get a user by ID

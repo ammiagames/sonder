@@ -25,8 +25,8 @@ struct FloatingActionButton: View {
                 .frame(width: 56, height: 56)
                 .background(
                     Circle()
-                        .fill(Color.accentColor)
-                        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
+                        .fill(SonderColors.terracotta)
+                        .shadow(color: SonderColors.terracotta.opacity(0.4), radius: 8, x: 0, y: 4)
                 )
         }
         .scaleEffect(isPressed ? 0.9 : 1.0)

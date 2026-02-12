@@ -21,11 +21,11 @@ struct LogConfirmationView: View {
                 .ignoresSafeArea()
 
             // Success card
-            VStack(spacing: 20) {
+            VStack(spacing: SonderSpacing.lg) {
                 // Animated checkmark
                 ZStack {
                     Circle()
-                        .fill(Color.green)
+                        .fill(SonderColors.sage)
                         .frame(width: 80, height: 80)
 
                     Image(systemName: "checkmark")
@@ -36,19 +36,19 @@ struct LogConfirmationView: View {
                 .opacity(showCheckmark ? 1 : 0)
 
                 Text("Logged!")
-                    .font(.title2)
-                    .fontWeight(.semibold)
+                    .font(SonderTypography.title)
+                    .foregroundColor(SonderColors.inkDark)
                     .opacity(showCheckmark ? 1 : 0)
 
                 Text("Your place has been saved")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(SonderTypography.body)
+                    .foregroundColor(SonderColors.inkMuted)
                     .opacity(showCheckmark ? 1 : 0)
             }
-            .padding(40)
-            .background(Color(.systemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 24))
-            .shadow(radius: 20)
+            .padding(SonderSpacing.xxl)
+            .background(SonderColors.cream)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusXl))
+            .shadow(color: .black.opacity(0.15), radius: 20)
         }
         .onAppear {
             // Haptic feedback

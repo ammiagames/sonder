@@ -15,12 +15,17 @@ struct WantToGoButton: View {
     @Environment(AuthenticationService.self) private var authService
     @Environment(WantToGoService.self) private var wantToGoService
 
-    @State private var isWantToGo = false
     @State private var isLoading = false
 
     init(placeID: String, sourceLogID: String? = nil) {
         self.placeID = placeID
         self.sourceLogID = sourceLogID
+    }
+
+    /// Computed from the observable service so SwiftUI tracks changes
+    private var isWantToGo: Bool {
+        guard let userID = authService.currentUser?.id else { return false }
+        return wantToGoService.isInWantToGo(placeID: placeID, userID: userID)
     }
 
     var body: some View {
@@ -30,23 +35,16 @@ struct WantToGoButton: View {
             Group {
                 if isLoading {
                     ProgressView()
+                        .tint(SonderColors.terracotta)
                         .frame(width: 24, height: 24)
                 } else {
                     Image(systemName: isWantToGo ? "bookmark.fill" : "bookmark")
                         .font(.system(size: 20))
-                        .foregroundColor(isWantToGo ? .accentColor : .primary)
+                        .foregroundColor(isWantToGo ? SonderColors.terracotta : SonderColors.inkDark)
                 }
             }
         }
         .disabled(isLoading)
-        .onAppear {
-            checkStatus()
-        }
-    }
-
-    private func checkStatus() {
-        guard let userID = authService.currentUser?.id else { return }
-        isWantToGo = wantToGoService.isInWantToGo(placeID: placeID, userID: userID)
     }
 
     private func toggle() {
@@ -61,7 +59,6 @@ struct WantToGoButton: View {
                     userID: userID,
                     sourceLogID: sourceLogID
                 )
-                isWantToGo.toggle()
 
                 // Haptic feedback
                 let generator = UIImpactFeedbackGenerator(style: .light)
@@ -84,12 +81,17 @@ struct WantToGoButtonLarge: View {
     @Environment(AuthenticationService.self) private var authService
     @Environment(WantToGoService.self) private var wantToGoService
 
-    @State private var isWantToGo = false
     @State private var isLoading = false
 
     init(placeID: String, sourceLogID: String? = nil) {
         self.placeID = placeID
         self.sourceLogID = sourceLogID
+    }
+
+    /// Computed from the observable service so SwiftUI tracks changes
+    private var isWantToGo: Bool {
+        guard let userID = authService.currentUser?.id else { return false }
+        return wantToGoService.isInWantToGo(placeID: placeID, userID: userID)
     }
 
     var body: some View {
@@ -99,28 +101,20 @@ struct WantToGoButtonLarge: View {
             HStack {
                 if isLoading {
                     ProgressView()
-                        .tint(isWantToGo ? .secondary : .white)
+                        .tint(isWantToGo ? SonderColors.inkMuted : .white)
                 } else {
                     Image(systemName: isWantToGo ? "bookmark.fill" : "bookmark")
                     Text(isWantToGo ? "Saved" : "Want to Go")
-                        .fontWeight(.medium)
+                        .font(SonderTypography.headline)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(isWantToGo ? Color(.systemGray5) : Color.accentColor)
-            .foregroundColor(isWantToGo ? .secondary : .white)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.vertical, SonderSpacing.sm)
+            .background(isWantToGo ? SonderColors.warmGray : SonderColors.terracotta)
+            .foregroundColor(isWantToGo ? SonderColors.inkMuted : .white)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         }
         .disabled(isLoading)
-        .onAppear {
-            checkStatus()
-        }
-    }
-
-    private func checkStatus() {
-        guard let userID = authService.currentUser?.id else { return }
-        isWantToGo = wantToGoService.isInWantToGo(placeID: placeID, userID: userID)
     }
 
     private func toggle() {
@@ -135,7 +129,6 @@ struct WantToGoButtonLarge: View {
                     userID: userID,
                     sourceLogID: sourceLogID
                 )
-                isWantToGo.toggle()
 
                 // Haptic feedback
                 let generator = UIImpactFeedbackGenerator(style: .light)

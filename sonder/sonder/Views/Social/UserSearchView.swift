@@ -23,11 +23,12 @@ struct UserSearchView: View {
             VStack(spacing: 0) {
                 // Search bar
                 searchBar
-                    .padding()
+                    .padding(SonderSpacing.md)
 
                 // Results
                 if isSearching {
                     ProgressView()
+                        .tint(SonderColors.terracotta)
                         .padding()
                     Spacer()
                 } else if searchText.isEmpty {
@@ -38,6 +39,7 @@ struct UserSearchView: View {
                     resultsList
                 }
             }
+            .background(SonderColors.cream)
             .navigationTitle("Find Friends")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -45,6 +47,7 @@ struct UserSearchView: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .foregroundColor(SonderColors.inkMuted)
                 }
             }
             .navigationDestination(item: $selectedUserID) { userID in
@@ -58,9 +61,10 @@ struct UserSearchView: View {
     private var searchBar: some View {
         HStack {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.secondary)
+                .foregroundColor(SonderColors.inkMuted)
 
             TextField("Search by username", text: $searchText)
+                .font(SonderTypography.body)
                 .textFieldStyle(.plain)
                 .autocapitalization(.none)
                 .autocorrectionDisabled()
@@ -74,13 +78,13 @@ struct UserSearchView: View {
                     searchResults = []
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SonderColors.inkLight)
                 }
             }
         }
-        .padding(12)
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(SonderSpacing.sm)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         .onChange(of: searchText) { _, newValue in
             // Debounced search
             Task {
@@ -95,19 +99,37 @@ struct UserSearchView: View {
     // MARK: - States
 
     private var emptySearchState: some View {
-        ContentUnavailableView {
-            Label("Search Users", systemImage: "person.2")
-        } description: {
+        VStack(spacing: SonderSpacing.md) {
+            Image(systemName: "person.2")
+                .font(.system(size: 48))
+                .foregroundColor(SonderColors.inkLight)
+
+            Text("Search Users")
+                .font(SonderTypography.title)
+                .foregroundColor(SonderColors.inkDark)
+
             Text("Enter a username to find friends")
+                .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkMuted)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var noResultsState: some View {
-        ContentUnavailableView {
-            Label("No Results", systemImage: "magnifyingglass")
-        } description: {
+        VStack(spacing: SonderSpacing.md) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 48))
+                .foregroundColor(SonderColors.inkLight)
+
+            Text("No Results")
+                .font(SonderTypography.title)
+                .foregroundColor(SonderColors.inkDark)
+
             Text("No users found matching \"\(searchText)\"")
+                .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkMuted)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Results List
@@ -124,6 +146,8 @@ struct UserSearchView: View {
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(SonderColors.cream)
     }
 
     // MARK: - Search
@@ -160,7 +184,7 @@ struct UserSearchRow: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 12) {
+            HStack(spacing: SonderSpacing.sm) {
                 // Avatar
                 if let urlString = user.avatarURL,
                    let url = URL(string: urlString) {
@@ -181,15 +205,15 @@ struct UserSearchRow: View {
                 }
 
                 // User info
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                     Text(user.username)
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                        .font(SonderTypography.headline)
+                        .foregroundColor(SonderColors.inkDark)
 
                     if let bio = user.bio, !bio.isEmpty {
                         Text(bio)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(SonderTypography.caption)
+                            .foregroundColor(SonderColors.inkMuted)
                             .lineLimit(1)
                     }
                 }
@@ -210,13 +234,18 @@ struct UserSearchRow: View {
 
     private var avatarPlaceholder: some View {
         Circle()
-            .fill(Color.accentColor.opacity(0.2))
+            .fill(
+                LinearGradient(
+                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .frame(width: 50, height: 50)
             .overlay {
                 Text(user.username.prefix(1).uppercased())
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .foregroundColor(.accentColor)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(SonderColors.terracotta)
             }
     }
 
@@ -227,24 +256,25 @@ struct UserSearchRow: View {
             Group {
                 if isLoading {
                     ProgressView()
+                        .tint(SonderColors.terracotta)
                         .frame(width: 80)
                 } else if isFollowing {
                     Text("Following")
-                        .font(.subheadline)
+                        .font(SonderTypography.caption)
                         .fontWeight(.medium)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color(.systemGray5))
+                        .foregroundColor(SonderColors.inkMuted)
+                        .padding(.horizontal, SonderSpacing.sm)
+                        .padding(.vertical, SonderSpacing.xxs)
+                        .background(SonderColors.warmGray)
                         .clipShape(Capsule())
                 } else {
                     Text("Follow")
-                        .font(.subheadline)
+                        .font(SonderTypography.caption)
                         .fontWeight(.medium)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.accentColor)
+                        .padding(.horizontal, SonderSpacing.sm)
+                        .padding(.vertical, SonderSpacing.xxs)
+                        .background(SonderColors.terracotta)
                         .clipShape(Capsule())
                 }
             }

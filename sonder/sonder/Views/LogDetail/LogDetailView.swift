@@ -58,30 +58,30 @@ struct LogDetailView: View {
                 photoSection
 
                 // Content
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: SonderSpacing.lg) {
                     // Place info (not editable)
                     placeSection
 
-                    Divider()
+                    sectionDivider
 
                     // Rating (tappable to change)
                     ratingSection
 
-                    Divider()
+                    sectionDivider
 
                     // Note (tappable to edit)
                     noteSection
 
-                    Divider()
+                    sectionDivider
 
                     // Tags (editable)
                     tagsSection
 
                     // Trip (tappable to change)
-                    Divider()
+                    sectionDivider
                     tripSection
 
-                    Divider()
+                    sectionDivider
 
                     // Meta info
                     metaSection
@@ -89,9 +89,11 @@ struct LogDetailView: View {
                     // Delete button
                     deleteSection
                 }
-                .padding()
+                .padding(SonderSpacing.lg)
             }
         }
+        .background(SonderColors.cream)
+        .scrollContentBackground(.hidden)
         .scrollDismissesKeyboard(.interactively)
         .onTapGesture {
             isNoteFocused = false
@@ -102,43 +104,44 @@ struct LogDetailView: View {
             Group {
                 if showSavedToast {
                     // Saved confirmation toast
-                    HStack(spacing: 8) {
+                    HStack(spacing: SonderSpacing.xs) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(SonderColors.sage)
                         Text("Saved")
-                            .fontWeight(.medium)
+                            .font(SonderTypography.headline)
+                            .foregroundColor(SonderColors.inkDark)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial)
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.vertical, SonderSpacing.sm)
+                    .background(SonderColors.warmGray)
                     .clipShape(Capsule())
-                    .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+                    .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
                 } else if hasChanges {
                     // Save button (pill style)
                     Button {
                         save()
                     } label: {
-                        HStack(spacing: 8) {
+                        HStack(spacing: SonderSpacing.xs) {
                             if isSaving {
                                 ProgressView()
                                     .tint(.white)
                             } else {
                                 Image(systemName: "checkmark")
                                 Text("Save")
-                                    .fontWeight(.medium)
+                                    .font(SonderTypography.headline)
                             }
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(Color.accentColor)
+                        .padding(.horizontal, SonderSpacing.lg)
+                        .padding(.vertical, SonderSpacing.sm)
+                        .background(SonderColors.terracotta)
                         .foregroundColor(.white)
                         .clipShape(Capsule())
-                        .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+                        .shadow(color: SonderColors.terracotta.opacity(0.3), radius: 8, y: 4)
                     }
                     .disabled(isSaving)
                 }
             }
-            .padding(.bottom, 20)
+            .padding(.bottom, SonderSpacing.lg)
             .transition(.move(edge: .bottom).combined(with: .opacity))
             .animation(.easeInOut(duration: 0.25), value: hasChanges)
             .animation(.easeInOut(duration: 0.25), value: showSavedToast)
@@ -266,30 +269,43 @@ struct LogDetailView: View {
         }
     }
 
+    private var sectionDivider: some View {
+        Rectangle()
+            .fill(SonderColors.warmGray)
+            .frame(height: 1)
+    }
+
     private var photoPlaceholder: some View {
         Rectangle()
-            .fill(Color(.systemGray5))
+            .fill(
+                LinearGradient(
+                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .overlay {
-                VStack(spacing: 8) {
+                VStack(spacing: SonderSpacing.xs) {
                     Image(systemName: "photo")
                         .font(.system(size: 40))
                     Text("Tap camera to add photo")
-                        .font(.caption)
+                        .font(SonderTypography.caption)
                 }
-                .foregroundColor(.secondary)
+                .foregroundColor(SonderColors.terracotta.opacity(0.6))
             }
     }
 
     // MARK: - Place Section
 
     private var placeSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            HStack(spacing: SonderSpacing.xs) {
                 Image(systemName: "mappin")
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundColor(SonderColors.inkMuted)
                 Text(place.address)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
             }
         }
     }
@@ -297,33 +313,34 @@ struct LogDetailView: View {
     // MARK: - Rating Section
 
     private var ratingSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Rating")
-                .font(.headline)
+                .font(SonderTypography.headline)
+                .foregroundColor(SonderColors.inkDark)
 
-            HStack(spacing: 12) {
+            HStack(spacing: SonderSpacing.sm) {
                 ForEach(Rating.allCases, id: \.self) { ratingOption in
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             rating = ratingOption
                         }
                     } label: {
-                        VStack(spacing: 6) {
+                        VStack(spacing: SonderSpacing.xxs) {
                             Text(ratingOption.emoji)
                                 .font(.system(size: 32))
 
                             Text(ratingOption.displayName)
-                                .font(.caption)
+                                .font(SonderTypography.caption)
                                 .fontWeight(.medium)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(rating == ratingOption ? Color.accentColor.opacity(0.15) : Color(.systemGray6))
-                        .foregroundColor(rating == ratingOption ? .accentColor : .primary)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.vertical, SonderSpacing.sm)
+                        .background(rating == ratingOption ? SonderColors.terracotta.opacity(0.15) : SonderColors.warmGray)
+                        .foregroundColor(rating == ratingOption ? SonderColors.terracotta : SonderColors.inkDark)
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(rating == ratingOption ? Color.accentColor : Color.clear, lineWidth: 2)
+                            RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
+                                .stroke(rating == ratingOption ? SonderColors.terracotta : Color.clear, lineWidth: 2)
                         )
                     }
                     .buttonStyle(.plain)
@@ -335,24 +352,26 @@ struct LogDetailView: View {
     // MARK: - Note Section
 
     private var noteSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             HStack {
                 Text("Note")
-                    .font(.headline)
+                    .font(SonderTypography.headline)
+                    .foregroundColor(SonderColors.inkDark)
 
                 Spacer()
 
                 Text("\(note.count)/\(maxNoteLength)")
-                    .font(.caption)
-                    .foregroundColor(note.count > maxNoteLength ? .red : .secondary)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(note.count > maxNoteLength ? .red : SonderColors.inkLight)
                     .opacity(isNoteFocused ? 1 : 0)
             }
 
             TextField("Add a note...", text: $note, axis: .vertical)
+                .font(SonderTypography.body)
                 .lineLimit(3...10)
-                .padding(12)
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(SonderSpacing.sm)
+                .background(SonderColors.warmGray)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                 .focused($isNoteFocused)
                 .onChange(of: note) { _, newValue in
                     if newValue.count > maxNoteLength {
@@ -365,9 +384,10 @@ struct LogDetailView: View {
     // MARK: - Tags Section
 
     private var tagsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Tags")
-                .font(.headline)
+                .font(SonderTypography.headline)
+                .foregroundColor(SonderColors.inkDark)
 
             TagInputView(selectedTags: $tags)
         }
@@ -376,9 +396,10 @@ struct LogDetailView: View {
     // MARK: - Trip Section
 
     private var tripSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Trip")
-                .font(.headline)
+                .font(SonderTypography.headline)
+                .foregroundColor(SonderColors.inkDark)
 
             Menu {
                 Button("None") {
@@ -395,21 +416,23 @@ struct LogDetailView: View {
                     if let tripID = selectedTripID,
                        let trip = trips.first(where: { $0.id == tripID }) {
                         Label(trip.name, systemImage: "airplane")
-                            .foregroundColor(.primary)
+                            .font(SonderTypography.body)
+                            .foregroundColor(SonderColors.inkDark)
                     } else {
                         Label("No trip selected", systemImage: "airplane")
-                            .foregroundColor(.secondary)
+                            .font(SonderTypography.body)
+                            .foregroundColor(SonderColors.inkMuted)
                     }
 
                     Spacer()
 
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SonderColors.inkLight)
                 }
-                .padding()
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(SonderSpacing.md)
+                .background(SonderColors.warmGray)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
             }
         }
     }
@@ -419,11 +442,13 @@ struct LogDetailView: View {
     private var metaSection: some View {
         HStack {
             Text("Logged")
-                .foregroundColor(.secondary)
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkMuted)
             Spacer()
             Text(log.createdAt.formatted(date: .long, time: .shortened))
+                .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkDark)
         }
-        .font(.subheadline)
     }
 
     // MARK: - Delete Section
@@ -435,14 +460,15 @@ struct LogDetailView: View {
             HStack {
                 Spacer()
                 Label("Delete Log", systemImage: "trash")
+                    .font(SonderTypography.body)
                 Spacer()
             }
-            .padding()
-            .background(Color(.systemRed).opacity(0.1))
+            .padding(SonderSpacing.md)
+            .background(Color.red.opacity(0.1))
             .foregroundColor(.red)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         }
-        .padding(.top, 20)
+        .padding(.top, SonderSpacing.lg)
     }
 
     // MARK: - Actions
@@ -519,12 +545,12 @@ struct FlowLayoutTags: View {
     var body: some View {
         FlowLayoutWrapper {
             ForEach(tags, id: \.self) { tag in
-                Text("#\(tag)")
-                    .font(.subheadline)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.accentColor.opacity(0.1))
-                    .foregroundColor(.accentColor)
+                Text(tag)
+                    .font(SonderTypography.caption)
+                    .padding(.horizontal, SonderSpacing.sm)
+                    .padding(.vertical, SonderSpacing.xxs)
+                    .background(SonderColors.terracotta.opacity(0.1))
+                    .foregroundColor(SonderColors.terracotta)
                     .clipShape(Capsule())
             }
         }

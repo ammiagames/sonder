@@ -12,6 +12,7 @@ import SwiftData
 final class Trip {
     @Attribute(.unique) var id: String
     var name: String
+    var tripDescription: String?
     var coverPhotoURL: String?
     var startDate: Date?
     var endDate: Date?
@@ -19,10 +20,11 @@ final class Trip {
     var createdBy: String
     var createdAt: Date
     var updatedAt: Date
-    
+
     init(
         id: String = UUID().uuidString,
         name: String,
+        tripDescription: String? = nil,
         coverPhotoURL: String? = nil,
         startDate: Date? = nil,
         endDate: Date? = nil,
@@ -33,6 +35,7 @@ final class Trip {
     ) {
         self.id = id
         self.name = name
+        self.tripDescription = tripDescription
         self.coverPhotoURL = coverPhotoURL
         self.startDate = startDate
         self.endDate = endDate
@@ -48,6 +51,7 @@ extension Trip: Codable {
     enum CodingKeys: String, CodingKey {
         case id
         case name
+        case tripDescription = "description"
         case coverPhotoURL = "cover_photo_url"
         case startDate = "start_date"
         case endDate = "end_date"
@@ -61,6 +65,7 @@ extension Trip: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let id = try container.decode(String.self, forKey: .id)
         let name = try container.decode(String.self, forKey: .name)
+        let tripDescription = try container.decodeIfPresent(String.self, forKey: .tripDescription)
         let coverPhotoURL = try container.decodeIfPresent(String.self, forKey: .coverPhotoURL)
         let startDate = try container.decodeIfPresent(Date.self, forKey: .startDate)
         let endDate = try container.decodeIfPresent(Date.self, forKey: .endDate)
@@ -71,6 +76,7 @@ extension Trip: Codable {
         self.init(
             id: id,
             name: name,
+            tripDescription: tripDescription,
             coverPhotoURL: coverPhotoURL,
             startDate: startDate,
             endDate: endDate,
@@ -85,6 +91,7 @@ extension Trip: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(tripDescription, forKey: .tripDescription)
         try container.encodeIfPresent(coverPhotoURL, forKey: .coverPhotoURL)
         try container.encodeIfPresent(startDate, forKey: .startDate)
         try container.encodeIfPresent(endDate, forKey: .endDate)

@@ -78,9 +78,9 @@ struct OtherUserMapView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(item.place.name)
-                            .font(.headline)
+                            .font(SonderTypography.headline)
                             .lineLimit(1)
-                            .foregroundColor(.primary)
+                            .foregroundColor(SonderColors.inkDark)
 
                         Spacer()
 
@@ -88,36 +88,43 @@ struct OtherUserMapView: View {
                     }
 
                     Text(item.place.address)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
                         .lineLimit(1)
 
                     if let note = item.log.note, !note.isEmpty {
                         Text(note)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(SonderTypography.caption)
+                            .foregroundColor(SonderColors.inkMuted)
                             .lineLimit(1)
                     }
                 }
 
                 Image(systemName: "chevron.right")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SonderColors.inkLight)
             }
-            .padding()
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .padding()
+            .padding(SonderSpacing.md)
+            .background(SonderColors.cream.opacity(0.95))
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+            .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+            .padding(SonderSpacing.md)
         }
         .buttonStyle(.plain)
     }
 
     private var photoPlaceholder: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .fill(Color(.systemGray5))
+        RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
+            .fill(
+                LinearGradient(
+                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .frame(width: 60, height: 60)
             .overlay {
                 Image(systemName: "photo")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
             }
     }
 
@@ -133,9 +140,9 @@ struct OtherUserMapView: View {
 
     private func markerColor(for rating: Rating) -> Color {
         switch rating {
-        case .mustSee: return .orange
-        case .solid: return .blue
-        case .skip: return .gray
+        case .mustSee: return SonderColors.ratingMustSee
+        case .solid: return SonderColors.ratingSolid
+        case .skip: return SonderColors.ratingSkip
         }
     }
 

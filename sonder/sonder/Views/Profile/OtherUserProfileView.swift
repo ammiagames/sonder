@@ -119,13 +119,18 @@ struct OtherUserProfileView: View {
 
     private func avatarPlaceholder(for user: User) -> some View {
         Circle()
-            .fill(Color.accentColor.opacity(0.2))
+            .fill(
+                LinearGradient(
+                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .frame(width: 80, height: 80)
             .overlay {
                 Text(user.username.prefix(1).uppercased())
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(.accentColor)
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .foregroundColor(SonderColors.terracotta)
             }
     }
 
@@ -191,20 +196,20 @@ struct OtherUserProfileView: View {
             HStack {
                 if isFollowLoading {
                     ProgressView()
-                        .tint(isFollowing ? .primary : .white)
+                        .tint(isFollowing ? SonderColors.inkDark : .white)
                 } else {
                     Text(isFollowing ? "Following" : "Follow")
-                        .fontWeight(.semibold)
+                        .font(SonderTypography.headline)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(isFollowing ? Color(.systemGray5) : Color.accentColor)
-            .foregroundColor(isFollowing ? .primary : .white)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.vertical, SonderSpacing.sm)
+            .background(isFollowing ? SonderColors.warmGray : SonderColors.terracotta)
+            .foregroundColor(isFollowing ? SonderColors.inkDark : .white)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         }
         .disabled(isFollowLoading)
-        .padding(.horizontal)
+        .padding(.horizontal, SonderSpacing.md)
     }
 
     // MARK: - Logs Section
@@ -298,7 +303,7 @@ struct OtherUserLogRow: View {
     let feedItem: FeedItem
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SonderSpacing.sm) {
             // Photo
             if let urlString = feedItem.log.photoURL,
                let url = URL(string: urlString) {
@@ -313,16 +318,17 @@ struct OtherUserLogRow: View {
                     }
                 }
                 .frame(width: 60, height: 60)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
             } else {
                 placePhoto
             }
 
             // Info
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                 HStack {
                     Text(feedItem.place.name)
-                        .font(.headline)
+                        .font(SonderTypography.headline)
+                        .foregroundColor(SonderColors.inkDark)
                         .lineLimit(1)
 
                     Spacer()
@@ -331,18 +337,18 @@ struct OtherUserLogRow: View {
                 }
 
                 Text(feedItem.place.address)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
                     .lineLimit(1)
 
                 Text(feedItem.createdAt.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 11))
+                    .foregroundColor(SonderColors.inkLight)
             }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(SonderSpacing.md)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
     }
 
     @ViewBuilder
@@ -367,12 +373,18 @@ struct OtherUserLogRow: View {
     }
 
     private var photoPlaceholder: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .fill(Color(.systemGray5))
+        RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
+            .fill(
+                LinearGradient(
+                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .frame(width: 60, height: 60)
             .overlay {
                 Image(systemName: "photo")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
             }
     }
 }

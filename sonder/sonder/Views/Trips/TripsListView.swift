@@ -1,0 +1,417 @@
+//
+//  TripsListView.swift
+//  sonder
+//
+//  Created by Michael Song on 2/10/26.
+//
+
+import SwiftUI
+import SwiftData
+
+enum LogsTripsTab: String, CaseIterable {
+    case logs = "Logs"
+    case trips = "Trips"
+}
+
+/// Main logs/trips tab showing all user's logs and trips
+struct TripsListView: View {
+    @Environment(AuthenticationService.self) private var authService
+    @Environment(TripService.self) private var tripService
+    @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
+    @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
+    @Query private var places: [Place]
+
+    @State private var selectedTab: LogsTripsTab = .logs
+    @State private var isLoading = false
+    @State private var showCreateTrip = false
+    @State private var showInvitations = false
+    @State private var pendingInvitationCount = 0
+    @State private var selectedTrip: Trip?
+    @State private var selectedLog: Log?
+
+    /// Trips filtered to current user (owned + collaborating)
+    private var trips: [Trip] {
+        guard let userID = authService.currentUser?.id else { return [] }
+        return allTrips.filter { trip in
+            trip.createdBy == userID || trip.collaboratorIDs.contains(userID)
+        }
+    }
+
+    /// Logs filtered to current user
+    private var logs: [Log] {
+        guard let userID = authService.currentUser?.id else { return [] }
+        return allLogs.filter { $0.userID == userID }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Segmented picker with warm styling
+                Picker("View", selection: $selectedTab) {
+                    ForEach(LogsTripsTab.allCases, id: \.self) { tab in
+                        Text(tab.rawValue).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, SonderSpacing.md)
+                .padding(.vertical, SonderSpacing.sm)
+
+                // Content
+                Group {
+                    switch selectedTab {
+                    case .logs:
+                        logsContent
+                    case .trips:
+                        tripsContent
+                    }
+                }
+            }
+            .background(SonderColors.cream)
+            .navigationTitle("Library")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if selectedTab == .trips {
+                        Button {
+                            showCreateTrip = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .foregroundColor(SonderColors.terracotta)
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showCreateTrip) {
+                CreateEditTripView(mode: .create)
+            }
+            .navigationDestination(item: $selectedTrip) { trip in
+                TripDetailView(trip: trip)
+            }
+            .navigationDestination(item: $selectedLog) { log in
+                if let place = places.first(where: { $0.id == log.placeID }) {
+                    LogDetailView(log: log, place: place)
+                }
+            }
+            .sheet(isPresented: $showInvitations) {
+                PendingInvitationsView()
+            }
+            .refreshable {
+                await loadTrips()
+                await loadInvitationCount()
+            }
+            .task {
+                await loadTrips()
+                await loadInvitationCount()
+            }
+            .onChange(of: showInvitations) { _, isShowing in
+                if !isShowing {
+                    Task {
+                        await loadInvitationCount()
+                        await loadTrips()
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Logs Content
+
+    @ViewBuilder
+    private var logsContent: some View {
+        if logs.isEmpty {
+            emptyLogsState
+        } else {
+            ScrollView {
+                LazyVStack(spacing: SonderSpacing.sm) {
+                    ForEach(logs, id: \.id) { log in
+                        if let place = places.first(where: { $0.id == log.placeID }) {
+                            Button {
+                                selectedLog = log
+                            } label: {
+                                LogListRow(
+                                    log: log,
+                                    place: place,
+                                    tripName: tripName(for: log)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(SonderSpacing.md)
+            }
+            .scrollContentBackground(.hidden)
+        }
+    }
+
+    private var emptyLogsState: some View {
+        VStack(spacing: SonderSpacing.md) {
+            Image(systemName: "book.closed")
+                .font(.system(size: 48))
+                .foregroundColor(SonderColors.inkLight)
+
+            Text("No Logs Yet")
+                .font(SonderTypography.title)
+                .foregroundColor(SonderColors.inkDark)
+
+            Text("Start logging places you visit")
+                .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkMuted)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Trips Content
+
+    @ViewBuilder
+    private var tripsContent: some View {
+        if trips.isEmpty && pendingInvitationCount == 0 && !isLoading {
+            emptyTripsState
+        } else {
+            ScrollView {
+                LazyVStack(spacing: SonderSpacing.md) {
+                    // Pending invitations banner
+                    if pendingInvitationCount > 0 {
+                        pendingInvitationsBanner
+                    }
+
+                    ForEach(trips, id: \.id) { trip in
+                        Button {
+                            selectedTrip = trip
+                        } label: {
+                            TripCard(
+                                trip: trip,
+                                logCount: logCount(for: trip),
+                                isOwner: isOwner(trip)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(SonderSpacing.md)
+            }
+            .scrollContentBackground(.hidden)
+        }
+    }
+
+    private var emptyTripsState: some View {
+        VStack(spacing: SonderSpacing.md) {
+            Image(systemName: "suitcase")
+                .font(.system(size: 48))
+                .foregroundColor(SonderColors.inkLight)
+
+            Text("No Trips Yet")
+                .font(SonderTypography.title)
+                .foregroundColor(SonderColors.inkDark)
+
+            Text("Create a trip to organize your logs by journey")
+                .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkMuted)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, SonderSpacing.xl)
+
+            Button {
+                showCreateTrip = true
+            } label: {
+                Text("Create Trip")
+                    .font(SonderTypography.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, SonderSpacing.lg)
+                    .padding(.vertical, SonderSpacing.sm)
+                    .background(SonderColors.terracotta)
+                    .clipShape(Capsule())
+            }
+            .padding(.top, SonderSpacing.sm)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Pending Invitations Banner
+
+    private var pendingInvitationsBanner: some View {
+        Button {
+            showInvitations = true
+        } label: {
+            HStack(spacing: SonderSpacing.sm) {
+                Image(systemName: "envelope.badge")
+                    .font(.title2)
+                    .foregroundColor(SonderColors.terracotta)
+                    .frame(width: 40, height: 40)
+                    .background(SonderColors.terracotta.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Trip Invitations")
+                        .font(SonderTypography.headline)
+                        .foregroundColor(SonderColors.inkDark)
+
+                    Text("\(pendingInvitationCount) pending \(pendingInvitationCount == 1 ? "invitation" : "invitations")")
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(SonderColors.inkLight)
+            }
+            .padding(SonderSpacing.md)
+            .background(SonderColors.warmGray)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+            .overlay(
+                RoundedRectangle(cornerRadius: SonderSpacing.radiusLg)
+                    .stroke(SonderColors.terracotta.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Helpers
+
+    private func tripName(for log: Log) -> String? {
+        guard let tripID = log.tripID else { return nil }
+        return allTrips.first(where: { $0.id == tripID })?.name
+    }
+
+    private func logCount(for trip: Trip) -> Int {
+        allLogs.filter { $0.tripID == trip.id }.count
+    }
+
+    private func isOwner(_ trip: Trip) -> Bool {
+        trip.createdBy == authService.currentUser?.id
+    }
+
+    private func loadTrips() async {
+        guard let userID = authService.currentUser?.id else { return }
+        isLoading = true
+        do {
+            _ = try await tripService.fetchTrips(for: userID)
+        } catch {
+            print("Error loading trips: \(error)")
+        }
+        isLoading = false
+    }
+
+    private func loadInvitationCount() async {
+        guard let userID = authService.currentUser?.id else { return }
+        do {
+            pendingInvitationCount = try await tripService.getPendingInvitationCount(for: userID)
+        } catch {
+            print("Error loading invitation count: \(error)")
+        }
+    }
+}
+
+// MARK: - Log List Row
+
+struct LogListRow: View {
+    let log: Log
+    let place: Place
+    let tripName: String?
+
+    var body: some View {
+        HStack(spacing: SonderSpacing.sm) {
+            // Photo thumbnail
+            photoView
+                .frame(width: 60, height: 60)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+
+            // Info
+            VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
+                // Place name + rating
+                HStack {
+                    Text(place.name)
+                        .font(SonderTypography.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(SonderColors.inkDark)
+                        .lineLimit(1)
+
+                    Text(log.rating.emoji)
+                        .font(.subheadline)
+                }
+
+                // Address
+                Text(place.address)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
+                    .lineLimit(1)
+
+                // Trip + date
+                HStack(spacing: SonderSpacing.xs) {
+                    if let tripName = tripName {
+                        HStack(spacing: 2) {
+                            Image(systemName: "suitcase.fill")
+                                .font(.caption2)
+                            Text(tripName)
+                                .font(SonderTypography.caption)
+                        }
+                        .foregroundColor(SonderColors.terracotta)
+                    }
+
+                    Text(log.createdAt.formatted(date: .abbreviated, time: .omitted))
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkLight)
+                }
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(SonderColors.inkLight)
+        }
+        .padding(SonderSpacing.sm)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+    }
+
+    @ViewBuilder
+    private var photoView: some View {
+        if let urlString = log.photoURL, let url = URL(string: urlString) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                default:
+                    placePhotoView
+                }
+            }
+        } else {
+            placePhotoView
+        }
+    }
+
+    @ViewBuilder
+    private var placePhotoView: some View {
+        if let photoRef = place.photoReference,
+           let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 200) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                default:
+                    photoPlaceholder
+                }
+            }
+        } else {
+            photoPlaceholder
+        }
+    }
+
+    private var photoPlaceholder: some View {
+        Rectangle()
+            .fill(SonderColors.warmGrayDark)
+            .overlay {
+                Image(systemName: "photo")
+                    .foregroundColor(SonderColors.inkLight)
+            }
+    }
+}
+
+#Preview {
+    TripsListView()
+}

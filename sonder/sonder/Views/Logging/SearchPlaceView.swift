@@ -73,6 +73,7 @@ struct SearchPlaceView: View {
                     }
                 }
             }
+            .background(SonderColors.cream)
             .navigationTitle("Log a Place")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -80,6 +81,7 @@ struct SearchPlaceView: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .foregroundColor(SonderColors.inkMuted)
                 }
 
                 ToolbarItem(placement: .primaryAction) {
@@ -87,6 +89,7 @@ struct SearchPlaceView: View {
                         showCustomPlace = true
                     } label: {
                         Image(systemName: "mappin.circle")
+                            .foregroundColor(SonderColors.terracotta)
                     }
                 }
             }
@@ -145,9 +148,10 @@ struct SearchPlaceView: View {
     private var searchBar: some View {
         HStack {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.secondary)
+                .foregroundColor(SonderColors.inkMuted)
 
             TextField("Search for a place...", text: $searchText)
+                .font(SonderTypography.body)
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
                 .onChange(of: searchText) { _, newValue in
@@ -162,14 +166,14 @@ struct SearchPlaceView: View {
             if !searchText.isEmpty {
                 Button(action: { searchText = "" }) {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SonderColors.inkLight)
                 }
             }
         }
-        .padding(12)
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .padding()
+        .padding(SonderSpacing.sm)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+        .padding(SonderSpacing.md)
     }
 
     // MARK: - Search Results
@@ -178,17 +182,26 @@ struct SearchPlaceView: View {
     private var searchResultsSection: some View {
         if placesService.isLoading {
             ProgressView()
+                .tint(SonderColors.terracotta)
                 .padding()
         } else if predictions.isEmpty && !searchText.isEmpty {
             let cachedResults = cacheService.searchCachedPlaces(query: searchText)
             if cachedResults.isEmpty {
                 // No results - show option to add own spot
-                VStack(spacing: 20) {
-                    ContentUnavailableView(
-                        "No Results",
-                        systemImage: "magnifyingglass",
-                        description: Text("Try a different search term")
-                    )
+                VStack(spacing: SonderSpacing.lg) {
+                    VStack(spacing: SonderSpacing.md) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 48))
+                            .foregroundColor(SonderColors.inkLight)
+
+                        Text("No Results")
+                            .font(SonderTypography.title)
+                            .foregroundColor(SonderColors.inkDark)
+
+                        Text("Try a different search term")
+                            .font(SonderTypography.body)
+                            .foregroundColor(SonderColors.inkMuted)
+                    }
 
                     Button {
                         showCustomPlace = true
@@ -196,11 +209,11 @@ struct SearchPlaceView: View {
                         HStack {
                             Image(systemName: "mappin.circle.fill")
                             Text("Add Your Own Spot")
-                                .fontWeight(.medium)
+                                .font(SonderTypography.headline)
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(Color.accentColor)
+                        .padding(.horizontal, SonderSpacing.lg)
+                        .padding(.vertical, SonderSpacing.sm)
+                        .background(SonderColors.terracotta)
                         .foregroundColor(.white)
                         .clipShape(Capsule())
                     }
@@ -278,29 +291,35 @@ struct SearchPlaceView: View {
     // MARK: - Location Permission
 
     private var locationPermissionBanner: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: SonderSpacing.sm) {
             Image(systemName: "location.fill")
                 .font(.system(size: 32))
-                .foregroundColor(.accentColor)
+                .foregroundColor(SonderColors.terracotta)
 
             Text("Enable Location")
-                .font(.headline)
+                .font(SonderTypography.headline)
+                .foregroundColor(SonderColors.inkDark)
 
             Text("See places near you for quick logging")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkMuted)
                 .multilineTextAlignment(.center)
 
             Button("Enable Location") {
                 locationService.requestPermission()
             }
-            .buttonStyle(.borderedProminent)
+            .font(SonderTypography.headline)
+            .foregroundColor(.white)
+            .padding(.horizontal, SonderSpacing.lg)
+            .padding(.vertical, SonderSpacing.sm)
+            .background(SonderColors.terracotta)
+            .clipShape(Capsule())
         }
-        .padding()
+        .padding(SonderSpacing.lg)
         .frame(maxWidth: .infinity)
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .padding()
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+        .padding(SonderSpacing.md)
     }
 
     // MARK: - Recent Searches
@@ -356,26 +375,29 @@ struct SearchPlaceView: View {
     private func sectionHeader(_ title: String) -> some View {
         HStack {
             Text(title)
-                .font(.subheadline)
+                .font(SonderTypography.caption)
                 .fontWeight(.semibold)
-                .foregroundColor(.secondary)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 8)
+        .padding(.horizontal, SonderSpacing.md)
+        .padding(.top, SonderSpacing.md)
+        .padding(.bottom, SonderSpacing.xs)
     }
 
     private func errorBanner(message: String) -> some View {
-        HStack {
+        HStack(spacing: SonderSpacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
+                .foregroundColor(SonderColors.ochre)
             Text(message)
-                .font(.subheadline)
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkDark)
             Spacer()
         }
-        .padding()
-        .background(Color.orange.opacity(0.1))
+        .padding(SonderSpacing.md)
+        .background(SonderColors.ochre.opacity(0.1))
     }
 
     // MARK: - Actions

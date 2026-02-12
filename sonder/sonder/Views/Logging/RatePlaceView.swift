@@ -27,20 +27,20 @@ struct RatePlaceView: View {
         VStack(spacing: 0) {
             // Place header
             placeHeader
-                .padding()
+                .padding(SonderSpacing.md)
 
-            Divider()
+            sectionDivider
 
             // Rating buttons
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: SonderSpacing.md) {
                     Text("How was it?")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .padding(.top)
+                        .font(SonderTypography.title)
+                        .foregroundColor(SonderColors.inkDark)
+                        .padding(.top, SonderSpacing.md)
 
                     // Rating options
-                    VStack(spacing: 12) {
+                    VStack(spacing: SonderSpacing.sm) {
                         RatingButton(rating: .skip, isSelected: selectedRating == .skip) {
                             selectedRating = .skip
                         }
@@ -53,14 +53,14 @@ struct RatePlaceView: View {
                             selectedRating = .mustSee
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, SonderSpacing.md)
                 }
             }
 
-            Divider()
+            sectionDivider
 
             // Action buttons
-            VStack(spacing: 12) {
+            VStack(spacing: SonderSpacing.sm) {
                 // Quick save button
                 Button(action: quickSave) {
                     HStack {
@@ -69,29 +69,32 @@ struct RatePlaceView: View {
                                 .tint(.white)
                         } else {
                             Text("Save")
+                                .font(SonderTypography.headline)
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(selectedRating != nil ? Color.accentColor : Color.gray)
+                    .padding(SonderSpacing.md)
+                    .background(selectedRating != nil ? SonderColors.terracotta : SonderColors.inkLight)
                     .foregroundColor(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                 }
                 .disabled(selectedRating == nil || isSaving)
 
                 // Add details button
                 Button(action: { showAddDetails = true }) {
                     Text("Add Details")
+                        .font(SonderTypography.headline)
                         .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .foregroundColor(.primary)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(SonderSpacing.md)
+                        .background(SonderColors.warmGray)
+                        .foregroundColor(SonderColors.inkDark)
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                 }
                 .disabled(selectedRating == nil)
             }
-            .padding()
+            .padding(SonderSpacing.md)
         }
+        .background(SonderColors.cream)
         .navigationTitle("Rate Place")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -99,6 +102,7 @@ struct RatePlaceView: View {
                 Button("Cancel") {
                     dismiss()
                 }
+                .foregroundColor(SonderColors.inkMuted)
             }
         }
         .navigationDestination(isPresented: $showAddDetails) {
@@ -116,21 +120,28 @@ struct RatePlaceView: View {
 
     // MARK: - Place Header
 
+    private var sectionDivider: some View {
+        Rectangle()
+            .fill(SonderColors.warmGray)
+            .frame(height: 1)
+    }
+
     private var placeHeader: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SonderSpacing.sm) {
             // Place icon
             Image(systemName: "mappin.circle.fill")
                 .font(.system(size: 40))
-                .foregroundColor(.accentColor)
+                .foregroundColor(SonderColors.terracotta)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                 Text(place.name)
-                    .font(.headline)
+                    .font(SonderTypography.headline)
+                    .foregroundColor(SonderColors.inkDark)
                     .lineLimit(2)
 
                 Text(place.address)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
                     .lineLimit(2)
             }
 

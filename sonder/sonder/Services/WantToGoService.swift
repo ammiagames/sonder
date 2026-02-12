@@ -91,17 +91,21 @@ final class WantToGoService {
 
     // MARK: - Check Status
 
-    /// Check if a place is in the user's Want to Go list (local check)
+    /// Check if a place is in the user's Want to Go list (uses cached items for reactivity)
     func isInWantToGo(placeID: String, userID: String) -> Bool {
-        let userIDCopy = userID
-        let placeIDCopy = placeID
-        let descriptor = FetchDescriptor<WantToGo>(
-            predicate: #Predicate { item in
-                item.userID == userIDCopy && item.placeID == placeIDCopy
-            }
-        )
-
-        return (try? modelContext.fetch(descriptor).first) != nil
+        // Use cached items array so SwiftUI can observe changes
+        // If items is empty, fall back to database check (initial load)
+        if items.isEmpty {
+            let userIDCopy = userID
+            let placeIDCopy = placeID
+            let descriptor = FetchDescriptor<WantToGo>(
+                predicate: #Predicate { item in
+                    item.userID == userIDCopy && item.placeID == placeIDCopy
+                }
+            )
+            return (try? modelContext.fetch(descriptor).first) != nil
+        }
+        return items.contains { $0.placeID == placeID && $0.userID == userID }
     }
 
     // MARK: - Fetch List
@@ -173,6 +177,11 @@ struct WantToGoWithPlace: Identifiable {
     let wantToGo: WantToGo
     let place: FeedItem.FeedPlace
     let sourceUser: FeedItem.FeedUser?
+
+    /// Convenience accessor for creation date
+    var createdAt: Date {
+        wantToGo.createdAt
+    }
 
     init(wantToGo: WantToGo, place: FeedItem.FeedPlace, sourceUser: FeedItem.FeedUser? = nil) {
         self.id = wantToGo.id

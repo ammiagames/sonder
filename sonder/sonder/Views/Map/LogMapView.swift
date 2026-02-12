@@ -215,11 +215,11 @@ struct LogPinView: View {
     private var pinColor: Color {
         switch rating {
         case .skip:
-            return Color(.systemGray)
+            return SonderColors.ratingSkip
         case .solid:
-            return Color.blue
+            return SonderColors.ratingSolid
         case .mustSee:
-            return Color.orange
+            return SonderColors.ratingMustSee
         }
     }
 }

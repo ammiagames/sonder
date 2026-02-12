@@ -51,22 +51,22 @@ struct RatingButton: View {
     private var backgroundColor: Color {
         switch rating {
         case .skip:
-            return isSelected ? Color.red.opacity(0.2) : Color(.systemGray6)
+            return isSelected ? SonderColors.ratingSkip.opacity(0.2) : SonderColors.warmGray
         case .solid:
-            return isSelected ? Color.blue.opacity(0.2) : Color(.systemGray6)
+            return isSelected ? SonderColors.ratingSolid.opacity(0.2) : SonderColors.warmGray
         case .mustSee:
-            return isSelected ? Color.orange.opacity(0.2) : Color(.systemGray6)
+            return isSelected ? SonderColors.ratingMustSee.opacity(0.2) : SonderColors.warmGray
         }
     }
 
     private var borderColor: Color {
         switch rating {
         case .skip:
-            return isSelected ? Color.red : Color.clear
+            return isSelected ? SonderColors.ratingSkip : Color.clear
         case .solid:
-            return isSelected ? Color.blue : Color.clear
+            return isSelected ? SonderColors.ratingSolid : Color.clear
         case .mustSee:
-            return isSelected ? Color.orange : Color.clear
+            return isSelected ? SonderColors.ratingMustSee : Color.clear
         }
     }
 
@@ -76,25 +76,25 @@ struct RatingButton: View {
             impactFeedback.impactOccurred()
             action()
         }) {
-            VStack(spacing: 8) {
+            VStack(spacing: SonderSpacing.xs) {
                 Text(emoji)
                     .font(.system(size: 48))
 
                 Text(label)
-                    .font(.headline)
-                    .foregroundColor(.primary)
+                    .font(SonderTypography.headline)
+                    .foregroundColor(SonderColors.inkDark)
 
                 Text(subtitle)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 24)
+            .padding(.vertical, SonderSpacing.xl)
             .background(backgroundColor)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: SonderSpacing.radiusLg)
                     .stroke(borderColor, lineWidth: 2)
             )
         }

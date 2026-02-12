@@ -7,7 +7,7 @@
 
 import SwiftUI
 import SwiftData
-import PhotosUI
+import MapKit
 
 struct MainTabView: View {
     @State private var selectedTab = 0
@@ -29,21 +29,21 @@ struct MainTabView: View {
                     }
                     .tag(1)
 
-                LogsView()
+                JournalView()
                     .tabItem {
-                        Label("Logs", systemImage: "book")
+                        Label("Journal", systemImage: "book.closed")
                     }
                     .tag(2)
 
-                ProfileView()
+                ProfileView(selectedTab: $selectedTab)
                     .tabItem {
                         Label("Profile", systemImage: "person")
                     }
                     .tag(3)
             }
 
-            // FAB for Feed and Map tabs
-            if selectedTab == 0 || selectedTab == 1 {
+            // FAB for Feed, Map, and Trips tabs
+            if selectedTab == 0 || selectedTab == 1 || selectedTab == 2 {
                 VStack(spacing: 8) {
                     // Pending sync indicator
                     if syncEngine.pendingCount > 0 {
@@ -107,17 +107,31 @@ struct LogsView: View {
                 // Content
                 Group {
                     if logs.isEmpty {
-                        ContentUnavailableView(
-                            "No Logs Yet",
-                            systemImage: "book.closed",
-                            description: Text("Tap the + button to log your first place")
-                        )
+                        VStack(spacing: SonderSpacing.md) {
+                            Image(systemName: "book.closed")
+                                .font(.system(size: 48))
+                                .foregroundColor(SonderColors.inkLight)
+                            Text("No Logs Yet")
+                                .font(SonderTypography.title)
+                                .foregroundColor(SonderColors.inkDark)
+                            Text("Tap the + button to log your first place")
+                                .font(SonderTypography.body)
+                                .foregroundColor(SonderColors.inkMuted)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if filteredLogs.isEmpty {
-                        ContentUnavailableView(
-                            "No Results",
-                            systemImage: "magnifyingglass",
-                            description: Text("Try adjusting your filters or search")
-                        )
+                        VStack(spacing: SonderSpacing.md) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 48))
+                                .foregroundColor(SonderColors.inkLight)
+                            Text("No Results")
+                                .font(SonderTypography.title)
+                                .foregroundColor(SonderColors.inkDark)
+                            Text("Try adjusting your filters or search")
+                                .font(SonderTypography.body)
+                                .foregroundColor(SonderColors.inkMuted)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         List {
                             if groupByTrip {
@@ -179,7 +193,7 @@ struct LogsView: View {
     private var searchBar: some View {
         HStack {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.secondary)
+                .foregroundColor(SonderColors.inkMuted)
 
             TextField("Search places, notes, tags...", text: $searchText)
                 .textFieldStyle(.plain)
@@ -189,13 +203,13 @@ struct LogsView: View {
                     searchText = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SonderColors.inkMuted)
                 }
             }
         }
-        .padding(10)
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(SonderSpacing.sm)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
     }
 
     // MARK: - Filter Chips
@@ -226,7 +240,7 @@ struct LogsView: View {
                 // Tag filters (top 5 most used)
                 ForEach(topTags, id: \.self) { tag in
                     FilterChip(
-                        label: "#\(tag)",
+                        label: tag,
                         isSelected: selectedTagFilter == tag
                     ) {
                         if selectedTagFilter == tag {
@@ -373,12 +387,12 @@ struct FilterChip: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(.subheadline)
+                .font(SonderTypography.subheadline)
                 .fontWeight(.medium)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isSelected ? Color.accentColor : Color(.systemGray6))
-                .foregroundColor(isSelected ? .white : .primary)
+                .padding(.horizontal, SonderSpacing.sm)
+                .padding(.vertical, SonderSpacing.xs)
+                .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
+                .foregroundColor(isSelected ? .white : SonderColors.inkDark)
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -424,7 +438,7 @@ struct LogRow: View {
                 Text(log.rating.emoji)
                     .font(.system(size: 16))
                     .padding(2)
-                    .background(Color(.systemBackground))
+                    .background(SonderColors.cream)
                     .clipShape(Circle())
                     .offset(x: 4, y: 4)
             }
@@ -432,22 +446,23 @@ struct LogRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 // Place name
                 Text(place?.name ?? "Unknown Place")
-                    .font(.headline)
+                    .font(SonderTypography.headline)
+                    .foregroundColor(SonderColors.inkDark)
                     .lineLimit(1)
 
                 // Address
                 if let address = place?.address {
                     Text(address)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .font(SonderTypography.subheadline)
+                        .foregroundColor(SonderColors.inkMuted)
                         .lineLimit(1)
                 }
 
                 // Note preview
                 if let note = log.note, !note.isEmpty {
                     Text(note)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
                         .lineLimit(2)
                 }
 
@@ -455,14 +470,14 @@ struct LogRow: View {
                 HStack(spacing: 4) {
                     Text(log.createdAt.formatted(date: .abbreviated, time: .omitted))
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SonderColors.inkLight)
 
                     if let trip = trip {
                         Text("•")
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SonderColors.inkLight)
                         Text(trip.name)
                             .font(.caption2)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(SonderColors.terracotta)
                     }
                 }
             }
@@ -474,12 +489,18 @@ struct LogRow: View {
 
     private var photoPlaceholder: some View {
         Rectangle()
-            .fill(Color(.systemGray5))
+            .fill(
+                LinearGradient(
+                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .frame(width: 56, height: 56)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
             .overlay {
                 Image(systemName: "photo")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
             }
     }
 }
@@ -487,17 +508,18 @@ struct LogRow: View {
 struct ProfileView: View {
     @Environment(AuthenticationService.self) private var authService
     @Environment(SyncEngine.self) private var syncEngine
-    @Environment(PhotoService.self) private var photoService
     @Environment(SocialService.self) private var socialService
     @Environment(WantToGoService.self) private var wantToGoService
-    @Environment(\.modelContext) private var modelContext
     @Query private var allLogs: [Log]
     @Query private var places: [Place]
 
     @State private var showSettings = false
-    @State private var selectedPhotoItem: PhotosPickerItem?
-    @State private var isUploadingPhoto = false
+    @State private var showEditProfile = false
+    @State private var showShareProfile = false
     @State private var wantToGoCount = 0
+    @State private var mapCameraPosition: MapCameraPosition = .automatic
+
+    @Binding var selectedTab: Int
 
     /// Logs filtered to current user only
     private var logs: [Log] {
@@ -508,41 +530,56 @@ struct ProfileView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
-                    // Profile header
-                    profileHeader
+                VStack(spacing: 0) {
+                    // Hero Map
+                    heroMap
 
-                    // Social stats (followers/following)
-                    socialStatsSection
+                    VStack(spacing: SonderSpacing.lg) {
+                        // Profile header (avatar + username + bio)
+                        profileHeader
 
-                    // Stats grid
-                    statsGrid
+                        // Social stats (followers/following)
+                        socialStatsSection
 
-                    // Want to Go link
-                    wantToGoLink
+                        // Journey stats (only show if has logs)
+                        if !logs.isEmpty {
+                            journeyStatsSection
+                        }
 
-                    // Rating breakdown
-                    ratingBreakdown
-
-                    // Top tags
-                    if !topTags.isEmpty {
-                        topTagsSection
+                        // Want to Go link
+                        wantToGoLink
                     }
+                    .padding(SonderSpacing.md)
                 }
-                .padding()
             }
-            .navigationTitle("Profile")
+            .background(SonderColors.cream)
+            .scrollContentBackground(.hidden)
+            .navigationTitle("Your Journal")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showSettings = true
                     } label: {
                         Image(systemName: "gearshape")
+                            .foregroundColor(SonderColors.inkMuted)
                     }
                 }
             }
+            .tint(SonderColors.terracotta)
             .sheet(isPresented: $showSettings) {
                 SettingsView()
+            }
+            .sheet(isPresented: $showEditProfile) {
+                EditProfileView()
+            }
+            .sheet(isPresented: $showShareProfile) {
+                ShareProfileCardView(
+                    placesCount: logs.count,
+                    citiesCount: uniqueCities.count,
+                    countriesCount: uniqueCountries.count,
+                    topTags: topTagsForShare,
+                    mustSeeCount: logs.filter { $0.rating == .mustSee }.count
+                )
             }
             .refreshable {
                 await syncEngine.forceSyncNow()
@@ -561,7 +598,7 @@ struct ProfileView: View {
     // MARK: - Social Stats Section
 
     private var socialStatsSection: some View {
-        HStack(spacing: 40) {
+        HStack(spacing: SonderSpacing.xxl) {
             NavigationLink {
                 FollowListView(
                     userID: authService.currentUser?.id ?? "",
@@ -569,22 +606,27 @@ struct ProfileView: View {
                     initialTab: .followers
                 )
             } label: {
-                VStack(spacing: 4) {
+                VStack(spacing: SonderSpacing.xxs) {
                     if socialService.countsLoaded {
                         Text("\(socialService.followerCount)")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
+                            .font(SonderTypography.title)
+                            .foregroundColor(SonderColors.inkDark)
                     } else {
                         ProgressView()
+                            .tint(SonderColors.terracotta)
                             .frame(height: 28)
                     }
                     Text("Followers")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
                 }
             }
             .buttonStyle(.plain)
+
+            // Divider dot
+            Circle()
+                .fill(SonderColors.inkLight)
+                .frame(width: 4, height: 4)
 
             NavigationLink {
                 FollowListView(
@@ -593,19 +635,19 @@ struct ProfileView: View {
                     initialTab: .following
                 )
             } label: {
-                VStack(spacing: 4) {
+                VStack(spacing: SonderSpacing.xxs) {
                     if socialService.countsLoaded {
                         Text("\(socialService.followingCount)")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
+                            .font(SonderTypography.title)
+                            .foregroundColor(SonderColors.inkDark)
                     } else {
                         ProgressView()
+                            .tint(SonderColors.terracotta)
                             .frame(height: 28)
                     }
                     Text("Following")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
                 }
             }
             .buttonStyle(.plain)
@@ -618,24 +660,40 @@ struct ProfileView: View {
         NavigationLink {
             WantToGoListView()
         } label: {
-            HStack {
+            HStack(spacing: SonderSpacing.sm) {
+                // Bookmark icon with warm background
                 Image(systemName: "bookmark.fill")
-                    .foregroundColor(.accentColor)
-                Text("Want to Go")
-                    .fontWeight(.medium)
-                Spacer()
-                if wantToGoCount > 0 {
-                    Text("\(wantToGoCount)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    .font(.system(size: 16))
+                    .foregroundColor(SonderColors.terracotta)
+                    .frame(width: 36, height: 36)
+                    .background(SonderColors.terracotta.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Want to Go")
+                        .font(SonderTypography.headline)
+                        .foregroundColor(SonderColors.inkDark)
+
+                    if wantToGoCount > 0 {
+                        Text("\(wantToGoCount) saved")
+                            .font(SonderTypography.caption)
+                            .foregroundColor(SonderColors.inkMuted)
+                    } else {
+                        Text("Save places to visit later")
+                            .font(SonderTypography.caption)
+                            .foregroundColor(SonderColors.inkMuted)
+                    }
                 }
+
+                Spacer()
+
                 Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(SonderColors.inkLight)
             }
-            .padding()
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(SonderSpacing.md)
+            .background(SonderColors.warmGray)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
         }
         .buttonStyle(.plain)
         .task {
@@ -653,12 +711,129 @@ struct ProfileView: View {
         }
     }
 
+    // MARK: - Hero Map
+
+    private var heroMap: some View {
+        ZStack(alignment: .bottom) {
+            heroMapContent
+                .frame(height: 220)
+                .allowsHitTesting(false) // Disable map interaction, just visual
+
+            // Warm gradient overlay at bottom for text legibility
+            LinearGradient(
+                colors: [.clear, SonderColors.cream.opacity(0.9)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 80)
+
+            // Places count badge with tap to view map
+            HStack(spacing: SonderSpacing.xs) {
+                if logs.isEmpty {
+                    Image(systemName: "map")
+                        .foregroundColor(SonderColors.inkMuted)
+                    Text("Start your journey!")
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
+                } else {
+                    Image(systemName: "mappin.circle.fill")
+                        .foregroundColor(SonderColors.terracotta)
+                    Text("\(logs.count) places in your journal")
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkDark)
+
+                    Text("•")
+                        .foregroundColor(SonderColors.inkLight)
+
+                    Text("View map")
+                        .font(SonderTypography.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(SonderColors.terracotta)
+                }
+            }
+            .padding(.horizontal, SonderSpacing.sm)
+            .padding(.vertical, SonderSpacing.xs)
+            .background(SonderColors.cream.opacity(0.95))
+            .clipShape(Capsule())
+            .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+            .padding(.bottom, SonderSpacing.sm)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !logs.isEmpty {
+                selectedTab = 1 // Switch to Map tab
+            }
+        }
+        .onAppear {
+            updateMapRegion()
+        }
+    }
+
+    private var heroMapContent: some View {
+        Map(position: $mapCameraPosition) {
+            ForEach(userPlaces, id: \.id) { place in
+                if let log = logs.first(where: { $0.placeID == place.id }) {
+                    Annotation(place.name, coordinate: place.coordinate) {
+                        Circle()
+                            .fill(pinColor(for: log.rating))
+                            .frame(width: 12, height: 12)
+                            .overlay {
+                                Circle()
+                                    .stroke(Color.white, lineWidth: 2)
+                            }
+                            .shadow(radius: 2)
+                    }
+                }
+            }
+        }
+    }
+
+    private func updateMapRegion() {
+        guard !userPlaces.isEmpty else { return }
+
+        let coordinates = userPlaces.map { $0.coordinate }
+
+        let minLat = coordinates.map(\.latitude).min() ?? 0
+        let maxLat = coordinates.map(\.latitude).max() ?? 0
+        let minLng = coordinates.map(\.longitude).min() ?? 0
+        let maxLng = coordinates.map(\.longitude).max() ?? 0
+
+        let center = CLLocationCoordinate2D(
+            latitude: (minLat + maxLat) / 2,
+            longitude: (minLng + maxLng) / 2
+        )
+
+        let latDelta = max((maxLat - minLat) * 1.5, 0.05)
+        let lngDelta = max((maxLng - minLng) * 1.5, 0.05)
+
+        let region = MKCoordinateRegion(
+            center: center,
+            span: MKCoordinateSpan(latitudeDelta: latDelta, longitudeDelta: lngDelta)
+        )
+
+        mapCameraPosition = .region(region)
+    }
+
+    private func pinColor(for rating: Rating) -> Color {
+        switch rating {
+        case .skip: return SonderColors.ratingSkip
+        case .solid: return SonderColors.ratingSolid
+        case .mustSee: return SonderColors.ratingMustSee
+        }
+    }
+
     // MARK: - Profile Header
 
+    private var hasAvatarPhoto: Bool {
+        authService.currentUser?.avatarURL != nil
+    }
+
     private var profileHeader: some View {
-        VStack(spacing: 12) {
-            // Avatar (tappable to change)
-            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+        VStack(spacing: SonderSpacing.sm) {
+            // Avatar (tappable to edit profile)
+            Button {
+                showEditProfile = true
+            } label: {
                 ZStack {
                     if let urlString = authService.currentUser?.avatarURL,
                        let url = URL(string: urlString) {
@@ -666,7 +841,10 @@ struct ProfileView: View {
                             switch phase {
                             case .empty:
                                 avatarPlaceholder
-                                    .overlay { ProgressView() }
+                                    .overlay {
+                                        ProgressView()
+                                            .tint(SonderColors.terracotta)
+                                    }
                             case .success(let image):
                                 image
                                     .resizable()
@@ -677,207 +855,145 @@ struct ProfileView: View {
                                 avatarPlaceholder
                             }
                         }
+                        .id(urlString) // Force refresh when URL changes
                     } else {
                         avatarPlaceholder
                     }
-
-                    // Upload indicator
-                    if isUploadingPhoto {
-                        Color.black.opacity(0.5)
-                        ProgressView()
-                            .tint(.white)
-                    }
                 }
-                .frame(width: 80, height: 80)
+                .frame(width: 100, height: 100)
                 .clipShape(Circle())
+                .overlay {
+                    Circle()
+                        .stroke(SonderColors.cream, lineWidth: 4)
+                }
+                .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
                 .overlay(alignment: .bottomTrailing) {
-                    // Camera badge (outside clip)
-                    if !isUploadingPhoto {
+                    // Camera badge - only show when no photo
+                    if !hasAvatarPhoto {
                         Image(systemName: "camera.fill")
-                            .font(.system(size: 10))
+                            .font(.system(size: 12))
                             .foregroundColor(.white)
-                            .padding(5)
-                            .background(Color.accentColor)
+                            .padding(7)
+                            .background(SonderColors.terracotta)
                             .clipShape(Circle())
-                            .offset(x: 2, y: 2)
+                            .overlay {
+                                Circle()
+                                    .stroke(SonderColors.cream, lineWidth: 2)
+                            }
+                            .offset(x: 4, y: 4)
                     }
                 }
             }
-            .disabled(isUploadingPhoto)
+            .buttonStyle(.plain)
 
             // Username
             Text(authService.currentUser?.username ?? "User")
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(SonderTypography.largeTitle)
+                .foregroundColor(SonderColors.inkDark)
+
+            // Bio
+            if let bio = authService.currentUser?.bio, !bio.isEmpty {
+                Text(bio)
+                    .font(SonderTypography.body)
+                    .foregroundColor(SonderColors.inkMuted)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, SonderSpacing.lg)
+            }
 
             // Member since
             if let user = authService.currentUser {
-                Text("Exploring since \(user.createdAt.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                Text("Journaling since \(user.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkLight)
+            }
+
+            // Edit Profile & Share buttons
+            HStack(spacing: SonderSpacing.sm) {
+                Button {
+                    showEditProfile = true
+                } label: {
+                    HStack(spacing: SonderSpacing.xxs) {
+                        Image(systemName: "pencil")
+                        Text("Edit Profile")
+                    }
+                    .font(SonderTypography.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(SonderColors.inkDark)
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.vertical, SonderSpacing.xs)
+                    .background(SonderColors.warmGray)
+                    .clipShape(Capsule())
+                }
+
+                Button {
+                    showShareProfile = true
+                } label: {
+                    HStack(spacing: SonderSpacing.xxs) {
+                        Image(systemName: "square.and.arrow.up")
+                        Text("Share")
+                    }
+                    .font(SonderTypography.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(SonderColors.terracotta)
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.vertical, SonderSpacing.xs)
+                    .background(SonderColors.terracotta.opacity(0.12))
+                    .clipShape(Capsule())
+                }
             }
         }
-        .padding(.vertical)
-        .onChange(of: selectedPhotoItem) { _, newValue in
-            Task {
-                await uploadProfilePhoto(from: newValue)
-            }
-        }
+        .padding(.vertical, SonderSpacing.sm)
     }
 
     private var avatarPlaceholder: some View {
         Circle()
-            .fill(Color.accentColor.opacity(0.2))
+            .fill(
+                LinearGradient(
+                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .overlay {
                 Text(authService.currentUser?.username.prefix(1).uppercased() ?? "?")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(.accentColor)
+                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .foregroundColor(SonderColors.terracotta)
             }
     }
 
-    private func uploadProfilePhoto(from item: PhotosPickerItem?) async {
-        guard let item = item,
-              let user = authService.currentUser else { return }
+    // MARK: - Journey Stats Section
 
-        await MainActor.run { isUploadingPhoto = true }
+    private var journeyStatsSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            Text("Your journey so far")
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
 
-        do {
-            if let data = try await item.loadTransferable(type: Data.self),
-               let image = UIImage(data: data) {
-                // Upload to Supabase
-                if let photoURL = await photoService.uploadPhoto(image, for: user.id) {
-                    // Update user's avatar URL
-                    user.avatarURL = photoURL
-                    user.updatedAt = Date()
+            HStack(spacing: SonderSpacing.sm) {
+                JourneyStatCard(
+                    value: "\(logs.count)",
+                    label: "Places",
+                    icon: "mappin.circle.fill",
+                    color: SonderColors.terracotta
+                )
 
-                    try modelContext.save()
+                JourneyStatCard(
+                    value: "\(uniqueCities.count)",
+                    label: "Cities",
+                    icon: "building.2.fill",
+                    color: SonderColors.sage
+                )
 
-                    // Sync to Supabase
-                    await syncEngine.syncNow()
-
-                    // Haptic feedback
-                    let feedback = UINotificationFeedbackGenerator()
-                    feedback.notificationOccurred(.success)
-                }
-            }
-        } catch {
-            print("Failed to upload profile photo: \(error)")
-        }
-
-        await MainActor.run {
-            isUploadingPhoto = false
-            selectedPhotoItem = nil
-        }
-    }
-
-    // MARK: - Stats Grid
-
-    private var statsGrid: some View {
-        LazyVGrid(columns: [
-            GridItem(.flexible()),
-            GridItem(.flexible()),
-            GridItem(.flexible())
-        ], spacing: 16) {
-            StatCard(
-                value: "\(logs.count)",
-                label: "Places",
-                icon: "mappin.circle.fill",
-                color: .blue
-            )
-
-            StatCard(
-                value: "\(uniqueCities.count)",
-                label: "Cities",
-                icon: "building.2.fill",
-                color: .purple
-            )
-
-            StatCard(
-                value: "\(uniqueCountries.count)",
-                label: "Countries",
-                icon: "globe.americas.fill",
-                color: .green
-            )
-        }
-    }
-
-    // MARK: - Rating Breakdown
-
-    private var ratingBreakdown: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Rating Breakdown")
-                .font(.headline)
-
-            VStack(spacing: 8) {
-                ForEach(Rating.allCases, id: \.self) { rating in
-                    let count = logs.filter { $0.rating == rating }.count
-                    let percentage = logs.isEmpty ? 0 : Double(count) / Double(logs.count)
-
-                    HStack {
-                        Text(rating.emoji)
-                            .font(.title3)
-
-                        Text(rating.displayName)
-                            .font(.subheadline)
-
-                        Spacer()
-
-                        Text("\(count)")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                    }
-
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color(.systemGray5))
-
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(ratingColor(for: rating))
-                                .frame(width: geometry.size.width * percentage)
-                        }
-                    }
-                    .frame(height: 8)
-                }
+                JourneyStatCard(
+                    value: "\(uniqueCountries.count)",
+                    label: "Countries",
+                    icon: "globe.americas.fill",
+                    color: SonderColors.warmBlue
+                )
             }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    private func ratingColor(for rating: Rating) -> Color {
-        switch rating {
-        case .skip: return .gray
-        case .solid: return .blue
-        case .mustSee: return .orange
-        }
-    }
-
-    // MARK: - Top Tags
-
-    private var topTagsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Top Tags")
-                .font(.headline)
-
-            FlowLayoutTags(tags: topTags)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var topTags: [String] {
-        let allTags = logs.flatMap { $0.tags }
-        let tagCounts = Dictionary(grouping: allTags, by: { $0 })
-            .mapValues { $0.count }
-            .sorted { $0.value > $1.value }
-
-        return Array(tagCounts.prefix(10).map { $0.key })
     }
 
     // MARK: - Computed Stats
@@ -894,6 +1010,15 @@ struct ProfileView: View {
 
     private var uniqueCountries: Set<String> {
         Set(userPlaces.compactMap { extractCountry(from: $0.address) })
+    }
+
+    /// Top tags for the share card
+    private var topTagsForShare: [String] {
+        let allTags = logs.flatMap { $0.tags }
+        let tagCounts = Dictionary(grouping: allTags, by: { $0 })
+            .mapValues { $0.count }
+            .sorted { $0.value > $1.value }
+        return Array(tagCounts.prefix(4).map { $0.key })
     }
 
     private func extractCity(from address: String) -> String? {
@@ -920,7 +1045,60 @@ struct ProfileView: View {
     }
 }
 
-// MARK: - Stat Card
+// MARK: - Journey Stat Card (Warm Style)
+
+struct JourneyStatCard: View {
+    let value: String
+    let label: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: SonderSpacing.xs) {
+            // Icon with warm background
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundColor(color)
+                .frame(width: 40, height: 40)
+                .background(color.opacity(0.15))
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+
+            Text(value)
+                .font(SonderTypography.title)
+                .foregroundColor(SonderColors.inkDark)
+
+            Text(label)
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkMuted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, SonderSpacing.md)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+    }
+}
+
+// MARK: - Warm Flow Layout Tags
+
+struct WarmFlowLayoutTags: View {
+    let tags: [String]
+
+    var body: some View {
+        FlowLayoutWrapper {
+            ForEach(tags, id: \.self) { tag in
+                Text(tag)
+                    .font(SonderTypography.subheadline)
+                    .padding(.horizontal, SonderSpacing.sm)
+                    .padding(.vertical, SonderSpacing.xs)
+                    .background(SonderColors.terracotta.opacity(0.12))
+                    .foregroundColor(SonderColors.terracotta)
+                    .clipShape(Capsule())
+            }
+        }
+    }
+}
+
+// MARK: - Stat Card (Legacy - keeping for compatibility)
 
 struct StatCard: View {
     let value: String
@@ -955,12 +1133,14 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthenticationService.self) private var authService
     @Environment(SyncEngine.self) private var syncEngine
+    @Environment(ProximityNotificationService.self) private var proximityService
     @Environment(\.modelContext) private var modelContext
 
     @State private var showSignOutAlert = false
     @State private var showClearCacheAlert = false
     @State private var showEditEmailAlert = false
     @State private var editedEmail = ""
+    @State private var proximityAlertsEnabled = false
 
     var body: some View {
         NavigationStack {
@@ -983,6 +1163,26 @@ struct SettingsView: View {
                             }
                         }
                     }
+                }
+
+                // Notifications section
+                Section {
+                    Toggle(isOn: $proximityAlertsEnabled) {
+                        Label("Nearby Place Alerts", systemImage: "location.fill")
+                    }
+                    .onChange(of: proximityAlertsEnabled) { _, newValue in
+                        Task {
+                            if newValue {
+                                await proximityService.startMonitoring()
+                            } else {
+                                proximityService.stopMonitoring()
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Notifications")
+                } footer: {
+                    Text("Get notified when you're near a place on your Want to Go list")
                 }
 
                 // Privacy section
@@ -1065,6 +1265,9 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("Enter your email address")
+            }
+            .onAppear {
+                proximityAlertsEnabled = proximityService.isMonitoring
             }
         }
     }

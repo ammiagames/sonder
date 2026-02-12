@@ -22,18 +22,29 @@ struct FeedView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
+            Group {
                 if feedService.feedItems.isEmpty && !feedService.isLoading {
-                    emptyState
+                    ScrollView {
+                        emptyState
+                            .frame(maxWidth: .infinity, minHeight: 400)
+                    }
+                    .refreshable {
+                        if let userID = authService.currentUser?.id {
+                            await feedService.refreshFeed(for: userID)
+                        }
+                    }
                 } else {
                     feedContent
                 }
             }
+            .background(SonderColors.cream)
+            .scrollContentBackground(.hidden)
             .navigationTitle("Feed")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if syncEngine.isSyncing || feedService.isLoading {
                         ProgressView()
+                            .tint(SonderColors.terracotta)
                     }
                 }
 
@@ -42,6 +53,7 @@ struct FeedView: View {
                         showUserSearch = true
                     } label: {
                         Image(systemName: "magnifyingglass")
+                            .foregroundColor(SonderColors.inkMuted)
                     }
                 }
             }
@@ -63,25 +75,42 @@ struct FeedView: View {
     // MARK: - Empty State
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No Posts Yet", systemImage: "person.2")
-        } description: {
+        VStack(spacing: SonderSpacing.md) {
+            Image(systemName: "person.2")
+                .font(.system(size: 48))
+                .foregroundColor(SonderColors.inkLight)
+
+            Text("No Posts Yet")
+                .font(SonderTypography.title)
+                .foregroundColor(SonderColors.inkDark)
+
             Text("Follow friends to see their logs here")
-        } actions: {
+                .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkMuted)
+                .multilineTextAlignment(.center)
+
             Button {
                 showUserSearch = true
             } label: {
                 Text("Find Friends")
+                    .font(SonderTypography.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, SonderSpacing.lg)
+                    .padding(.vertical, SonderSpacing.sm)
+                    .background(SonderColors.terracotta)
+                    .clipShape(Capsule())
             }
-            .buttonStyle(.borderedProminent)
+            .padding(.top, SonderSpacing.sm)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, SonderSpacing.xxl)
     }
 
     // MARK: - Feed Content
 
     private var feedContent: some View {
         ScrollView {
-            LazyVStack(spacing: 16) {
+            LazyVStack(spacing: SonderSpacing.md) {
                 // Network status banner
                 if !syncEngine.isOnline {
                     offlineBanner
@@ -122,11 +151,13 @@ struct FeedView: View {
                 // Loading indicator at bottom
                 if feedService.isLoading && !feedService.feedItems.isEmpty {
                     ProgressView()
+                        .tint(SonderColors.terracotta)
                         .padding()
                 }
             }
-            .padding()
+            .padding(SonderSpacing.md)
         }
+        .background(SonderColors.cream)
         .refreshable {
             if let userID = authService.currentUser?.id {
                 await feedService.refreshFeed(for: userID)
@@ -135,16 +166,17 @@ struct FeedView: View {
     }
 
     private var offlineBanner: some View {
-        HStack {
+        HStack(spacing: SonderSpacing.sm) {
             Image(systemName: "wifi.slash")
+                .font(.system(size: 16, weight: .medium))
             Text("You're offline. Changes will sync when connected.")
-                .font(.subheadline)
+                .font(SonderTypography.caption)
             Spacer()
         }
-        .padding()
-        .background(Color.orange.opacity(0.15))
-        .foregroundColor(.orange)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(SonderSpacing.md)
+        .background(SonderColors.ochre.opacity(0.15))
+        .foregroundColor(SonderColors.ochre)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
     }
 
     private var newPostsBanner: some View {
@@ -155,17 +187,19 @@ struct FeedView: View {
                 }
             }
         } label: {
-            HStack {
+            HStack(spacing: SonderSpacing.xs) {
                 Image(systemName: "arrow.up")
+                    .font(.system(size: 12, weight: .semibold))
                 Text("New posts available")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                    .font(SonderTypography.caption)
+                    .fontWeight(.semibold)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Color.accentColor)
+            .padding(.horizontal, SonderSpacing.md)
+            .padding(.vertical, SonderSpacing.sm)
+            .background(SonderColors.terracotta)
             .foregroundColor(.white)
             .clipShape(Capsule())
+            .shadow(color: SonderColors.terracotta.opacity(0.3), radius: 8, y: 4)
         }
     }
 
@@ -199,6 +233,9 @@ struct FeedView: View {
                 try await wantToGoService.toggleWantToGo(
                     placeID: item.place.id,
                     userID: userID,
+                    placeName: item.place.name,
+                    placeAddress: item.place.address,
+                    photoReference: item.place.photoReference,
                     sourceLogID: item.log.id
                 )
 
@@ -228,34 +265,36 @@ struct FeedLogDetailView: View {
                 photoSection
 
                 // Content
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: SonderSpacing.lg) {
                     // Place info
                     placeSection
 
-                    Divider()
+                    sectionDivider
 
                     // Rating
                     ratingSection
 
                     // Note
                     if let note = feedItem.log.note, !note.isEmpty {
-                        Divider()
+                        sectionDivider
                         noteSection(note)
                     }
 
                     // Tags
                     if !feedItem.log.tags.isEmpty {
-                        Divider()
+                        sectionDivider
                         tagsSection
                     }
 
                     // Meta
-                    Divider()
+                    sectionDivider
                     metaSection
                 }
-                .padding()
+                .padding(SonderSpacing.lg)
             }
         }
+        .background(SonderColors.cream)
+        .scrollContentBackground(.hidden)
         .navigationTitle(feedItem.place.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -266,6 +305,12 @@ struct FeedLogDetailView: View {
                 )
             }
         }
+    }
+
+    private var sectionDivider: some View {
+        Rectangle()
+            .fill(SonderColors.warmGray)
+            .frame(height: 1)
     }
 
     private var photoSection: some View {
@@ -312,22 +357,29 @@ struct FeedLogDetailView: View {
 
     private var photoPlaceholder: some View {
         Rectangle()
-            .fill(Color(.systemGray5))
+            .fill(
+                LinearGradient(
+                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .overlay {
                 Image(systemName: "photo")
                     .font(.largeTitle)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
             }
     }
 
     private var placeSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            HStack(spacing: SonderSpacing.xs) {
                 Image(systemName: "mappin")
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundColor(SonderColors.inkMuted)
                 Text(feedItem.place.address)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
             }
         }
     }
@@ -335,51 +387,60 @@ struct FeedLogDetailView: View {
     private var ratingSection: some View {
         HStack {
             Text("Rating")
-                .font(.headline)
+                .font(SonderTypography.headline)
+                .foregroundColor(SonderColors.inkDark)
             Spacer()
-            HStack(spacing: 8) {
+            HStack(spacing: SonderSpacing.xs) {
                 Text(feedItem.rating.emoji)
                     .font(.title2)
                 Text(feedItem.rating.displayName)
-                    .foregroundColor(.secondary)
+                    .font(SonderTypography.body)
+                    .foregroundColor(SonderColors.inkMuted)
             }
         }
     }
 
     private func noteSection(_ note: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Note")
-                .font(.headline)
+                .font(SonderTypography.headline)
+                .foregroundColor(SonderColors.inkDark)
             Text(note)
-                .foregroundColor(.secondary)
+                .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkMuted)
         }
     }
 
     private var tagsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Tags")
-                .font(.headline)
+                .font(SonderTypography.headline)
+                .foregroundColor(SonderColors.inkDark)
             FlowLayoutTags(tags: feedItem.log.tags)
         }
     }
 
     private var metaSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             HStack {
                 Text("Logged by")
-                    .foregroundColor(.secondary)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
                 Spacer()
                 Text("@\(feedItem.user.username)")
+                    .font(SonderTypography.body)
+                    .foregroundColor(SonderColors.terracotta)
             }
-            .font(.subheadline)
 
             HStack {
                 Text("Date")
-                    .foregroundColor(.secondary)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
                 Spacer()
                 Text(feedItem.createdAt.formatted(date: .long, time: .omitted))
+                    .font(SonderTypography.body)
+                    .foregroundColor(SonderColors.inkDark)
             }
-            .font(.subheadline)
         }
     }
 }

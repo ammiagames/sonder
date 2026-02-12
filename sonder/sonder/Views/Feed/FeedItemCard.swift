@@ -15,13 +15,19 @@ struct FeedItemCard: View {
     let onPlaceTap: () -> Void
     let onWantToGoTap: () -> Void
 
+    private var hasPhoto: Bool {
+        feedItem.log.photoURL != nil || feedItem.place.photoReference != nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header: User info
             userHeader
 
-            // Photo
-            photoSection
+            // Photo (only if available)
+            if hasPhoto {
+                photoSection
+            }
 
             // Content: Place name, rating, note
             contentSection
@@ -29,16 +35,16 @@ struct FeedItemCard: View {
             // Footer: Date and Want to Go button
             footerSection
         }
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+        .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
     }
 
     // MARK: - User Header
 
     private var userHeader: some View {
         Button(action: onUserTap) {
-            HStack(spacing: 10) {
+            HStack(spacing: SonderSpacing.sm) {
                 // Avatar
                 if let urlString = feedItem.user.avatarURL,
                    let url = URL(string: urlString) {
@@ -60,27 +66,31 @@ struct FeedItemCard: View {
 
                 // Username
                 Text(feedItem.user.username)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                    .font(SonderTypography.headline)
+                    .foregroundColor(SonderColors.inkDark)
 
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, SonderSpacing.md)
+            .padding(.vertical, SonderSpacing.sm)
         }
         .buttonStyle(.plain)
     }
 
     private var avatarPlaceholder: some View {
         Circle()
-            .fill(Color.accentColor.opacity(0.2))
+            .fill(
+                LinearGradient(
+                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .frame(width: 36, height: 36)
             .overlay {
                 Text(feedItem.user.username.prefix(1).uppercased())
-                    .font(.subheadline)
-                    .fontWeight(.bold)
-                    .foregroundColor(.accentColor)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(SonderColors.terracotta)
             }
     }
 
@@ -135,28 +145,35 @@ struct FeedItemCard: View {
 
     private var photoPlaceholder: some View {
         Rectangle()
-            .fill(Color(.systemGray5))
+            .fill(
+                LinearGradient(
+                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .overlay {
                 Image(systemName: "photo")
                     .font(.largeTitle)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
             }
     }
 
     // MARK: - Content Section
 
     private var contentSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             // Place name and rating
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                     Text(feedItem.place.name)
-                        .font(.headline)
+                        .font(SonderTypography.headline)
+                        .foregroundColor(SonderColors.inkDark)
                         .lineLimit(2)
 
                     Text(feedItem.place.address)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
                         .lineLimit(1)
                 }
 
@@ -170,30 +187,30 @@ struct FeedItemCard: View {
             // Note
             if let note = feedItem.log.note, !note.isEmpty {
                 Text(note)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(SonderTypography.body)
+                    .foregroundColor(SonderColors.inkMuted)
                     .lineLimit(3)
             }
 
             // Tags
             if !feedItem.log.tags.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: SonderSpacing.xxs) {
                         ForEach(feedItem.log.tags, id: \.self) { tag in
-                            Text("#\(tag)")
-                                .font(.caption)
-                                .foregroundColor(.accentColor)
-                                .padding(.horizontal, 8)
+                            Text(tag)
+                                .font(SonderTypography.caption)
+                                .foregroundColor(SonderColors.terracotta)
+                                .padding(.horizontal, SonderSpacing.xs)
                                 .padding(.vertical, 4)
-                                .background(Color.accentColor.opacity(0.1))
+                                .background(SonderColors.terracotta.opacity(0.1))
                                 .clipShape(Capsule())
                         }
                     }
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
+        .padding(.horizontal, SonderSpacing.md)
+        .padding(.top, SonderSpacing.md)
     }
 
     // MARK: - Footer Section
@@ -202,8 +219,8 @@ struct FeedItemCard: View {
         HStack {
             // Date
             Text(feedItem.createdAt.formatted(date: .abbreviated, time: .omitted))
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkLight)
 
             Spacer()
 
@@ -211,12 +228,12 @@ struct FeedItemCard: View {
             Button(action: onWantToGoTap) {
                 Image(systemName: isWantToGo ? "bookmark.fill" : "bookmark")
                     .font(.system(size: 18))
-                    .foregroundColor(isWantToGo ? .accentColor : .secondary)
+                    .foregroundColor(isWantToGo ? SonderColors.terracotta : SonderColors.inkLight)
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
+        .padding(.horizontal, SonderSpacing.md)
+        .padding(.vertical, SonderSpacing.md)
     }
 }
 

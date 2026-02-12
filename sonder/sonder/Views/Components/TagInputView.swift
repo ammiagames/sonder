@@ -14,16 +14,16 @@ struct TagInputView: View {
     @FocusState private var isInputFocused: Bool
 
     private let suggestedTags = [
-        "#food", "#coffee", "#bar", "#restaurant",
-        "#hike", "#viewpoint", "#museum", "#beach",
-        "#hotel", "#shopping"
+        "food", "coffee", "bar", "restaurant",
+        "hike", "viewpoint", "museum", "beach",
+        "hotel", "shopping"
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             // Selected tags
             if !selectedTags.isEmpty {
-                FlowLayout(spacing: 8) {
+                FlowLayout(spacing: SonderSpacing.xs) {
                     ForEach(selectedTags, id: \.self) { tag in
                         TagChip(tag: tag, isSelected: true) {
                             withAnimation(.spring(response: 0.3)) {
@@ -37,6 +37,7 @@ struct TagInputView: View {
             // Input field
             HStack {
                 TextField("Add a tag...", text: $inputText)
+                    .font(SonderTypography.body)
                     .textFieldStyle(.plain)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -48,22 +49,22 @@ struct TagInputView: View {
                 if !inputText.isEmpty {
                     Button(action: addCustomTag) {
                         Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(SonderColors.terracotta)
                     }
                 }
             }
-            .padding(12)
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(SonderSpacing.sm)
+            .background(SonderColors.warmGray)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
 
             // Suggested tags
             if selectedTags.count < 5 {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: SonderSpacing.xs) {
                     Text("Suggestions")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
 
-                    FlowLayout(spacing: 8) {
+                    FlowLayout(spacing: SonderSpacing.xs) {
                         ForEach(availableSuggestions, id: \.self) { tag in
                             TagChip(tag: tag, isSelected: false) {
                                 addTag(tag)
@@ -80,13 +81,15 @@ struct TagInputView: View {
     }
 
     private func addCustomTag() {
-        let tag = inputText.trimmingCharacters(in: .whitespaces)
+        var tag = inputText.trimmingCharacters(in: .whitespaces)
         guard !tag.isEmpty else { return }
 
-        // Ensure tag starts with #
-        let formattedTag = tag.hasPrefix("#") ? tag : "#\(tag)"
+        // Remove # if user typed it
+        if tag.hasPrefix("#") {
+            tag = String(tag.dropFirst())
+        }
 
-        addTag(formattedTag)
+        addTag(tag)
         inputText = ""
     }
 
@@ -110,19 +113,19 @@ struct TagChip: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
+            HStack(spacing: SonderSpacing.xxs) {
                 Text(tag)
-                    .font(.subheadline)
+                    .font(SonderTypography.caption)
 
                 if isSelected {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .bold))
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(isSelected ? Color.accentColor : Color(.systemGray5))
-            .foregroundColor(isSelected ? .white : .primary)
+            .padding(.horizontal, SonderSpacing.sm)
+            .padding(.vertical, SonderSpacing.xxs)
+            .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
+            .foregroundColor(isSelected ? .white : SonderColors.inkDark)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -183,7 +186,7 @@ struct FlowLayout: Layout {
 
 #Preview {
     struct PreviewWrapper: View {
-        @State private var tags: [String] = ["#food", "#coffee"]
+        @State private var tags: [String] = ["food", "coffee"]
 
         var body: some View {
             TagInputView(selectedTags: $tags)
