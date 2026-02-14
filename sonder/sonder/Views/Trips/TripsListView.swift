@@ -88,7 +88,9 @@ struct TripsListView: View {
             }
             .navigationDestination(item: $selectedLog) { log in
                 if let place = places.first(where: { $0.id == log.placeID }) {
-                    LogDetailView(log: log, place: place)
+                    LogDetailView(log: log, place: place, onDelete: {
+                        selectedLog = nil
+                    })
                 }
             }
             .sheet(isPresented: $showInvitations) {
@@ -368,15 +370,8 @@ struct LogListRow: View {
     @ViewBuilder
     private var photoView: some View {
         if let urlString = log.photoURL, let url = URL(string: urlString) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    placePhotoView
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 60, height: 60)) {
+                placePhotoView
             }
         } else {
             placePhotoView
@@ -387,15 +382,8 @@ struct LogListRow: View {
     private var placePhotoView: some View {
         if let photoRef = place.photoReference,
            let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 200) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    photoPlaceholder
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 60, height: 60)) {
+                photoPlaceholder
             }
         } else {
             photoPlaceholder

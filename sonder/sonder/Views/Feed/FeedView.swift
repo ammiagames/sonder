@@ -8,7 +8,7 @@
 import SwiftUI
 import SwiftData
 
-/// Main feed showing logs from followed users in chronological order
+/// Main feed showing trips and standalone logs from followed users
 struct FeedView: View {
     @Environment(AuthenticationService.self) private var authService
     @Environment(SyncEngine.self) private var syncEngine
@@ -19,11 +19,12 @@ struct FeedView: View {
     @State private var showUserSearch = false
     @State private var selectedUserID: String?
     @State private var selectedFeedItem: FeedItem?
+    @State private var selectedTripID: String?
 
     var body: some View {
         NavigationStack {
             Group {
-                if feedService.feedItems.isEmpty && !feedService.isLoading {
+                if feedService.feedEntries.isEmpty && !feedService.isLoading {
                     ScrollView {
                         emptyState
                             .frame(maxWidth: .infinity, minHeight: 400)
@@ -38,8 +39,8 @@ struct FeedView: View {
                 }
             }
             .background(SonderColors.cream)
-            .scrollContentBackground(.hidden)
             .navigationTitle("Feed")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if syncEngine.isSyncing || feedService.isLoading {
@@ -65,6 +66,9 @@ struct FeedView: View {
             }
             .navigationDestination(item: $selectedFeedItem) { feedItem in
                 FeedLogDetailView(feedItem: feedItem)
+            }
+            .navigationDestination(item: $selectedTripID) { tripID in
+                FeedTripDestination(tripID: tripID)
             }
             .task {
                 await loadInitialData()
@@ -111,45 +115,44 @@ struct FeedView: View {
     private var feedContent: some View {
         ScrollView {
             LazyVStack(spacing: SonderSpacing.md) {
-                // Network status banner
                 if !syncEngine.isOnline {
                     offlineBanner
                 }
 
-                // New posts banner
                 if feedService.newPostsAvailable {
                     newPostsBanner
                 }
 
-                // Feed items
-                ForEach(feedService.feedItems) { item in
-                    FeedItemCard(
-                        feedItem: item,
-                        isWantToGo: isWantToGo(placeID: item.place.id),
-                        onUserTap: {
-                            selectedUserID = item.user.id
-                        },
-                        onPlaceTap: {
-                            selectedFeedItem = item
-                        },
-                        onWantToGoTap: {
-                            toggleWantToGo(for: item)
-                        }
-                    )
-                    .onAppear {
-                        // Infinite scroll: load more when approaching end
-                        if item.id == feedService.feedItems.last?.id {
-                            Task {
-                                if let userID = authService.currentUser?.id {
-                                    await feedService.loadMoreFeed(for: userID)
-                                }
+                ForEach(feedService.feedEntries) { entry in
+                    switch entry {
+                    case .trip(let tripItem):
+                        TripFeedCard(
+                            tripItem: tripItem,
+                            onUserTap: {
+                                selectedUserID = tripItem.user.id
+                            },
+                            onTripTap: {
+                                selectedTripID = tripItem.id
                             }
-                        }
+                        )
+                    case .log(let feedItem):
+                        FeedItemCard(
+                            feedItem: feedItem,
+                            isWantToGo: isWantToGo(placeID: feedItem.place.id),
+                            onUserTap: {
+                                selectedUserID = feedItem.user.id
+                            },
+                            onPlaceTap: {
+                                selectedFeedItem = feedItem
+                            },
+                            onWantToGoTap: {
+                                toggleWantToGo(for: feedItem)
+                            }
+                        )
                     }
                 }
 
-                // Loading indicator at bottom
-                if feedService.isLoading && !feedService.feedItems.isEmpty {
+                if feedService.isLoading && !feedService.feedEntries.isEmpty {
                     ProgressView()
                         .tint(SonderColors.terracotta)
                         .padding()
@@ -207,14 +210,8 @@ struct FeedView: View {
 
     private func loadInitialData() async {
         guard let userID = authService.currentUser?.id else { return }
-
-        // Load feed
         await feedService.loadFeed(for: userID)
-
-        // Sync want-to-go list
         await wantToGoService.syncWantToGo(for: userID)
-
-        // Subscribe to realtime updates
         await feedService.subscribeToRealtimeUpdates(for: userID)
     }
 
@@ -239,12 +236,37 @@ struct FeedView: View {
                     sourceLogID: item.log.id
                 )
 
-                // Haptic feedback
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
             } catch {
                 print("Error toggling want to go: \(error)")
             }
+        }
+    }
+}
+
+// MARK: - Trip Navigation Destination
+
+/// Fetches a Trip by ID from SwiftData and shows TripDetailView
+struct FeedTripDestination: View {
+    let tripID: String
+    @Environment(\.modelContext) private var modelContext
+    @State private var trip: Trip?
+
+    var body: some View {
+        Group {
+            if let trip {
+                TripDetailView(trip: trip)
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(SonderColors.cream)
+            }
+        }
+        .task {
+            let id = tripID
+            let descriptor = FetchDescriptor<Trip>(predicate: #Predicate { $0.id == id })
+            trip = try? modelContext.fetch(descriptor).first
         }
     }
 }
@@ -261,32 +283,23 @@ struct FeedLogDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // Hero photo
                 photoSection
 
-                // Content
                 VStack(alignment: .leading, spacing: SonderSpacing.lg) {
-                    // Place info
                     placeSection
-
                     sectionDivider
-
-                    // Rating
                     ratingSection
 
-                    // Note
                     if let note = feedItem.log.note, !note.isEmpty {
                         sectionDivider
                         noteSection(note)
                     }
 
-                    // Tags
                     if !feedItem.log.tags.isEmpty {
                         sectionDivider
                         tagsSection
                     }
 
-                    // Meta
                     sectionDivider
                     metaSection
                 }
@@ -317,15 +330,8 @@ struct FeedLogDetailView: View {
         Group {
             if let urlString = feedItem.log.photoURL,
                let url = URL(string: urlString) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        placePhoto
-                    }
+                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 250)) {
+                    placePhoto
                 }
             } else {
                 placePhoto
@@ -340,15 +346,8 @@ struct FeedLogDetailView: View {
     private var placePhoto: some View {
         if let photoRef = feedItem.place.photoReference,
            let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 800) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    photoPlaceholder
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 250)) {
+                photoPlaceholder
             }
         } else {
             photoPlaceholder
@@ -427,9 +426,11 @@ struct FeedLogDetailView: View {
                     .font(SonderTypography.caption)
                     .foregroundColor(SonderColors.inkMuted)
                 Spacer()
-                Text("@\(feedItem.user.username)")
-                    .font(SonderTypography.body)
-                    .foregroundColor(SonderColors.terracotta)
+                NavigationLink(destination: OtherUserProfileView(userID: feedItem.user.id)) {
+                    Text("@\(feedItem.user.username)")
+                        .font(SonderTypography.body)
+                        .foregroundColor(SonderColors.terracotta)
+                }
             }
 
             HStack {

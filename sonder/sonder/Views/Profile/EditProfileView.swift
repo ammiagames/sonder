@@ -86,15 +86,8 @@ struct EditProfileView: View {
                             .scaledToFill()
                     } else if let urlString = authService.currentUser?.avatarURL,
                               let url = URL(string: urlString) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                            default:
-                                avatarPlaceholder
-                            }
+                        DownsampledAsyncImage(url: url, targetSize: CGSize(width: 100, height: 100)) {
+                            avatarPlaceholder
                         }
                     } else {
                         avatarPlaceholder

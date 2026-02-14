@@ -14,51 +14,75 @@ struct RatePlaceView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AuthenticationService.self) private var authService
     @Environment(SyncEngine.self) private var syncEngine
+    @Environment(WantToGoService.self) private var wantToGoService
 
     let place: Place
     let onLogComplete: () -> Void
 
     @State private var selectedRating: Rating?
+    @State private var selectedTrip: Trip?
     @State private var showAddDetails = false
     @State private var showConfirmation = false
+    @State private var showNewTripAlert = false
+    @State private var newTripName = ""
     @State private var isSaving = false
 
+    @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
+    @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
+
+    /// Trips the user can add logs to (owned + collaborating),
+    /// sorted by most recently used (latest log added), then by creation date.
+    private var availableTrips: [Trip] {
+        guard let userID = authService.currentUser?.id else { return [] }
+        let accessible = allTrips.filter { trip in
+            trip.createdBy == userID || trip.collaboratorIDs.contains(userID)
+        }
+        // Build a map of trip ID → latest log date
+        let latestLogByTrip: [String: Date] = allLogs.reduce(into: [:]) { map, log in
+            guard let tripID = log.tripID else { return }
+            if map[tripID] == nil || log.createdAt > map[tripID]! {
+                map[tripID] = log.createdAt
+            }
+        }
+        return accessible.sorted { a, b in
+            let aDate = latestLogByTrip[a.id] ?? a.createdAt
+            let bDate = latestLogByTrip[b.id] ?? b.createdAt
+            return aDate > bDate
+        }
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            // Place header
-            placeHeader
-                .padding(SonderSpacing.md)
+        ScrollView {
+            VStack(spacing: 0) {
+                // Place header
+                placeHeader
+                    .padding(SonderSpacing.md)
 
-            sectionDivider
+                sectionDivider
 
-            // Rating buttons
-            ScrollView {
-                VStack(spacing: SonderSpacing.md) {
+                // Rating section
+                VStack(spacing: SonderSpacing.lg) {
                     Text("How was it?")
                         .font(SonderTypography.title)
                         .foregroundColor(SonderColors.inkDark)
-                        .padding(.top, SonderSpacing.md)
+                        .padding(.top, SonderSpacing.lg)
 
-                    // Rating options
-                    VStack(spacing: SonderSpacing.sm) {
-                        RatingButton(rating: .skip, isSelected: selectedRating == .skip) {
-                            selectedRating = .skip
-                        }
-
-                        RatingButton(rating: .solid, isSelected: selectedRating == .solid) {
-                            selectedRating = .solid
-                        }
-
-                        RatingButton(rating: .mustSee, isSelected: selectedRating == .mustSee) {
-                            selectedRating = .mustSee
+                    // Rating circles
+                    HStack(spacing: SonderSpacing.lg) {
+                        ForEach(Rating.allCases, id: \.self) { rating in
+                            ratingCircle(rating)
                         }
                     }
                     .padding(.horizontal, SonderSpacing.md)
                 }
+
+                // Trip section
+                tripSection
+                    .padding(.top, SonderSpacing.xl)
             }
-
-            sectionDivider
-
+        }
+        .scrollContentBackground(.hidden)
+        .safeAreaInset(edge: .bottom) {
             // Action buttons
             VStack(spacing: SonderSpacing.sm) {
                 // Quick save button
@@ -93,6 +117,7 @@ struct RatePlaceView: View {
                 .disabled(selectedRating == nil)
             }
             .padding(SonderSpacing.md)
+            .background(SonderColors.cream)
         }
         .background(SonderColors.cream)
         .navigationTitle("Rate Place")
@@ -107,7 +132,12 @@ struct RatePlaceView: View {
         }
         .navigationDestination(isPresented: $showAddDetails) {
             if let rating = selectedRating {
-                AddDetailsView(place: place, rating: rating, onLogComplete: onLogComplete)
+                AddDetailsView(
+                    place: place,
+                    rating: rating,
+                    initialTrip: selectedTrip,
+                    onLogComplete: onLogComplete
+                )
             }
         }
         .fullScreenCover(isPresented: $showConfirmation) {
@@ -115,6 +145,16 @@ struct RatePlaceView: View {
                 showConfirmation = false
                 onLogComplete()
             }
+        }
+        .alert("New Trip", isPresented: $showNewTripAlert) {
+            TextField("Trip name", text: $newTripName)
+            Button("Cancel", role: .cancel) { }
+            Button("Create") {
+                createNewTrip()
+            }
+            .disabled(newTripName.trimmingCharacters(in: .whitespaces).isEmpty)
+        } message: {
+            Text("Enter a name for your trip")
         }
     }
 
@@ -128,7 +168,6 @@ struct RatePlaceView: View {
 
     private var placeHeader: some View {
         HStack(spacing: SonderSpacing.sm) {
-            // Place icon
             Image(systemName: "mappin.circle.fill")
                 .font(.system(size: 40))
                 .foregroundColor(SonderColors.terracotta)
@@ -149,6 +188,147 @@ struct RatePlaceView: View {
         }
     }
 
+    // MARK: - Rating Circle
+
+    private func ratingCircle(_ rating: Rating) -> some View {
+        let isSelected = selectedRating == rating
+        let color: Color = switch rating {
+        case .skip: SonderColors.ratingSkip
+        case .solid: SonderColors.ratingSolid
+        case .mustSee: SonderColors.ratingMustSee
+        }
+
+        return VStack(spacing: SonderSpacing.xs) {
+            Text(rating.emoji)
+                .font(.system(size: 32))
+                .frame(width: 72, height: 72)
+                .background(isSelected ? color.opacity(0.2) : SonderColors.warmGray)
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .stroke(isSelected ? color : .clear, lineWidth: 2)
+                )
+                .scaleEffect(isSelected ? 1.1 : 1.0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedRating)
+
+            Text(rating.displayName)
+                .font(SonderTypography.caption)
+                .fontWeight(.medium)
+                .foregroundColor(SonderColors.inkDark)
+        }
+        .onTapGesture {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            selectedRating = rating
+        }
+    }
+
+    // MARK: - Trip Section
+
+    private var tripSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            Text("Add to a trip?")
+                .font(SonderTypography.headline)
+                .foregroundColor(SonderColors.inkDark)
+                .padding(.horizontal, SonderSpacing.md)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: SonderSpacing.xs) {
+                    // Most recently used trips
+                    ForEach(availableTrips.prefix(3), id: \.id) { trip in
+                        tripChip(trip)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+
+                    // New trip button
+                    Button {
+                        newTripName = ""
+                        showNewTripAlert = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("New Trip")
+                                .font(SonderTypography.caption)
+                                .fontWeight(.medium)
+                        }
+                        .padding(.horizontal, SonderSpacing.sm)
+                        .padding(.vertical, SonderSpacing.xs)
+                        .background(SonderColors.warmGray)
+                        .foregroundColor(SonderColors.inkDark)
+                        .clipShape(Capsule())
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(SonderColors.inkLight.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4]))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, SonderSpacing.md)
+            }
+
+            // Selected trip indicator
+            if let trip = selectedTrip {
+                HStack(spacing: SonderSpacing.xxs) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(SonderColors.terracotta)
+                    Text("Saving to \(trip.name)")
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
+                }
+                .padding(.horizontal, SonderSpacing.md)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: allTrips.count)
+        .animation(.easeInOut(duration: 0.25), value: selectedTrip?.id)
+    }
+
+    private func tripChip(_ trip: Trip) -> some View {
+        let isSelected = selectedTrip?.id == trip.id
+
+        return HStack(spacing: 4) {
+            Image(systemName: "suitcase.fill")
+                .font(.system(size: 10))
+            Text(trip.name)
+                .font(SonderTypography.caption)
+                .fontWeight(.medium)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, SonderSpacing.sm)
+        .padding(.vertical, SonderSpacing.xs)
+        .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
+        .foregroundColor(isSelected ? .white : SonderColors.inkDark)
+        .clipShape(Capsule())
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                selectedTrip = isSelected ? nil : trip
+            }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+    }
+
+    // MARK: - Trip Creation
+
+    private func createNewTrip() {
+        guard let userId = authService.currentUser?.id else { return }
+        let trimmedName = newTripName.trimmingCharacters(in: .whitespaces)
+        guard !trimmedName.isEmpty else { return }
+
+        let trip = Trip(
+            name: trimmedName,
+            createdBy: userId
+        )
+
+        modelContext.insert(trip)
+        try? modelContext.save()
+
+        withAnimation(.easeInOut(duration: 0.3)) {
+            selectedTrip = trip
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
     // MARK: - Actions
 
     private func quickSave() {
@@ -157,11 +337,11 @@ struct RatePlaceView: View {
 
         isSaving = true
 
-        // Create log with pending sync status
         let log = Log(
             userID: userId,
             placeID: place.id,
             rating: rating,
+            tripID: selectedTrip?.id,
             syncStatus: .pending
         )
 
@@ -170,12 +350,12 @@ struct RatePlaceView: View {
         do {
             try modelContext.save()
 
-            // Haptic feedback
             let notificationFeedback = UINotificationFeedbackGenerator()
             notificationFeedback.notificationOccurred(.success)
 
-            // Trigger immediate sync
             Task {
+                // Remove from Want to Go if bookmarked
+                await wantToGoService.removeBookmarkIfLoggedPlace(placeID: place.id, userID: userId)
                 await syncEngine.syncNow()
             }
 

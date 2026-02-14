@@ -21,7 +21,8 @@ struct PlacePrediction: Identifiable {
 }
 
 /// Place details from the API
-struct PlaceDetails {
+struct PlaceDetails: Hashable, Identifiable {
+    var id: String { placeId }
     let placeId: String
     let name: String
     let formattedAddress: String

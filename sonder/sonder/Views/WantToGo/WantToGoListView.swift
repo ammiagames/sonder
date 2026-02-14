@@ -26,8 +26,9 @@ struct WantToGoListView: View {
     @State private var selectedDetails: PlaceDetails?
     @State private var placeToLog: Place?
     @State private var placeIDToRemove: String?
-    @State private var showPreview = false
     @State private var grouping: WantToGoGrouping = .recent
+    @State private var scrollToCity: String?
+    @State private var visibleCitySections: Set<String> = []
 
     var body: some View {
         Group {
@@ -43,27 +44,29 @@ struct WantToGoListView: View {
         }
         .background(SonderColors.cream)
         .navigationTitle("Want to Go")
-        .navigationDestination(isPresented: $showPreview) {
-            if let details = selectedDetails {
-                PlacePreviewView(details: details) {
-                    // User wants to log this place - cache it and show rating view
-                    let place = cacheService.cachePlace(from: details)
-                    placeIDToRemove = place.id
-                    placeToLog = place
-                }
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $selectedDetails) { details in
+            PlacePreviewView(details: details) {
+                // User wants to log this place - cache it and show rating view
+                let place = cacheService.cachePlace(from: details)
+                placeIDToRemove = place.id
+                placeToLog = place
             }
         }
         .fullScreenCover(item: $placeToLog) { place in
             NavigationStack {
                 RatePlaceView(place: place) {
-                    // Logging complete - dismiss and go back to list
                     let placeID = placeIDToRemove
-                    placeToLog = nil
-                    showPreview = false
-                    if let placeID = placeID {
-                        removeFromWantToGo(placeID: placeID)
-                    }
+                    // Pop the preview first (hidden under the cover)
+                    selectedDetails = nil
                     placeIDToRemove = nil
+                    // Dismiss the cover on next frame so preview is already gone
+                    DispatchQueue.main.async {
+                        placeToLog = nil
+                        if let placeID {
+                            removeFromWantToGo(placeID: placeID)
+                        }
+                    }
                 }
             }
         }
@@ -138,25 +141,59 @@ struct WantToGoListView: View {
 
     // MARK: - Items List
 
+    private var sortedCities: [String] {
+        let groupedByCity = Dictionary(grouping: items) { extractCity(from: $0.place.address) }
+        return groupedByCity.keys.sorted()
+    }
+
+    /// The topmost visible city section (first in sorted order that's on-screen)
+    private var currentVisibleCity: String? {
+        sortedCities.first { visibleCitySections.contains($0) }
+    }
+
     private var itemsList: some View {
-        List {
-            // Grouping picker as list header
-            Section {
-                groupingPicker
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
+        ZStack(alignment: .trailing) {
+            ScrollViewReader { proxy in
+                List {
+                    // Grouping picker as list header
+                    Section {
+                        groupingPicker
+                            .listRowInsets(EdgeInsets(top: SonderSpacing.xs, leading: SonderSpacing.md, bottom: SonderSpacing.xs, trailing: SonderSpacing.md))
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+
+                    switch grouping {
+                    case .recent:
+                        recentGroupedList
+                    case .city:
+                        cityGroupedList
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(SonderColors.cream)
+                .onChange(of: scrollToCity) { _, city in
+                    if let city {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(city, anchor: .top)
+                        }
+                        // Clear after a short delay to allow re-selection of the same city
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            scrollToCity = nil
+                        }
+                    }
+                }
             }
 
-            switch grouping {
-            case .recent:
-                recentGroupedList
-            case .city:
-                cityGroupedList
+            // City section index scroller
+            if grouping == .city && sortedCities.count > 1 {
+                CitySectionIndex(cities: sortedCities, visibleCity: currentVisibleCity) { city in
+                    scrollToCity = city
+                }
+                .padding(.trailing, 2)
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(SonderColors.cream)
     }
 
     // MARK: - Recent (Reverse Chronological) List
@@ -171,20 +208,28 @@ struct WantToGoListView: View {
 
     private var cityGroupedList: some View {
         let groupedByCity = Dictionary(grouping: items) { extractCity(from: $0.place.address) }
-        let sortedCities = groupedByCity.keys.sorted()
+        let cities = groupedByCity.keys.sorted()
 
-        return ForEach(sortedCities, id: \.self) { city in
+        return ForEach(cities, id: \.self) { city in
             if let cityItems = groupedByCity[city] {
                 Section {
                     ForEach(cityItems.sorted { $0.createdAt > $1.createdAt }, id: \.id) { item in
                         itemRow(item)
                     }
                 } header: {
-                    HStack {
+                    HStack(spacing: SonderSpacing.xxs) {
                         Image(systemName: "building.2")
-                            .font(.caption)
+                            .font(.system(size: 12, weight: .semibold))
                         Text(city)
+                            .font(SonderTypography.caption)
+                            .fontWeight(.semibold)
+                            .textCase(.uppercase)
+                            .tracking(0.5)
                     }
+                    .foregroundColor(SonderColors.inkDark)
+                    .id(city)
+                    .onAppear { visibleCitySections.insert(city) }
+                    .onDisappear { visibleCitySections.remove(city) }
                 }
             }
         }
@@ -200,6 +245,7 @@ struct WantToGoListView: View {
         .onTapGesture {
             selectPlace(item)
         }
+        .listRowBackground(SonderColors.cream)
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) {
                 removeItem(item)
@@ -253,7 +299,6 @@ struct WantToGoListView: View {
 
             if let details = await placesService.getPlaceDetails(placeId: item.place.id) {
                 selectedDetails = details
-                showPreview = true
             }
 
             isLoadingDetails = false
@@ -320,15 +365,8 @@ struct WantToGoRow: View {
             // Photo
             if let photoRef = item.place.photoReference,
                let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 200) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        photoPlaceholder
-                    }
+                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 60, height: 60)) {
+                    photoPlaceholder
                 }
                 .frame(width: 60, height: 60)
                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
@@ -398,6 +436,87 @@ struct WantToGoRow: View {
                 Image(systemName: "photo")
                     .foregroundColor(SonderColors.terracotta.opacity(0.5))
             }
+    }
+}
+
+// MARK: - City Section Index
+
+struct CitySectionIndex: View {
+    let cities: [String]
+    let visibleCity: String?
+    let onSelect: (String) -> Void
+
+    @State private var dragCity: String?
+    @GestureState private var isDragging = false
+
+    /// Highlighted city: drag selection takes priority, otherwise the visible city
+    var highlightedCity: String? {
+        Self.resolveHighlightedCity(dragCity: dragCity, visibleCity: visibleCity)
+    }
+
+    /// Pure logic for determining which city to highlight — testable.
+    static func resolveHighlightedCity(dragCity: String?, visibleCity: String?) -> String? {
+        dragCity ?? visibleCity
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(cities, id: \.self) { city in
+                let isHighlighted = highlightedCity == city
+                Text(Self.abbreviate(city))
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(isHighlighted ? .white : SonderColors.terracotta)
+                    .frame(width: 28, height: max(18, 140 / CGFloat(cities.count)))
+                    .background(
+                        isHighlighted
+                            ? AnyShapeStyle(SonderColors.terracotta)
+                            : AnyShapeStyle(.clear)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+        }
+        .padding(.vertical, SonderSpacing.xs)
+        .padding(.horizontal, 2)
+        .background(
+            RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
+                .fill(SonderColors.warmGray.opacity(isDragging ? 0.95 : 0.75))
+        )
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .updating($isDragging) { _, state, _ in
+                    state = true
+                }
+                .onChanged { value in
+                    selectCity(at: value.location.y)
+                }
+                .onEnded { _ in
+                    // Clear drag selection after scroll settles; visibleCity takes over
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        dragCity = nil
+                    }
+                }
+        )
+        .sensoryFeedback(.selection, trigger: highlightedCity)
+    }
+
+    static func abbreviate(_ city: String) -> String {
+        if city.count <= 3 { return city }
+        return String(city.prefix(3))
+    }
+
+    private func selectCity(at y: CGFloat) {
+        let rowHeight = max(18, 140 / CGFloat(cities.count))
+        let totalPadding = SonderSpacing.xs // top padding
+        let adjustedY = y - totalPadding
+        let index = Int(adjustedY / rowHeight)
+
+        guard index >= 0 && index < cities.count else { return }
+        let city = cities[index]
+
+        if city != dragCity {
+            dragCity = city
+            onSelect(city)
+        }
     }
 }
 

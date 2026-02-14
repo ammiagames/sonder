@@ -17,22 +17,8 @@ struct PlacePhotoView: View {
         Group {
             if let photoReference = photoReference,
                let url = GooglePlacesService.photoURL(for: photoReference, maxWidth: Int(size * 2)) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .empty:
-                        placeholder
-                            .overlay {
-                                ProgressView()
-                            }
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    case .failure:
-                        placeholder
-                    @unknown default:
-                        placeholder
-                    }
+                DownsampledAsyncImage(url: url, targetSize: CGSize(width: size, height: size)) {
+                    placeholder
                 }
             } else {
                 placeholder

@@ -59,6 +59,14 @@ enum SonderColors {
     /// Must See - exciting terracotta/amber
     static let ratingMustSee = Color(red: 0.85, green: 0.55, blue: 0.35)
 
+    // MARK: - Explore Map Colors
+
+    /// Warm teal for Want to Go bookmark pins (distinct from rating colors)
+    static let wantToGoPin = Color(red: 0.30, green: 0.58, blue: 0.62)
+
+    /// Background for multi-friend cluster badges
+    static let exploreCluster = Color(red: 0.25, green: 0.25, blue: 0.28)
+
     // MARK: - Semantic Colors
 
     /// Primary action color
@@ -81,19 +89,20 @@ enum SonderColors {
 }
 
 /// Sonder's typography styles
+/// Serif titles + rounded UI creates an editorial travel-journal aesthetic
 enum SonderTypography {
-    // Headers with warmth
-    static let largeTitle = Font.system(.largeTitle, design: .rounded).weight(.bold)
-    static let title = Font.system(.title2, design: .rounded).weight(.semibold)
+    // Editorial serif headers — travel magazine feel (New York font)
+    static let largeTitle = Font.system(.largeTitle, design: .serif).weight(.bold)
+    static let title = Font.system(.title2, design: .serif).weight(.semibold)
+    static let journalTitle = Font.system(.title3, design: .serif).weight(.medium)
+
+    // Warm rounded for interactive elements — buttons, chips, labels
     static let headline = Font.system(.headline, design: .rounded)
 
-    // Body text - clean but warm
+    // Clean system defaults for body text — maximum readability
     static let body = Font.system(.body, design: .default)
     static let subheadline = Font.system(.subheadline, design: .default)
     static let caption = Font.system(.caption, design: .default)
-
-    // Special - for personal touches
-    static let journalTitle = Font.system(.title3, design: .serif).weight(.medium)
 }
 
 /// Sonder's spacing and sizing

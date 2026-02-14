@@ -8,6 +8,7 @@
 import Foundation
 import SwiftData
 import Supabase
+import CoreLocation
 
 @MainActor
 @Observable
@@ -126,6 +127,43 @@ final class WantToGoService {
     /// Refresh the cached items list
     private func refreshItems(for userID: String) async {
         items = getWantToGoList(for: userID)
+    }
+
+    // MARK: - Auto-remove on Log
+
+    /// Removes a bookmark for a place that was just logged.
+    /// Deletes locally first (always succeeds), then best-effort deletes from Supabase.
+    func removeBookmarkIfLoggedPlace(placeID: String, userID: String) async {
+        guard isInWantToGo(placeID: placeID, userID: userID) else { return }
+
+        // Remove from local SwiftData
+        removeLocalBookmark(placeID: placeID, userID: userID)
+
+        // Best-effort remote delete (don't block or fail the log flow)
+        try? await supabase
+            .from("want_to_go")
+            .delete()
+            .eq("user_id", value: userID)
+            .eq("place_id", value: placeID)
+            .execute()
+    }
+
+    /// Removes a bookmark from the local SwiftData store and updates the cached items array.
+    func removeLocalBookmark(placeID: String, userID: String) {
+        let userIDCopy = userID
+        let placeIDCopy = placeID
+        let descriptor = FetchDescriptor<WantToGo>(
+            predicate: #Predicate { item in
+                item.userID == userIDCopy && item.placeID == placeIDCopy
+            }
+        )
+
+        if let cached = try? modelContext.fetch(descriptor).first {
+            modelContext.delete(cached)
+            try? modelContext.save()
+        }
+
+        items.removeAll { $0.placeID == placeID && $0.userID == userID }
     }
 
     // MARK: - Sync
@@ -254,6 +292,137 @@ extension WantToGoService {
                 wantToGo: wantToGo,
                 place: place,
                 sourceUser: item.source_log?.users
+            )
+        }
+    }
+
+    /// Fetch want-to-go items with coordinates for map display.
+    /// Joins want_to_go with places table to get lat/lng, falling back to local Place cache.
+    func fetchWantToGoForMap(for userID: String) async throws -> [WantToGoMapItem] {
+        struct WantToGoPlaceResponse: Codable {
+            let id: String
+            let place_id: String
+            let place_name: String?
+            let place_address: String?
+            let photo_reference: String?
+            let place: PlaceCoord?
+
+            struct PlaceCoord: Codable {
+                let lat: Double
+                let lng: Double
+            }
+        }
+
+        // Try joining to places table for coordinates
+        // Use left join (no !) in case FK doesn't exist on all rows
+        do {
+            let response: [WantToGoPlaceResponse] = try await supabase
+                .from("want_to_go")
+                .select("""
+                    id,
+                    place_id,
+                    place_name,
+                    place_address,
+                    photo_reference,
+                    place:places(lat, lng)
+                """)
+                .eq("user_id", value: userID)
+                .execute()
+                .value
+
+            var results: [WantToGoMapItem] = []
+            var missingPlaceIDs: Set<String> = []
+
+            for item in response {
+                if let place = item.place, place.lat != 0, place.lng != 0 {
+                    results.append(WantToGoMapItem(
+                        id: item.id,
+                        placeID: item.place_id,
+                        placeName: item.place_name ?? "Saved Place",
+                        placeAddress: item.place_address,
+                        photoReference: item.photo_reference,
+                        coordinate: CLLocationCoordinate2D(latitude: place.lat, longitude: place.lng)
+                    ))
+                } else {
+                    missingPlaceIDs.insert(item.place_id)
+                }
+            }
+
+            // Fall back to local SwiftData Place cache for items without coordinates
+            var stillMissing: Set<String> = []
+            for placeID in missingPlaceIDs {
+                let placeIDCopy = placeID
+                let descriptor = FetchDescriptor<Place>(
+                    predicate: #Predicate { $0.id == placeIDCopy }
+                )
+                if let cachedPlace = try? modelContext.fetch(descriptor).first {
+                    let item = response.first { $0.place_id == placeID }
+                    results.append(WantToGoMapItem(
+                        id: item?.id ?? UUID().uuidString,
+                        placeID: placeID,
+                        placeName: item?.place_name ?? cachedPlace.name,
+                        placeAddress: item?.place_address ?? cachedPlace.address,
+                        photoReference: item?.photo_reference ?? cachedPlace.photoReference,
+                        coordinate: cachedPlace.coordinate
+                    ))
+                } else {
+                    stillMissing.insert(placeID)
+                }
+            }
+
+            // Fetch remaining missing places directly from Supabase
+            if !stillMissing.isEmpty {
+                let remotePlaces: [Place] = try await supabase
+                    .from("places")
+                    .select()
+                    .in("id", values: Array(stillMissing))
+                    .execute()
+                    .value
+
+                for place in remotePlaces {
+                    let item = response.first { $0.place_id == place.id }
+                    results.append(WantToGoMapItem(
+                        id: item?.id ?? UUID().uuidString,
+                        placeID: place.id,
+                        placeName: item?.place_name ?? place.name,
+                        placeAddress: item?.place_address ?? place.address,
+                        photoReference: item?.photo_reference ?? place.photoReference,
+                        coordinate: place.coordinate
+                    ))
+                    // Cache locally for future use
+                    modelContext.insert(place)
+                }
+                try? modelContext.save()
+            }
+
+            return results
+        } catch {
+            // If the join fails entirely (no FK), fall back to local cache only
+            return try fallbackFetchWantToGoForMap(for: userID)
+        }
+    }
+
+    /// Fallback: fetch want-to-go items and resolve coordinates from local Place cache only
+    private func fallbackFetchWantToGoForMap(for userID: String) throws -> [WantToGoMapItem] {
+        let userIDCopy = userID
+        let descriptor = FetchDescriptor<WantToGo>(
+            predicate: #Predicate { $0.userID == userIDCopy }
+        )
+        let items = (try? modelContext.fetch(descriptor)) ?? []
+
+        return items.compactMap { item in
+            let placeIDCopy = item.placeID
+            let placeDescriptor = FetchDescriptor<Place>(
+                predicate: #Predicate { $0.id == placeIDCopy }
+            )
+            guard let place = try? modelContext.fetch(placeDescriptor).first else { return nil }
+            return WantToGoMapItem(
+                id: item.id,
+                placeID: item.placeID,
+                placeName: item.placeName ?? place.name,
+                placeAddress: item.placeAddress ?? place.address,
+                photoReference: item.photoReference ?? place.photoReference,
+                coordinate: place.coordinate
             )
         }
     }

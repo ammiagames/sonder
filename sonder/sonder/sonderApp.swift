@@ -26,10 +26,37 @@ struct sonderApp: App {
     @State private var wantToGoService: WantToGoService?
     @State private var tripService: TripService?
     @State private var proximityService = ProximityNotificationService()
+    @State private var exploreMapService = ExploreMapService()
 
     init() {
         // Configure Google Sign-In
         GoogleConfig.configure()
+
+        // Configure UIKit appearance to match Sonder theme and prevent gray flashes
+        let creamUI = UIColor(red: 0.98, green: 0.96, blue: 0.93, alpha: 1.0)
+        let inkDarkUI = UIColor(red: 0.20, green: 0.18, blue: 0.16, alpha: 1.0)
+        let inkMutedUI = UIColor(red: 0.50, green: 0.46, blue: 0.42, alpha: 1.0)
+
+        let tabBarAppearance = UITabBarAppearance()
+        tabBarAppearance.configureWithOpaqueBackground()
+        tabBarAppearance.backgroundColor = creamUI
+        UITabBar.appearance().standardAppearance = tabBarAppearance
+        UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance
+
+        // Serif (New York) fonts for navigation bar titles
+        let serifLargeTitle = UIFont(descriptor: UIFontDescriptor.preferredFontDescriptor(withTextStyle: .largeTitle).withDesign(.serif)!, size: 0)
+        let serifTitle = UIFont(descriptor: UIFontDescriptor.preferredFontDescriptor(withTextStyle: .headline).withDesign(.serif)!, size: 0)
+
+        let navBarAppearance = UINavigationBarAppearance()
+        navBarAppearance.configureWithOpaqueBackground()
+        navBarAppearance.backgroundColor = creamUI
+        navBarAppearance.shadowColor = .clear
+        navBarAppearance.largeTitleTextAttributes = [.foregroundColor: inkDarkUI, .font: serifLargeTitle]
+        navBarAppearance.titleTextAttributes = [.foregroundColor: inkDarkUI, .font: serifTitle]
+        UINavigationBar.appearance().standardAppearance = navBarAppearance
+        UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
+        UINavigationBar.appearance().compactAppearance = navBarAppearance
+        UINavigationBar.appearance().tintColor = UIColor(red: 0.80, green: 0.45, blue: 0.35, alpha: 1.0) // terracotta
 
         do {
             // Configure SwiftData with all models
@@ -72,6 +99,7 @@ struct sonderApp: App {
                 wantToGoService: wantToGoService ?? createWantToGoService(),
                 tripService: tripService ?? createTripService(),
                 proximityService: proximityService,
+                exploreMapService: exploreMapService,
                 onAppear: initializeServices
             )
         }
@@ -152,6 +180,7 @@ struct RootView: View {
     let wantToGoService: WantToGoService
     let tripService: TripService
     let proximityService: ProximityNotificationService
+    let exploreMapService: ExploreMapService
     let onAppear: () -> Void
 
     var body: some View {
@@ -167,11 +196,14 @@ struct RootView: View {
             .environment(wantToGoService)
             .environment(tripService)
             .environment(proximityService)
+            .environment(exploreMapService)
             .onAppear(perform: onAppear)
             .onChange(of: authService.currentUser?.id) { _, newID in
                 if let userID = newID {
                     Task {
                         await socialService.refreshCounts(for: userID)
+                        // Pull remote data immediately on login
+                        await syncEngine.syncNow()
                         // Configure and start proximity monitoring
                         proximityService.configure(wantToGoService: wantToGoService, userID: userID)
                         proximityService.setupNotificationCategories()
@@ -198,7 +230,10 @@ struct RootView: View {
 
     @ViewBuilder
     private var contentView: some View {
-        if authService.isAuthenticated {
+        if authService.isCheckingSession {
+            // Show splash while restoring session to avoid flashing the auth screen
+            SplashView()
+        } else if authService.isAuthenticated {
             MainTabView()
         } else {
             AuthenticationView()

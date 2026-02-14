@@ -58,15 +58,8 @@ struct OtherUserMapView: View {
                 // Photo
                 if let photoRef = item.place.photoReference,
                    let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 200) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        default:
-                            photoPlaceholder
-                        }
+                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 60, height: 60)) {
+                        photoPlaceholder
                     }
                     .frame(width: 60, height: 60)
                     .clipShape(RoundedRectangle(cornerRadius: 8))

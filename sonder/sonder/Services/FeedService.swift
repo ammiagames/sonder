@@ -16,14 +16,15 @@ final class FeedService {
     private let supabase = SupabaseConfig.client
 
     // Feed state
-    var feedItems: [FeedItem] = []
+    var feedEntries: [FeedEntry] = []
     var isLoading = false
     var hasMore = true
     var newPostsAvailable = false
 
     // Pagination
     private var lastFetchedDate: Date?
-    private let pageSize = 20
+    private let pageSize = 25
+    private let maxItemsInMemory = 100
 
     // Realtime
     private var realtimeChannel: RealtimeChannelV2?
@@ -34,7 +35,7 @@ final class FeedService {
 
     // MARK: - Feed Loading
 
-    /// Load initial feed (logs from followed users)
+    /// Load initial feed (trips + standalone logs from followed users)
     func loadFeed(for currentUserID: String) async {
         guard !isLoading else { return }
 
@@ -44,10 +45,41 @@ final class FeedService {
         newPostsAvailable = false
 
         do {
-            let items = try await fetchFeedPage(for: currentUserID, before: nil)
-            feedItems = items
-            lastFetchedDate = items.last?.createdAt
-            hasMore = items.count >= pageSize
+            let followingIDs = try await getFollowingIDs(for: currentUserID)
+            guard !followingIDs.isEmpty else {
+                feedEntries = []
+                isLoading = false
+                return
+            }
+
+            // Fetch logs (required)
+            let logResponses = try await fetchFeedLogs(followingIDs: followingIDs, before: nil)
+
+            // Fetch trips (non-fatal — feed still works without trip cards)
+            let trips: [FeedTripItem]
+            do {
+                trips = try await fetchTripFeedItems(followingIDs: followingIDs)
+            } catch {
+                print("Error loading trip feed items (non-fatal): \(error)")
+                trips = []
+            }
+
+            // IDs of logs that belong to a trip (shown in trip cards, not individually)
+            let tripLogIDs = Set(trips.flatMap { $0.logs.map { $0.id } })
+
+            // Standalone logs = those not in any trip card
+            let standaloneLogs = logResponses
+                .filter { $0.tripID == nil || !tripLogIDs.contains($0.id) }
+                .map { FeedEntry.log($0.toFeedItem()) }
+
+            let tripFeedEntries = trips.map { FeedEntry.trip($0) }
+
+            var merged = standaloneLogs + tripFeedEntries
+            merged.sort { $0.sortDate > $1.sortDate }
+
+            feedEntries = merged
+            lastFetchedDate = logResponses.last?.createdAt
+            hasMore = logResponses.count >= pageSize
         } catch {
             print("Error loading feed: \(error)")
         }
@@ -55,17 +87,36 @@ final class FeedService {
         isLoading = false
     }
 
-    /// Load more feed items (pagination)
+    /// Load more feed items (pagination — standalone logs only, trips already fully loaded)
     func loadMoreFeed(for currentUserID: String) async {
         guard !isLoading, hasMore, let cursor = lastFetchedDate else { return }
 
         isLoading = true
 
         do {
-            let items = try await fetchFeedPage(for: currentUserID, before: cursor)
-            feedItems.append(contentsOf: items)
-            lastFetchedDate = items.last?.createdAt
-            hasMore = items.count >= pageSize
+            let followingIDs = try await getFollowingIDs(for: currentUserID)
+            let logResponses = try await fetchFeedLogs(followingIDs: followingIDs, before: cursor)
+
+            // Filter out logs that belong to trips (already shown in trip cards)
+            let existingTripLogIDs = feedEntries.compactMap { entry -> [String]? in
+                if case .trip(let t) = entry { return t.logs.map { $0.id } }
+                return nil
+            }.flatMap { $0 }
+            let tripLogIDs = Set(existingTripLogIDs)
+
+            let newEntries = logResponses
+                .filter { $0.tripID == nil || !tripLogIDs.contains($0.id) }
+                .map { FeedEntry.log($0.toFeedItem()) }
+
+            feedEntries.append(contentsOf: newEntries)
+
+            // Sliding window
+            if feedEntries.count > maxItemsInMemory {
+                feedEntries.removeFirst(feedEntries.count - maxItemsInMemory)
+            }
+
+            lastFetchedDate = logResponses.last?.createdAt
+            hasMore = logResponses.count >= pageSize
         } catch {
             print("Error loading more feed: \(error)")
         }
@@ -78,32 +129,24 @@ final class FeedService {
         await loadFeed(for: currentUserID)
     }
 
-    /// Fetch a page of feed items from Supabase
-    private func fetchFeedPage(for currentUserID: String, before cursor: Date?) async throws -> [FeedItem] {
-        // First get the list of users we're following
-        let followingIDs = try await getFollowingIDs(for: currentUserID)
+    // MARK: - Feed Logs (all logs, filtered client-side)
 
-        guard !followingIDs.isEmpty else {
-            return []
-        }
+    private let selectQuery = """
+        id,
+        rating,
+        photo_url,
+        note,
+        tags,
+        created_at,
+        trip_id,
+        users!logs_user_id_fkey(id, username, avatar_url, is_public),
+        places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference)
+    """
 
-        let selectQuery = """
-            id,
-            rating,
-            photo_url,
-            note,
-            tags,
-            created_at,
-            users!logs_user_id_fkey(id, username, avatar_url, is_public),
-            places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference)
-        """
-
-        // Build query - filters must come before order/limit
-        let response: [FeedLogResponse]
-
+    private func fetchFeedLogs(followingIDs: [String], before cursor: Date?) async throws -> [FeedLogResponse] {
         if let cursor = cursor {
             let cursorString = ISO8601DateFormatter().string(from: cursor)
-            response = try await supabase
+            return try await supabase
                 .from("logs")
                 .select(selectQuery)
                 .in("user_id", values: followingIDs)
@@ -113,7 +156,7 @@ final class FeedService {
                 .execute()
                 .value
         } else {
-            response = try await supabase
+            return try await supabase
                 .from("logs")
                 .select(selectQuery)
                 .in("user_id", values: followingIDs)
@@ -122,8 +165,73 @@ final class FeedService {
                 .execute()
                 .value
         }
+    }
 
-        return response.map { $0.toFeedItem() }
+    // MARK: - Trip Feed Items
+
+    private func fetchTripFeedItems(followingIDs: [String]) async throws -> [FeedTripItem] {
+        // Fetch trips from followed users
+        let trips: [FeedTripResponse] = try await supabase
+            .from("trips")
+            .select("""
+                id, name, cover_photo_url, start_date, end_date, created_by,
+                users!trips_created_by_fkey(id, username, avatar_url, is_public)
+            """)
+            .in("created_by", values: followingIDs)
+            .order("updated_at", ascending: false)
+            .limit(50)
+            .execute()
+            .value
+
+        guard !trips.isEmpty else { return [] }
+
+        let tripIDs = trips.map { $0.id }
+
+        // Fetch logs for these trips
+        let tripLogs: [TripLogWithTripID] = try await supabase
+            .from("logs")
+            .select("""
+                id, rating, photo_url, created_at, trip_id,
+                places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference)
+            """)
+            .in("trip_id", values: tripIDs)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+
+        // Group logs by trip_id
+        let logsByTrip = Dictionary(grouping: tripLogs) { $0.tripID }
+
+        // Build FeedTripItems
+        return trips.compactMap { trip in
+            let logs = logsByTrip[trip.id] ?? []
+            // Skip trips with no logs
+            guard !logs.isEmpty else { return nil }
+
+            let summaries = logs.map { log in
+                FeedTripItem.LogSummary(
+                    id: log.id,
+                    photoURL: log.photoURL,
+                    rating: log.rating,
+                    placeName: log.place.name,
+                    placePhotoReference: log.place.photoReference,
+                    createdAt: log.createdAt
+                )
+            }
+
+            let latestActivity = logs.first?.createdAt ?? Date.distantPast
+
+            return FeedTripItem(
+                id: trip.id,
+                name: trip.name,
+                coverPhotoURL: trip.coverPhotoURL,
+                startDate: trip.startDate,
+                endDate: trip.endDate,
+                user: trip.user,
+                logs: summaries,
+                latestActivityAt: latestActivity
+            )
+        }
     }
 
     /// Get IDs of users the current user is following
@@ -146,15 +254,12 @@ final class FeedService {
 
     /// Subscribe to realtime updates for new logs from followed users
     func subscribeToRealtimeUpdates(for currentUserID: String) async {
-        // Unsubscribe from existing channel
         await unsubscribeFromRealtimeUpdates()
 
         do {
             let followingIDs = try await getFollowingIDs(for: currentUserID)
-
             guard !followingIDs.isEmpty else { return }
 
-            // Subscribe to INSERT events on logs table
             let channel = supabase.channel("feed-\(currentUserID)")
 
             let changes = channel.postgresChange(
@@ -167,7 +272,6 @@ final class FeedService {
 
             Task {
                 for await change in changes {
-                    // Check if the new log is from someone we follow
                     if let userID = change.record["user_id"]?.stringValue,
                        followingIDs.contains(userID) {
                         await MainActor.run {
@@ -183,7 +287,6 @@ final class FeedService {
         }
     }
 
-    /// Unsubscribe from realtime updates
     func unsubscribeFromRealtimeUpdates() async {
         if let channel = realtimeChannel {
             await supabase.removeChannel(channel)
@@ -191,7 +294,6 @@ final class FeedService {
         }
     }
 
-    /// Show new posts (called when user taps "New posts available" banner)
     func showNewPosts(for currentUserID: String) async {
         newPostsAvailable = false
         await loadFeed(for: currentUserID)
@@ -199,7 +301,6 @@ final class FeedService {
 
     // MARK: - Single Log Fetch
 
-    /// Fetch a single log with its user and place data
     func fetchFeedItem(logID: String) async throws -> FeedItem? {
         let response: [FeedLogResponse] = try await supabase
             .from("logs")
@@ -223,7 +324,6 @@ final class FeedService {
 
     // MARK: - User's Logs
 
-    /// Fetch all logs for a specific user (for viewing their profile)
     func fetchUserLogs(userID: String) async throws -> [FeedItem] {
         let response: [FeedLogResponse] = try await supabase
             .from("logs")
@@ -243,5 +343,24 @@ final class FeedService {
             .value
 
         return response.map { $0.toFeedItem() }
+    }
+}
+
+// MARK: - Trip Log Response with trip_id
+
+private struct TripLogWithTripID: Codable {
+    let id: String
+    let rating: String
+    let photoURL: String?
+    let createdAt: Date
+    let tripID: String
+    let place: FeedItem.FeedPlace
+
+    enum CodingKeys: String, CodingKey {
+        case id, rating
+        case photoURL = "photo_url"
+        case createdAt = "created_at"
+        case tripID = "trip_id"
+        case place = "places"
     }
 }

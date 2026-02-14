@@ -22,7 +22,7 @@ final class Trip {
     var updatedAt: Date
 
     init(
-        id: String = UUID().uuidString,
+        id: String = UUID().uuidString.lowercased(),
         name: String,
         tripDescription: String? = nil,
         coverPhotoURL: String? = nil,

@@ -25,37 +25,59 @@ struct OtherUserProfileView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                if isLoading {
+            if isLoading {
+                VStack(spacing: SonderSpacing.md) {
                     ProgressView()
-                        .padding(.top, 100)
-                } else if let user = user {
-                    // Profile header
+                        .tint(SonderColors.terracotta)
+                    Text("Loading profile...")
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 120)
+            } else if let user = user {
+                VStack(spacing: 0) {
+                    // Profile header card
                     profileHeader(user)
+                        .padding(.top, SonderSpacing.md)
 
-                    // Stats
+                    // Stats bar
                     statsSection
+                        .padding(.top, SonderSpacing.lg)
 
                     // Follow button
                     if user.id != authService.currentUser?.id {
                         followButton
+                            .padding(.top, SonderSpacing.md)
+                            .padding(.horizontal, SonderSpacing.lg)
                     }
 
-                    Divider()
-                        .padding(.horizontal)
+                    // Divider
+                    Rectangle()
+                        .fill(SonderColors.warmGray)
+                        .frame(height: 1)
+                        .padding(.top, SonderSpacing.lg)
+                        .padding(.horizontal, SonderSpacing.lg)
 
                     // Logs
                     logsSection
-                } else {
-                    ContentUnavailableView {
-                        Label("User Not Found", systemImage: "person.slash")
-                    } description: {
-                        Text("This user doesn't exist or has been deleted")
-                    }
+                        .padding(.top, SonderSpacing.md)
+                        .padding(.horizontal, SonderSpacing.md)
                 }
+                .padding(.bottom, SonderSpacing.xxl)
+            } else {
+                ContentUnavailableView {
+                    Label("User Not Found", systemImage: "person.slash")
+                        .foregroundColor(SonderColors.inkMuted)
+                } description: {
+                    Text("This user doesn't exist or has been deleted")
+                        .foregroundColor(SonderColors.inkLight)
+                }
+                .padding(.top, 80)
             }
-            .padding()
         }
+        .background(SonderColors.cream)
+        .scrollContentBackground(.hidden)
         .navigationTitle(user?.username ?? "Profile")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -65,6 +87,7 @@ struct OtherUserProfileView: View {
                         OtherUserMapView(userID: user.id, username: user.username, logs: userLogs)
                     } label: {
                         Image(systemName: "map")
+                            .foregroundColor(SonderColors.terracotta)
                     }
                 }
             }
@@ -77,44 +100,52 @@ struct OtherUserProfileView: View {
     // MARK: - Profile Header
 
     private func profileHeader(_ user: User) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: SonderSpacing.sm) {
             // Avatar
             if let urlString = user.avatarURL,
                let url = URL(string: urlString) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        avatarPlaceholder(for: user)
-                    }
+                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 88, height: 88)) {
+                    avatarPlaceholder(for: user)
                 }
-                .frame(width: 80, height: 80)
+                .frame(width: 88, height: 88)
                 .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .stroke(SonderColors.warmGray, lineWidth: 3)
+                )
             } else {
                 avatarPlaceholder(for: user)
+                    .overlay(
+                        Circle()
+                            .stroke(SonderColors.warmGray, lineWidth: 3)
+                    )
             }
 
             // Username
-            Text(user.username)
-                .font(.title2)
-                .fontWeight(.bold)
+            Text("@\(user.username)")
+                .font(SonderTypography.title)
+                .foregroundColor(SonderColors.inkDark)
 
             // Bio
             if let bio = user.bio, !bio.isEmpty {
                 Text(bio)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(SonderTypography.body)
+                    .foregroundColor(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
+                    .padding(.horizontal, SonderSpacing.xxl)
             }
 
             // Member since
-            Text("Exploring since \(user.createdAt.formatted(date: .abbreviated, time: .omitted))")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            HStack(spacing: SonderSpacing.xxs) {
+                Image(systemName: "leaf.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(SonderColors.sage)
+                Text("Exploring since \(user.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkLight)
+            }
         }
+        .frame(maxWidth: .infinity)
     }
 
     private func avatarPlaceholder(for user: User) -> some View {
@@ -126,10 +157,10 @@ struct OtherUserProfileView: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .frame(width: 80, height: 80)
+            .frame(width: 88, height: 88)
             .overlay {
                 Text(user.username.prefix(1).uppercased())
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
                     .foregroundColor(SonderColors.terracotta)
             }
     }
@@ -137,7 +168,7 @@ struct OtherUserProfileView: View {
     // MARK: - Stats Section
 
     private var statsSection: some View {
-        HStack(spacing: 40) {
+        HStack(spacing: 0) {
             NavigationLink {
                 FollowListView(
                     userID: userID,
@@ -145,17 +176,11 @@ struct OtherUserProfileView: View {
                     initialTab: .followers
                 )
             } label: {
-                VStack(spacing: 4) {
-                    Text("\(followerCount)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    Text("Followers")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                statItem(value: followerCount, label: "Followers")
             }
             .buttonStyle(.plain)
+
+            statDivider
 
             NavigationLink {
                 FollowListView(
@@ -164,27 +189,37 @@ struct OtherUserProfileView: View {
                     initialTab: .following
                 )
             } label: {
-                VStack(spacing: 4) {
-                    Text("\(followingCount)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    Text("Following")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                statItem(value: followingCount, label: "Following")
             }
             .buttonStyle(.plain)
 
-            VStack(spacing: 4) {
-                Text("\(userLogs.count)")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                Text("Places")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+            statDivider
+
+            statItem(value: userLogs.count, label: "Places")
         }
+        .padding(.vertical, SonderSpacing.sm)
+        .padding(.horizontal, SonderSpacing.lg)
+        .background(SonderColors.warmGray.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+        .padding(.horizontal, SonderSpacing.lg)
+    }
+
+    private func statItem(value: Int, label: String) -> some View {
+        VStack(spacing: SonderSpacing.xxs) {
+            Text("\(value)")
+                .font(.system(.title3, design: .rounded).weight(.bold))
+                .foregroundColor(SonderColors.inkDark)
+            Text(label)
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkMuted)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var statDivider: some View {
+        Rectangle()
+            .fill(SonderColors.warmGrayDark)
+            .frame(width: 1, height: 32)
     }
 
     // MARK: - Follow Button
@@ -193,11 +228,13 @@ struct OtherUserProfileView: View {
         Button {
             toggleFollow()
         } label: {
-            HStack {
+            HStack(spacing: SonderSpacing.xs) {
                 if isFollowLoading {
                     ProgressView()
                         .tint(isFollowing ? SonderColors.inkDark : .white)
                 } else {
+                    Image(systemName: isFollowing ? "checkmark" : "plus")
+                        .font(.system(size: 14, weight: .semibold))
                     Text(isFollowing ? "Following" : "Follow")
                         .font(SonderTypography.headline)
                 }
@@ -209,23 +246,38 @@ struct OtherUserProfileView: View {
             .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         }
         .disabled(isFollowLoading)
-        .padding(.horizontal, SonderSpacing.md)
     }
 
     // MARK: - Logs Section
 
     private var logsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Places")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            HStack {
+                Text("Places")
+                    .font(SonderTypography.journalTitle)
+                    .foregroundColor(SonderColors.inkDark)
+
+                Spacer()
+
+                Text("\(userLogs.count)")
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkLight)
+            }
+            .padding(.horizontal, SonderSpacing.xs)
 
             if userLogs.isEmpty {
-                Text("No places logged yet")
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding()
+                VStack(spacing: SonderSpacing.sm) {
+                    Image(systemName: "mappin.slash")
+                        .font(.system(size: 32))
+                        .foregroundColor(SonderColors.inkLight)
+                    Text("No places logged yet")
+                        .font(SonderTypography.body)
+                        .foregroundColor(SonderColors.inkMuted)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, SonderSpacing.xxl)
             } else {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: SonderSpacing.sm) {
                     ForEach(userLogs) { item in
                         NavigationLink {
                             FeedLogDetailView(feedItem: item)
@@ -286,9 +338,7 @@ struct OtherUserProfileView: View {
                 }
                 isFollowing.toggle()
 
-                // Haptic feedback
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
             } catch {
                 print("Follow error: \(error)")
             }
@@ -307,15 +357,8 @@ struct OtherUserLogRow: View {
             // Photo
             if let urlString = feedItem.log.photoURL,
                let url = URL(string: urlString) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        placePhoto
-                    }
+                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 60, height: 60)) {
+                    placePhoto
                 }
                 .frame(width: 60, height: 60)
                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
@@ -355,18 +398,11 @@ struct OtherUserLogRow: View {
     private var placePhoto: some View {
         if let photoRef = feedItem.place.photoReference,
            let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 200) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    photoPlaceholder
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 60, height: 60)) {
+                photoPlaceholder
             }
             .frame(width: 60, height: 60)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
         } else {
             photoPlaceholder
         }

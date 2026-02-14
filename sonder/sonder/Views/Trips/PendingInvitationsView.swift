@@ -221,15 +221,8 @@ struct InvitationCard: View {
     private var tripCover: some View {
         if let urlString = item.trip.coverPhotoURL,
            let url = URL(string: urlString) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    tripPlaceholder
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 60, height: 60)) {
+                tripPlaceholder
             }
         } else {
             tripPlaceholder

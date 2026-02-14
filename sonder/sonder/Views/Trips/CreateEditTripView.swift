@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import PhotosUI
 
 enum TripFormMode {
     case create
@@ -27,9 +26,11 @@ struct CreateEditTripView: View {
     @State private var startDate: Date?
     @State private var endDate: Date?
     @State private var coverPhotoURL: String?
-    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var selectedImage: UIImage?
+    @State private var showImagePicker = false
     @State private var isUploadingPhoto = false
     @State private var isSaving = false
+    @State private var showSavedToast = false
     @State private var showStartDatePicker = false
     @State private var showEndDatePicker = false
     @State private var showDeleteAlert = false
@@ -173,12 +174,24 @@ struct CreateEditTripView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(isEditing ? "Save" : "Create") {
-                        saveTrip()
+                    if showSavedToast {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(SonderColors.sage)
+                            Text("Saved")
+                                .font(SonderTypography.headline)
+                                .foregroundColor(SonderColors.inkDark)
+                        }
+                        .transition(.opacity)
+                    } else {
+                        Button(isEditing ? "Save" : "Create") {
+                            saveTrip()
+                        }
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
+            .animation(.easeInOut(duration: 0.25), value: showSavedToast)
             .alert("Delete Trip", isPresented: $showDeleteAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Delete", role: .destructive) {
@@ -190,10 +203,15 @@ struct CreateEditTripView: View {
             .onAppear {
                 loadExistingData()
             }
-            .onChange(of: selectedPhotoItem) { _, newValue in
-                Task {
-                    await uploadPhoto(from: newValue)
+            .sheet(isPresented: $showImagePicker) {
+                EditableImagePicker { image in
+                    selectedImage = image
+                    showImagePicker = false
+                    Task { await uploadSelectedImage(image) }
+                } onCancel: {
+                    showImagePicker = false
                 }
+                .ignoresSafeArea()
             }
         }
     }
@@ -202,21 +220,18 @@ struct CreateEditTripView: View {
 
     private var coverPhotoSection: some View {
         VStack(spacing: 12) {
-            // Photo preview
+            // Photo preview — show local image first, then remote URL
             Group {
-                if let urlString = coverPhotoURL,
-                   let url = URL(string: urlString) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        default:
-                            coverPlaceholder
-                        }
+                if let image = selectedImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else if let urlString = coverPhotoURL,
+                          let url = URL(string: urlString) {
+                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 150)) {
+                        coverPlaceholder
                     }
-                    .id(urlString) // Force refresh when URL changes
+                    .id(urlString)
                 } else {
                     coverPlaceholder
                 }
@@ -235,13 +250,19 @@ struct CreateEditTripView: View {
 
             // Photo buttons
             HStack {
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                    Label(coverPhotoURL == nil ? "Add Cover Photo" : "Change Photo", systemImage: "photo")
+                Button {
+                    showImagePicker = true
+                } label: {
+                    Label(
+                        coverPhotoURL == nil && selectedImage == nil ? "Add Cover Photo" : "Change Photo",
+                        systemImage: "photo"
+                    )
                 }
                 .disabled(isUploadingPhoto)
 
-                if coverPhotoURL != nil {
+                if coverPhotoURL != nil || selectedImage != nil {
                     Button(role: .destructive) {
+                        selectedImage = nil
                         coverPhotoURL = nil
                     } label: {
                         Label("Remove", systemImage: "trash")
@@ -285,25 +306,15 @@ struct CreateEditTripView: View {
         }
     }
 
-    private func uploadPhoto(from item: PhotosPickerItem?) async {
-        guard let item = item,
-              let userID = authService.currentUser?.id else { return }
+    private func uploadSelectedImage(_ image: UIImage) async {
+        guard let userID = authService.currentUser?.id else { return }
 
         isUploadingPhoto = true
+        defer { isUploadingPhoto = false }
 
-        do {
-            if let data = try await item.loadTransferable(type: Data.self),
-               let image = UIImage(data: data) {
-                if let url = await photoService.uploadPhoto(image, for: userID) {
-                    coverPhotoURL = url
-                }
-            }
-        } catch {
-            print("Error uploading photo: \(error)")
+        if let url = await photoService.uploadPhoto(image, for: userID) {
+            coverPhotoURL = url
         }
-
-        isUploadingPhoto = false
-        selectedPhotoItem = nil
     }
 
     private func saveTrip() {
@@ -341,7 +352,14 @@ struct CreateEditTripView: View {
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)
 
-                dismiss()
+                if isEditing {
+                    isSaving = false
+                    showSavedToast = true
+                    try? await Task.sleep(for: .seconds(1.0))
+                    dismiss()
+                } else {
+                    dismiss()
+                }
             } catch {
                 print("Error saving trip: \(error)")
             }

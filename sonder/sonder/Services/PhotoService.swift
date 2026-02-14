@@ -22,8 +22,8 @@ final class PhotoService {
     var uploadProgress: Double = 0
     var error: PhotoError?
 
-    /// Queue of pending photo uploads
-    private var uploadQueue: [(id: String, image: UIImage, userId: String)] = []
+    /// Queue of pending photo uploads (stores compressed JPEG Data, not UIImage)
+    private var uploadQueue: [(id: String, data: Data, userId: String)] = []
     private var isProcessingQueue = false
 
     enum PhotoError: LocalizedError {
@@ -110,9 +110,14 @@ final class PhotoService {
     }
 
     /// Queue a photo for upload (for offline support)
+    /// Compresses immediately so we store ~100KB of Data instead of ~5MB UIImage
     func queuePhotoUpload(image: UIImage, for userId: String) -> String {
         let id = UUID().uuidString
-        uploadQueue.append((id: id, image: image, userId: userId))
+        guard let data = compressImage(image) else {
+            error = .compressionFailed
+            return id
+        }
+        uploadQueue.append((id: id, data: data, userId: userId))
         processQueue()
         return id
     }
@@ -126,10 +131,54 @@ final class PhotoService {
         Task {
             while !uploadQueue.isEmpty {
                 let item = uploadQueue.removeFirst()
-                _ = await uploadPhoto(item.image, for: item.userId)
+                _ = await uploadCompressedData(item.data, for: item.userId)
             }
             isProcessingQueue = false
         }
+    }
+
+    /// Upload pre-compressed JPEG data (used by the queue)
+    private func uploadCompressedData(_ data: Data, for userId: String) async -> String? {
+        isUploading = true
+        error = nil
+        uploadProgress = 0.3
+
+        defer {
+            isUploading = false
+            uploadProgress = 0
+        }
+
+        let filename = "\(userId)/\(UUID().uuidString).jpg"
+
+        var lastError: Error?
+        for attempt in 1...maxRetries {
+            do {
+                let result = try await SupabaseConfig.client.storage
+                    .from(storageBucket)
+                    .upload(
+                        path: filename,
+                        file: data,
+                        options: FileOptions(contentType: "image/jpeg")
+                    )
+
+                uploadProgress = 1.0
+
+                let publicURL = try SupabaseConfig.client.storage
+                    .from(storageBucket)
+                    .getPublicURL(path: result.path)
+
+                return publicURL.absoluteString
+            } catch {
+                lastError = error
+                print("Upload attempt \(attempt) failed: \(error)")
+                if attempt < maxRetries {
+                    try? await Task.sleep(for: .seconds(Double(attempt)))
+                }
+            }
+        }
+
+        self.error = .uploadFailed(lastError ?? NSError(domain: "PhotoService", code: -1))
+        return nil
     }
 
     /// Get the number of pending uploads

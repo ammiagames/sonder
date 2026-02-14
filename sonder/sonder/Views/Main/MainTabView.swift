@@ -7,43 +7,49 @@
 
 import SwiftUI
 import SwiftData
-import MapKit
 
 struct MainTabView: View {
     @State private var selectedTab = 0
     @State private var showLogFlow = false
+    @State private var exploreFocusMyPlaces = false
+    @State private var exploreHasSelection = false
     @Environment(SyncEngine.self) private var syncEngine
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             TabView(selection: $selectedTab) {
-                SocialFeedView()
+                ExploreMapView(focusMyPlaces: $exploreFocusMyPlaces, hasSelection: $exploreHasSelection)
                     .tabItem {
-                        Label("Feed", systemImage: "square.grid.2x2")
+                        Label("Explore", systemImage: "safari")
                     }
                     .tag(0)
 
-                MapView()
+                FeedView()
                     .tabItem {
-                        Label("Map", systemImage: "map")
+                        Label("Feed", systemImage: "bubble.left.and.bubble.right")
                     }
                     .tag(1)
 
-                JournalView()
+                JournalContainerView()
                     .tabItem {
                         Label("Journal", systemImage: "book.closed")
                     }
                     .tag(2)
 
-                ProfileView(selectedTab: $selectedTab)
+                ProfileView(selectedTab: $selectedTab, exploreFocusMyPlaces: $exploreFocusMyPlaces)
                     .tabItem {
                         Label("Profile", systemImage: "person")
                     }
                     .tag(3)
             }
+            .tint(SonderColors.terracotta)
+            .toolbarBackground(SonderColors.cream, for: .tabBar)
+            .toolbarBackground(.visible, for: .tabBar)
+            .toolbarColorScheme(.light, for: .tabBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
 
-            // FAB for Feed, Map, and Trips tabs
-            if selectedTab == 0 || selectedTab == 1 || selectedTab == 2 {
+            // FAB for explore, feed, and journal tabs (hidden when explore card is showing)
+            if selectedTab <= 2 && !(selectedTab == 0 && exploreHasSelection) {
                 VStack(spacing: 8) {
                     // Pending sync indicator
                     if syncEngine.pendingCount > 0 {
@@ -68,9 +74,7 @@ struct MainTabView: View {
 // The SocialFeedView typealias provides backward compatibility
 typealias SocialFeedView = FeedView
 
-// MapView is now implemented in LogMapView.swift
-// This typealias maintains compatibility with existing code
-typealias MapView = LogMapView
+// ExploreMapView is the unified map in Tab 1 (personal + social)
 
 struct LogsView: View {
     @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
@@ -412,20 +416,8 @@ struct LogRow: View {
             ZStack(alignment: .bottomTrailing) {
                 if let userPhotoURL = log.photoURL, let url = URL(string: userPhotoURL) {
                     // User's uploaded photo
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .empty:
-                            photoPlaceholder
-                                .overlay { ProgressView() }
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        case .failure:
-                            PlacePhotoView(photoReference: place?.photoReference, size: 56)
-                        @unknown default:
-                            photoPlaceholder
-                        }
+                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 56, height: 56)) {
+                        photoPlaceholder
                     }
                     .frame(width: 56, height: 56)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -517,9 +509,9 @@ struct ProfileView: View {
     @State private var showEditProfile = false
     @State private var showShareProfile = false
     @State private var wantToGoCount = 0
-    @State private var mapCameraPosition: MapCameraPosition = .automatic
 
     @Binding var selectedTab: Int
+    @Binding var exploreFocusMyPlaces: Bool
 
     /// Logs filtered to current user only
     private var logs: [Log] {
@@ -530,38 +522,51 @@ struct ProfileView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 0) {
-                    // Hero Map
-                    heroMap
+                VStack(spacing: SonderSpacing.lg) {
+                    // Profile header (avatar + username + bio)
+                    profileHeader
 
-                    VStack(spacing: SonderSpacing.lg) {
-                        // Profile header (avatar + username + bio)
-                        profileHeader
+                    // Social stats (followers/following)
+                    socialStatsSection
 
-                        // Social stats (followers/following)
-                        socialStatsSection
+                    // Journey stats (only show if has logs)
+                    if !logs.isEmpty {
+                        heroStatSection
 
-                        // Journey stats (only show if has logs)
-                        if !logs.isEmpty {
-                            journeyStatsSection
+                        ratingBreakdownSection
+
+                        if !topTags.isEmpty {
+                            youLoveSection
                         }
 
-                        // Want to Go link
-                        wantToGoLink
+                        recentActivitySection
                     }
-                    .padding(SonderSpacing.md)
+
+                    // City breakdown options for comparison
+                    if uniqueCities.count > 1 {
+                        cityOption6_PhotoCards
+                        cityOption7_PhotoMosaic
+                    }
+
+                    // View My Map
+                    viewMyMapBanner
+
+                    // Want to Go link
+                    wantToGoLink
                 }
+                .padding(SonderSpacing.md)
             }
             .background(SonderColors.cream)
             .scrollContentBackground(.hidden)
             .navigationTitle("Your Journal")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showSettings = true
                     } label: {
                         Image(systemName: "gearshape")
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkDark)
                     }
                 }
             }
@@ -713,113 +718,56 @@ struct ProfileView: View {
 
     // MARK: - Hero Map
 
-    private var heroMap: some View {
-        ZStack(alignment: .bottom) {
-            heroMapContent
-                .frame(height: 220)
-                .allowsHitTesting(false) // Disable map interaction, just visual
+    // MARK: - View My Map Banner
 
-            // Warm gradient overlay at bottom for text legibility
-            LinearGradient(
-                colors: [.clear, SonderColors.cream.opacity(0.9)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 80)
-
-            // Places count badge with tap to view map
-            HStack(spacing: SonderSpacing.xs) {
-                if logs.isEmpty {
-                    Image(systemName: "map")
-                        .foregroundColor(SonderColors.inkMuted)
-                    Text("Start your journey!")
-                        .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
-                } else {
-                    Image(systemName: "mappin.circle.fill")
-                        .foregroundColor(SonderColors.terracotta)
-                    Text("\(logs.count) places in your journal")
-                        .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkDark)
-
-                    Text("•")
-                        .foregroundColor(SonderColors.inkLight)
-
-                    Text("View map")
-                        .font(SonderTypography.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(SonderColors.terracotta)
-                }
-            }
-            .padding(.horizontal, SonderSpacing.sm)
-            .padding(.vertical, SonderSpacing.xs)
-            .background(SonderColors.cream.opacity(0.95))
-            .clipShape(Capsule())
-            .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
-            .padding(.bottom, SonderSpacing.sm)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
+    private var viewMyMapBanner: some View {
+        Button {
             if !logs.isEmpty {
-                selectedTab = 1 // Switch to Map tab
+                exploreFocusMyPlaces = true
+                selectedTab = 0
             }
-        }
-        .onAppear {
-            updateMapRegion()
-        }
-    }
+        } label: {
+            HStack(spacing: SonderSpacing.sm) {
+                // Map icon
+                Image(systemName: "map.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(SonderColors.terracotta)
+                    .frame(width: 40, height: 40)
+                    .background(SonderColors.terracotta.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
 
-    private var heroMapContent: some View {
-        Map(position: $mapCameraPosition) {
-            ForEach(userPlaces, id: \.id) { place in
-                if let log = logs.first(where: { $0.placeID == place.id }) {
-                    Annotation(place.name, coordinate: place.coordinate) {
-                        Circle()
-                            .fill(pinColor(for: log.rating))
-                            .frame(width: 12, height: 12)
-                            .overlay {
-                                Circle()
-                                    .stroke(Color.white, lineWidth: 2)
-                            }
-                            .shadow(radius: 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    if logs.isEmpty {
+                        Text("Your Map")
+                            .font(SonderTypography.headline)
+                            .foregroundColor(SonderColors.inkDark)
+                        Text("Start logging places to see them on the map")
+                            .font(SonderTypography.caption)
+                            .foregroundColor(SonderColors.inkMuted)
+                    } else {
+                        Text("Your Map")
+                            .font(SonderTypography.headline)
+                            .foregroundColor(SonderColors.inkDark)
+                        Text("\(logs.count) places logged")
+                            .font(SonderTypography.caption)
+                            .foregroundColor(SonderColors.inkMuted)
                     }
                 }
+
+                Spacer()
+
+                if !logs.isEmpty {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(SonderColors.inkLight)
+                }
             }
+            .padding(SonderSpacing.md)
+            .background(SonderColors.warmGray)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
         }
-    }
-
-    private func updateMapRegion() {
-        guard !userPlaces.isEmpty else { return }
-
-        let coordinates = userPlaces.map { $0.coordinate }
-
-        let minLat = coordinates.map(\.latitude).min() ?? 0
-        let maxLat = coordinates.map(\.latitude).max() ?? 0
-        let minLng = coordinates.map(\.longitude).min() ?? 0
-        let maxLng = coordinates.map(\.longitude).max() ?? 0
-
-        let center = CLLocationCoordinate2D(
-            latitude: (minLat + maxLat) / 2,
-            longitude: (minLng + maxLng) / 2
-        )
-
-        let latDelta = max((maxLat - minLat) * 1.5, 0.05)
-        let lngDelta = max((maxLng - minLng) * 1.5, 0.05)
-
-        let region = MKCoordinateRegion(
-            center: center,
-            span: MKCoordinateSpan(latitudeDelta: latDelta, longitudeDelta: lngDelta)
-        )
-
-        mapCameraPosition = .region(region)
-    }
-
-    private func pinColor(for rating: Rating) -> Color {
-        switch rating {
-        case .skip: return SonderColors.ratingSkip
-        case .solid: return SonderColors.ratingSolid
-        case .mustSee: return SonderColors.ratingMustSee
-        }
+        .buttonStyle(.plain)
+        .disabled(logs.isEmpty)
     }
 
     // MARK: - Profile Header
@@ -837,23 +785,8 @@ struct ProfileView: View {
                 ZStack {
                     if let urlString = authService.currentUser?.avatarURL,
                        let url = URL(string: urlString) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .empty:
-                                avatarPlaceholder
-                                    .overlay {
-                                        ProgressView()
-                                            .tint(SonderColors.terracotta)
-                                    }
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                            case .failure:
-                                avatarPlaceholder
-                            @unknown default:
-                                avatarPlaceholder
-                            }
+                        DownsampledAsyncImage(url: url, targetSize: CGSize(width: 100, height: 100)) {
+                            avatarPlaceholder
                         }
                         .id(urlString) // Force refresh when URL changes
                     } else {
@@ -961,39 +894,479 @@ struct ProfileView: View {
             }
     }
 
-    // MARK: - Journey Stats Section
+    // MARK: - Hero Stat Section
 
-    private var journeyStatsSection: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            Text("Your journey so far")
+    private var heroStatSection: some View {
+        VStack(spacing: SonderSpacing.xs) {
+            Text("\(logs.count)")
+                .font(.system(size: 48, weight: .bold, design: .serif))
+                .foregroundColor(SonderColors.inkDark)
+
+            Text("places logged")
+                .font(SonderTypography.headline)
+                .foregroundColor(SonderColors.inkMuted)
+
+            // Breakdown line
+            let parts: [String] = {
+                var p: [String] = []
+                if uniqueCities.count > 1 {
+                    p.append("\(uniqueCities.count) cities")
+                }
+                if uniqueCountries.count > 1 {
+                    p.append("\(uniqueCountries.count) countries")
+                }
+                return p
+            }()
+
+            if !parts.isEmpty {
+                Text("across " + parts.joined(separator: " in "))
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkLight)
+            }
+
+            // Momentum indicator
+            let thisMonthCount = logsThisMonth
+            if thisMonthCount > 0 {
+                Text("\(thisMonthCount) place\(thisMonthCount == 1 ? "" : "s") this month")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(SonderColors.terracotta)
+                    .padding(.horizontal, SonderSpacing.sm)
+                    .padding(.vertical, SonderSpacing.xxs)
+                    .background(SonderColors.terracotta.opacity(0.1))
+                    .clipShape(Capsule())
+                    .padding(.top, SonderSpacing.xxs)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, SonderSpacing.lg)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+    }
+
+    // MARK: - Rating Breakdown Section
+
+    private var ratingBreakdownSection: some View {
+        let total = max(logs.count, 1)
+        let mustSeeCount = logs.filter { $0.rating == .mustSee }.count
+        let solidCount = logs.filter { $0.rating == .solid }.count
+        let skipCount = logs.filter { $0.rating == .skip }.count
+
+        return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            Text("Your ratings")
                 .font(SonderTypography.caption)
                 .foregroundColor(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
-            HStack(spacing: SonderSpacing.sm) {
-                JourneyStatCard(
-                    value: "\(logs.count)",
-                    label: "Places",
-                    icon: "mappin.circle.fill",
-                    color: SonderColors.terracotta
-                )
+            // Horizontal stacked bar
+            GeometryReader { geo in
+                HStack(spacing: 2) {
+                    if mustSeeCount > 0 {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(SonderColors.ratingMustSee)
+                            .frame(width: max(geo.size.width * CGFloat(mustSeeCount) / CGFloat(total), 8))
+                    }
+                    if solidCount > 0 {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(SonderColors.ratingSolid)
+                            .frame(width: max(geo.size.width * CGFloat(solidCount) / CGFloat(total), 8))
+                    }
+                    if skipCount > 0 {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(SonderColors.ratingSkip)
+                            .frame(width: max(geo.size.width * CGFloat(skipCount) / CGFloat(total), 8))
+                    }
+                }
+            }
+            .frame(height: 12)
 
-                JourneyStatCard(
-                    value: "\(uniqueCities.count)",
-                    label: "Cities",
-                    icon: "building.2.fill",
-                    color: SonderColors.sage
-                )
-
-                JourneyStatCard(
-                    value: "\(uniqueCountries.count)",
-                    label: "Countries",
-                    icon: "globe.americas.fill",
-                    color: SonderColors.warmBlue
-                )
+            // Legend row
+            HStack(spacing: SonderSpacing.md) {
+                ratingLegendItem(emoji: Rating.mustSee.emoji, label: "Must-See", count: mustSeeCount)
+                ratingLegendItem(emoji: Rating.solid.emoji, label: "Solid", count: solidCount)
+                ratingLegendItem(emoji: Rating.skip.emoji, label: "Skip", count: skipCount)
+                Spacer()
             }
         }
+        .padding(SonderSpacing.md)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+    }
+
+    private func ratingLegendItem(emoji: String, label: String, count: Int) -> some View {
+        HStack(spacing: SonderSpacing.xxs) {
+            Text(emoji)
+                .font(.system(size: 14))
+            Text("\(count)")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(SonderColors.inkDark)
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundColor(SonderColors.inkMuted)
+        }
+    }
+
+    // MARK: - You Love Section
+
+    private var youLoveSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            Text("You love")
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            FlowLayoutWrapper {
+                ForEach(topTags, id: \.self) { tag in
+                    NavigationLink {
+                        FilteredLogsListView(
+                            title: tag,
+                            logs: logsForTag(tag)
+                        )
+                    } label: {
+                        HStack(spacing: SonderSpacing.xxs) {
+                            Text(tag)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(SonderColors.terracotta)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(SonderColors.terracotta.opacity(0.6))
+                        }
+                        .padding(.horizontal, SonderSpacing.sm)
+                        .padding(.vertical, SonderSpacing.xxs + 2)
+                        .background(SonderColors.terracotta.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(SonderSpacing.md)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+    }
+
+    // MARK: - Recent Activity Section
+
+    private var recentActivitySection: some View {
+        let recentLogs = Array(logs.sorted { $0.createdAt > $1.createdAt }.prefix(3))
+
+        return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            Text("Recent activity")
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            ForEach(recentLogs, id: \.id) { log in
+                if let place = places.first(where: { $0.id == log.placeID }) {
+                    NavigationLink {
+                        LogDetailView(log: log, place: place)
+                    } label: {
+                        HStack(spacing: SonderSpacing.sm) {
+                            Text(log.rating.emoji)
+                                .font(.system(size: 20))
+                                .frame(width: 36, height: 36)
+                                .background(SonderColors.pinColor(for: log.rating).opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(place.name)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(SonderColors.inkDark)
+                                    .lineLimit(1)
+
+                                Text(log.createdAt.relativeDisplay)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(SonderColors.inkLight)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(SonderColors.inkLight)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    if log.id != recentLogs.last?.id {
+                        Divider()
+                    }
+                }
+            }
+
+            // "See all" link → switches to Journal tab
+            if logs.count > 3 {
+                Divider()
+
+                Button {
+                    selectedTab = 2
+                } label: {
+                    HStack {
+                        Text("See all \(logs.count) logs")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(SonderColors.terracotta)
+                        Spacer()
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(SonderColors.terracotta)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(SonderSpacing.md)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+    }
+
+    // MARK: - City Data (shared)
+
+    private var cityCounts: [(city: String, count: Int)] {
+        var counts: [String: Int] = [:]
+        for place in userPlaces {
+            if let city = extractCity(from: place.address) {
+                counts[city, default: 0] += 1
+            }
+        }
+        return counts.map { (city: $0.key, count: $0.value) }
+            .sorted { $0.count > $1.count }
+    }
+
+    // MARK: - City Photo Helper
+
+    /// Returns the best photo URL for a city: user's own photo first, then Google Places photo
+    private func cityPhotoURL(_ city: String, maxWidth: Int = 400) -> URL? {
+        let cityPlaces = userPlaces.filter { extractCity(from: $0.address) == city }
+        let cityLogs = logs.filter { log in cityPlaces.contains(where: { $0.id == log.placeID }) }
+
+        // 1. User's own log photo (most personal)
+        if let userPhoto = cityLogs.sorted(by: { $0.createdAt > $1.createdAt })
+            .first(where: { $0.photoURL != nil })?.photoURL,
+           let url = URL(string: userPhoto) {
+            return url
+        }
+
+        // 2. Google Places photo of the most-logged place in this city
+        let placesByLogCount = cityPlaces.sorted { p1, p2 in
+            cityLogs.filter { $0.placeID == p1.id }.count > cityLogs.filter { $0.placeID == p2.id }.count
+        }
+        if let ref = placesByLogCount.first(where: { $0.photoReference != nil })?.photoReference,
+           let url = GooglePlacesService.photoURL(for: ref, maxWidth: maxWidth) {
+            return url
+        }
+
+        return nil
+    }
+
+    // MARK: - Option 6: Photo Cards
+
+    private var cityOption6_PhotoCards: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            Text("Option 6 — Photo Cards")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.red)
+
+            Text("Your cities")
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: SonderSpacing.sm) {
+                    ForEach(Array(cityCounts.prefix(8).enumerated()), id: \.element.city) { index, item in
+                        NavigationLink {
+                            FilteredLogsListView(title: item.city, logs: logsForCity(item.city))
+                        } label: {
+                            ZStack(alignment: .bottomLeading) {
+                                // Photo background or gradient fallback
+                                if let url = cityPhotoURL(item.city) {
+                                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 160, height: 200)) {
+                                        cityPhotoFallback(index: index)
+                                    }
+                                    .frame(width: 160, height: 200)
+                                    .clipped()
+                                } else {
+                                    cityPhotoFallback(index: index)
+                                        .frame(width: 160, height: 200)
+                                }
+
+                                // Dark gradient overlay
+                                LinearGradient(
+                                    colors: [.clear, .clear, .black.opacity(0.7)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+
+                                // Text overlay
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Spacer()
+
+                                    Text(item.city)
+                                        .font(.system(size: 17, weight: .bold, design: .serif))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+
+                                    Text("\(item.count) place\(item.count == 1 ? "" : "s")")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                                .padding(SonderSpacing.sm)
+                            }
+                            .frame(width: 160, height: 200)
+                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                            .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, SonderSpacing.xxs)
+            }
+        }
+        .padding(SonderSpacing.md)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+    }
+
+    // MARK: - Option 7: Photo Mosaic
+
+    private var cityOption7_PhotoMosaic: some View {
+        let items = Array(cityCounts.prefix(5))
+
+        return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            Text("Option 7 — Photo Mosaic")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.red)
+
+            Text("Your cities")
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            if let hero = items.first {
+                // Hero: full-width photo card for top city
+                NavigationLink {
+                    FilteredLogsListView(title: hero.city, logs: logsForCity(hero.city))
+                } label: {
+                    ZStack(alignment: .bottomLeading) {
+                        if let url = cityPhotoURL(hero.city, maxWidth: 600) {
+                            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 180)) {
+                                cityPhotoFallback(index: 0)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 160)
+                            .clipped()
+                        } else {
+                            cityPhotoFallback(index: 0)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 160)
+                        }
+
+                        // Gradient overlay
+                        LinearGradient(
+                            colors: [.clear, .black.opacity(0.65)],
+                            startPoint: .center,
+                            endPoint: .bottom
+                        )
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Spacer()
+
+                            Text(hero.city)
+                                .font(.system(size: 22, weight: .bold, design: .serif))
+                                .foregroundColor(.white)
+
+                            Text("\(hero.count) place\(hero.count == 1 ? "" : "s") logged")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                        .padding(SonderSpacing.md)
+                    }
+                    .frame(height: 160)
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Rest: 2-column photo grid
+            if items.count > 1 {
+                let rest = Array(items.dropFirst())
+                let columns = [
+                    GridItem(.flexible(), spacing: SonderSpacing.xs),
+                    GridItem(.flexible(), spacing: SonderSpacing.xs)
+                ]
+
+                LazyVGrid(columns: columns, spacing: SonderSpacing.xs) {
+                    ForEach(Array(rest.enumerated()), id: \.element.city) { index, item in
+                        NavigationLink {
+                            FilteredLogsListView(title: item.city, logs: logsForCity(item.city))
+                        } label: {
+                            ZStack(alignment: .bottomLeading) {
+                                if let url = cityPhotoURL(item.city) {
+                                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 200, height: 120)) {
+                                        cityPhotoFallback(index: index + 1)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 100)
+                                    .clipped()
+                                } else {
+                                    cityPhotoFallback(index: index + 1)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 100)
+                                }
+
+                                // Gradient
+                                LinearGradient(
+                                    colors: [.clear, .black.opacity(0.6)],
+                                    startPoint: .center,
+                                    endPoint: .bottom
+                                )
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Spacer()
+
+                                    Text(item.city)
+                                        .font(.system(size: 14, weight: .bold, design: .serif))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+
+                                    Text("\(item.count)")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                                .padding(SonderSpacing.sm)
+                            }
+                            .frame(height: 100)
+                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(SonderSpacing.md)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+    }
+
+    /// Gradient fallback when no photo is available for a city
+    private func cityPhotoFallback(index: Int) -> some View {
+        let gradients: [(Color, Color)] = [
+            (SonderColors.terracotta, SonderColors.ochre),
+            (SonderColors.warmBlue, SonderColors.sage),
+            (SonderColors.dustyRose, SonderColors.terracotta),
+            (SonderColors.sage, SonderColors.warmBlue),
+            (SonderColors.ochre, SonderColors.dustyRose),
+        ]
+        let grad = gradients[index % gradients.count]
+        return LinearGradient(
+            colors: [grad.0, grad.1],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 
     // MARK: - Computed Stats
@@ -1021,6 +1394,36 @@ struct ProfileView: View {
         return Array(tagCounts.prefix(4).map { $0.key })
     }
 
+    /// Top tags for the profile "You love" section
+    private var topTags: [String] {
+        let allTags = logs.flatMap { $0.tags }
+        guard !allTags.isEmpty else { return [] }
+        let tagCounts = Dictionary(grouping: allTags, by: { $0 })
+            .mapValues { $0.count }
+            .sorted { $0.value > $1.value }
+        return Array(tagCounts.prefix(6).map { $0.key })
+    }
+
+    /// Number of logs created this calendar month
+    private var logsThisMonth: Int {
+        let now = Date()
+        let calendar = Calendar.current
+        return logs.filter { calendar.isDate($0.createdAt, equalTo: now, toGranularity: .month) }.count
+    }
+
+    private func logsForTag(_ tag: String) -> [Log] {
+        logs.filter { $0.tags.contains(tag) }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private func logsForCity(_ city: String) -> [Log] {
+        logs.filter { log in
+            guard let place = places.first(where: { $0.id == log.placeID }) else { return false }
+            return extractCity(from: place.address) == city
+        }
+        .sorted { $0.createdAt > $1.createdAt }
+    }
+
     private func extractCity(from address: String) -> String? {
         let components = address.components(separatedBy: ", ")
         guard components.count >= 2 else { return nil }
@@ -1042,6 +1445,60 @@ struct ProfileView: View {
             return components.count >= 2 ? components[components.count - 2] : nil
         }
         return trimmed
+    }
+}
+
+// MARK: - Filtered Logs List View
+
+/// Reusable view showing a filtered list of logs (used by tag/city navigation on Profile)
+struct FilteredLogsListView: View {
+    let title: String
+    let logs: [Log]
+    @Query private var places: [Place]
+
+    var body: some View {
+        List {
+            ForEach(logs, id: \.id) { log in
+                if let place = places.first(where: { $0.id == log.placeID }) {
+                    NavigationLink {
+                        LogDetailView(log: log, place: place)
+                    } label: {
+                        HStack(spacing: SonderSpacing.sm) {
+                            Text(log.rating.emoji)
+                                .font(.system(size: 20))
+                                .frame(width: 36, height: 36)
+                                .background(SonderColors.pinColor(for: log.rating).opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(place.name)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(SonderColors.inkDark)
+                                    .lineLimit(1)
+
+                                Text(place.address)
+                                    .font(SonderTypography.caption)
+                                    .foregroundColor(SonderColors.inkMuted)
+                                    .lineLimit(1)
+
+                                Text(log.createdAt.formatted(date: .abbreviated, time: .omitted))
+                                    .font(.system(size: 12))
+                                    .foregroundColor(SonderColors.inkLight)
+                            }
+
+                            Spacer()
+                        }
+                    }
+                    .listRowBackground(SonderColors.warmGray)
+                    .listRowSeparator(.hidden)
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(SonderColors.cream)
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -1226,8 +1683,11 @@ struct SettingsView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(SonderColors.cream)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .tint(SonderColors.terracotta)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {

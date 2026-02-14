@@ -164,6 +164,25 @@ final class PlacesCacheService {
         return place
     }
 
+    /// Backfill missing photo references for cached places.
+    /// Fetches details from Google Places API for up to `limit` places that have nil photoReference.
+    func backfillMissingPhotoReferences(using placesService: GooglePlacesService, limit: Int = 10) async {
+        let descriptor = FetchDescriptor<Place>()
+        guard let allPlaces = try? modelContext.fetch(descriptor) else { return }
+
+        let missing = allPlaces.filter { $0.photoReference == nil }.prefix(limit)
+        guard !missing.isEmpty else { return }
+
+        for place in missing {
+            guard let details = await placesService.getPlaceDetails(placeId: place.id) else { continue }
+            if let photoRef = details.photoReference {
+                place.photoReference = photoRef
+            }
+        }
+
+        try? modelContext.save()
+    }
+
     /// Get a cached place by ID
     func getPlace(by id: String) -> Place? {
         let descriptor = FetchDescriptor<Place>(

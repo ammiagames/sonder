@@ -48,15 +48,8 @@ struct FeedItemCard: View {
                 // Avatar
                 if let urlString = feedItem.user.avatarURL,
                    let url = URL(string: urlString) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        default:
-                            avatarPlaceholder
-                        }
+                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 36, height: 36)) {
+                        avatarPlaceholder
                     }
                     .frame(width: 36, height: 36)
                     .clipShape(Circle())
@@ -103,15 +96,8 @@ struct FeedItemCard: View {
                 if let urlString = feedItem.log.photoURL,
                    let url = URL(string: urlString) {
                     // User's photo
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        default:
-                            placePhoto
-                        }
+                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 220)) {
+                        placePhoto
                     }
                 } else {
                     placePhoto
@@ -128,15 +114,8 @@ struct FeedItemCard: View {
     private var placePhoto: some View {
         if let photoRef = feedItem.place.photoReference,
            let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 600) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    photoPlaceholder
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 220)) {
+                photoPlaceholder
             }
         } else {
             photoPlaceholder
@@ -217,8 +196,8 @@ struct FeedItemCard: View {
 
     private var footerSection: some View {
         HStack {
-            // Date
-            Text(feedItem.createdAt.formatted(date: .abbreviated, time: .omitted))
+            // Relative time
+            Text(feedItem.createdAt.relativeDisplay)
                 .font(SonderTypography.caption)
                 .foregroundColor(SonderColors.inkLight)
 

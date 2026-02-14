@@ -81,6 +81,8 @@ struct BookmarkButton: View {
 
     @Environment(AuthenticationService.self) private var authService
     @Environment(WantToGoService.self) private var wantToGoService
+    @Environment(GooglePlacesService.self) private var placesService
+    @Environment(PlacesCacheService.self) private var cacheService
 
     @State private var isBookmarked = false
     @State private var isLoading = false
@@ -124,6 +126,7 @@ struct BookmarkButton: View {
         guard let userID = authService.currentUser?.id else { return }
 
         isLoading = true
+        let wasBookmarked = isBookmarked
 
         Task {
             do {
@@ -139,10 +142,24 @@ struct BookmarkButton: View {
 
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
+
+                // When adding a bookmark, ensure the place is cached locally with
+                // coordinates so the map can display the pin immediately.
+                if !wasBookmarked {
+                    await ensurePlaceCached()
+                }
             } catch {
                 print("Error toggling bookmark: \(error)")
             }
             isLoading = false
+        }
+    }
+
+    /// Fetch and cache place details so the map has coordinates for this pin.
+    private func ensurePlaceCached() async {
+        if cacheService.getPlace(by: placeId) != nil { return }
+        if let details = await placesService.getPlaceDetails(placeId: placeId) {
+            _ = cacheService.cachePlace(from: details)
         }
     }
 }

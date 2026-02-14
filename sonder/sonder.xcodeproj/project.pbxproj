@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6B1200072F3F90BD008ED6BC /* supabase_trips_migration.sql in Resources */ = {isa = PBXBuildFile; fileRef = 6B1200062F3F90BD008ED6BC /* supabase_trips_migration.sql */; };
 		6B12FDAD2F345FE6008ED6BC /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 6B12FDAC2F345FE6008ED6BC /* Auth */; };
 		6B12FDAF2F345FE6008ED6BC /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = 6B12FDAE2F345FE6008ED6BC /* Functions */; };
 		6B12FDB12F345FE6008ED6BC /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = 6B12FDB02F345FE6008ED6BC /* PostgREST */; };
@@ -15,6 +16,8 @@
 		6B12FDB72F345FE6008ED6BC /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 6B12FDB62F345FE6008ED6BC /* Supabase */; };
 		6B12FDBB2F3468AE008ED6BC /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 6B12FDBA2F3468AE008ED6BC /* GoogleSignIn */; };
 		6B12FDBD2F3468AE008ED6BC /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 6B12FDBC2F3468AE008ED6BC /* GoogleSignInSwift */; };
+		6B12FEFD2F3D9157008ED6BC /* sonder_ui_ux.md in Resources */ = {isa = PBXBuildFile; fileRef = 6B12FEFC2F3D9157008ED6BC /* sonder_ui_ux.md */; };
+		6B12FEFF2F3D91BD008ED6BC /* FEATURE_ROADMAP.md in Resources */ = {isa = PBXBuildFile; fileRef = 6B12FEFE2F3D91BD008ED6BC /* FEATURE_ROADMAP.md */; };
 		6BCD27A92F344FA200A8C509 /* Wandr_Product_Spec_v3.md in Resources */ = {isa = PBXBuildFile; fileRef = 6BCD27A82F344FA200A8C509 /* Wandr_Product_Spec_v3.md */; };
 /* End PBXBuildFile section */
 
@@ -36,6 +39,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		6B1200062F3F90BD008ED6BC /* supabase_trips_migration.sql */ = {isa = PBXFileReference; lastKnownFileType = text; path = supabase_trips_migration.sql; sourceTree = "<group>"; };
+		6B12FEFC2F3D9157008ED6BC /* sonder_ui_ux.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = sonder_ui_ux.md; sourceTree = "<group>"; };
+		6B12FEFE2F3D91BD008ED6BC /* FEATURE_ROADMAP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = FEATURE_ROADMAP.md; sourceTree = "<group>"; };
 		6BCD27722F344CDD00A8C509 /* sonder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = sonder.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6BCD277F2F344CDE00A8C509 /* sonderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = sonderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6BCD27892F344CDE00A8C509 /* sonderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = sonderUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -114,6 +120,9 @@
 				6BCD278C2F344CDE00A8C509 /* sonderUITests */,
 				6BCD27732F344CDD00A8C509 /* Products */,
 				6BCD27A82F344FA200A8C509 /* Wandr_Product_Spec_v3.md */,
+				6B12FEFC2F3D9157008ED6BC /* sonder_ui_ux.md */,
+				6B12FEFE2F3D91BD008ED6BC /* FEATURE_ROADMAP.md */,
+				6B1200062F3F90BD008ED6BC /* supabase_trips_migration.sql */,
 			);
 			sourceTree = "<group>";
 		};
@@ -259,6 +268,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6B12FEFF2F3D91BD008ED6BC /* FEATURE_ROADMAP.md in Resources */,
+				6B12FEFD2F3D9157008ED6BC /* sonder_ui_ux.md in Resources */,
+				6B1200072F3F90BD008ED6BC /* supabase_trips_migration.sql in Resources */,
 				6BCD27A92F344FA200A8C509 /* Wandr_Product_Spec_v3.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -451,7 +463,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -484,7 +496,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

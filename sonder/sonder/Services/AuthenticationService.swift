@@ -19,6 +19,8 @@ final class AuthenticationService {
     var currentUser: User?
     var isAuthenticated: Bool { currentUser != nil }
     var isLoading = false
+    /// True while restoring session on launch. Show splash screen instead of auth screen.
+    var isCheckingSession = true
     var error: Error?
 
     private let supabase = SupabaseConfig.client
@@ -54,6 +56,7 @@ final class AuthenticationService {
     // MARK: - Session Management
     
     func checkSession() async {
+        defer { isCheckingSession = false }
         do {
             let session = try await supabase.auth.session
             await loadUser(id: session.user.id.uuidString)
@@ -63,19 +66,26 @@ final class AuthenticationService {
         }
     }
     
-    private func loadUser(id: String) async {
-        do {
-            let response: User = try await supabase
-                .from("users")
-                .select()
-                .eq("id", value: id)
-                .single()
-                .execute()
-                .value
+    private func loadUser(id: String, retries: Int = 2) async {
+        for attempt in 0...retries {
+            do {
+                let response: User = try await supabase
+                    .from("users")
+                    .select()
+                    .eq("id", value: id)
+                    .single()
+                    .execute()
+                    .value
 
-            self.currentUser = response
-        } catch {
-            self.error = error
+                self.currentUser = response
+                return
+            } catch {
+                if attempt < retries {
+                    try? await Task.sleep(for: .seconds(1))
+                } else {
+                    self.error = error
+                }
+            }
         }
     }
     

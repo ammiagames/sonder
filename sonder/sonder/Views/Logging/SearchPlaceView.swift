@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import CoreLocation
 
 /// Screen 1: Search for a place to log
 struct SearchPlaceView: View {
@@ -19,10 +20,9 @@ struct SearchPlaceView: View {
     @State private var searchText = ""
     @State private var predictions: [PlacePrediction] = []
     @State private var nearbyPlaces: [NearbyPlace] = []
-    @State private var selectedPlace: Place?
     @State private var selectedDetails: PlaceDetails?
     @State private var showPreview = false
-    @State private var showRatingView = false
+    @State private var placeToLog: Place?
     @State private var showCustomPlace = false
     @State private var isLoadingNearby = false
     @State private var isLoadingDetails = false
@@ -38,16 +38,6 @@ struct SearchPlaceView: View {
                 // Content
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        // Loading details indicator
-                        if isLoadingDetails {
-                            HStack {
-                                ProgressView()
-                                Text("Loading place details...")
-                                    .font(.subheadline)
-                            }
-                            .padding()
-                        }
-
                         // Error messages
                         if let error = detailsError {
                             errorBanner(message: error)
@@ -103,17 +93,7 @@ struct SearchPlaceView: View {
                             name: place.name,
                             address: place.address
                         )
-                        selectedPlace = place
-                        showRatingView = true
-                    }
-                    .navigationDestination(isPresented: $showRatingView) {
-                        if let place = selectedPlace {
-                            RatePlaceView(place: place) {
-                                // Return to search after logging
-                                showRatingView = false
-                                showPreview = false
-                            }
-                        }
+                        placeToLog = place
                     }
                 }
             }
@@ -123,20 +103,22 @@ struct SearchPlaceView: View {
         }
         .sheet(isPresented: $showCustomPlace) {
             CreateCustomPlaceView { place in
-                selectedPlace = place
                 showCustomPlace = false
-                // Trigger rating view after a short delay
+                // Present rating after sheet dismisses
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    showRatingView = true
+                    placeToLog = place
                 }
             }
         }
-        .fullScreenCover(isPresented: $showRatingView) {
-            if let place = selectedPlace {
-                NavigationStack {
-                    RatePlaceView(place: place) {
-                        showRatingView = false
-                        selectedPlace = nil
+        .fullScreenCover(item: $placeToLog) { place in
+            NavigationStack {
+                RatePlaceView(place: place) {
+                    // Pop the preview first (hidden under the cover)
+                    showPreview = false
+                    searchText = ""
+                    // Dismiss the cover on next frame so preview is already gone
+                    DispatchQueue.main.async {
+                        placeToLog = nil
                     }
                 }
             }
@@ -280,6 +262,7 @@ struct SearchPlaceView: View {
                     placeId: place.placeId,
                     onBookmark: {}
                 )
+                .id("nearby-\(place.placeId)")
                 .onTapGesture {
                     selectNearbyPlace(place)
                 }
@@ -358,6 +341,7 @@ struct SearchPlaceView: View {
                         removingPlaceIds.remove(search.placeId)
                     }
                 }
+                .id("recent-\(search.placeId)")
                 .onTapGesture {
                     selectRecentSearch(search)
                 }
@@ -403,7 +387,13 @@ struct SearchPlaceView: View {
     // MARK: - Actions
 
     private func loadNearbyPlaces() {
-        guard locationService.isAuthorized else { return }
+        print("[Nearby] isAuthorized: \(locationService.isAuthorized), currentLocation: \(String(describing: locationService.currentLocation))")
+        guard locationService.isAuthorized else {
+            print("[Nearby] Not authorized — skipping")
+            return
+        }
+
+        isLoadingNearby = true
 
         // Request location if not available
         if locationService.currentLocation == nil {
@@ -412,16 +402,22 @@ struct SearchPlaceView: View {
 
         // Load nearby when location is available
         Task {
-            // Wait for location
-            for _ in 0..<10 {
+            // Wait for location (max 5 seconds)
+            for i in 0..<10 {
                 if locationService.currentLocation != nil { break }
+                print("[Nearby] Waiting for location... attempt \(i + 1)")
                 try? await Task.sleep(for: .milliseconds(500))
             }
 
-            guard let location = locationService.currentLocation else { return }
+            guard let location = locationService.currentLocation else {
+                print("[Nearby] Location never resolved — giving up")
+                isLoadingNearby = false
+                return
+            }
 
-            isLoadingNearby = true
+            print("[Nearby] Got location: \(location.latitude), \(location.longitude)")
             nearbyPlaces = await placesService.nearbySearch(location: location)
+            print("[Nearby] Got \(nearbyPlaces.count) nearby places")
             isLoadingNearby = false
         }
     }

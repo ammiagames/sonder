@@ -7,7 +7,6 @@
 
 import SwiftUI
 import SwiftData
-import PhotosUI
 
 /// Editable detail view for a single log
 struct LogDetailView: View {
@@ -19,31 +18,77 @@ struct LogDetailView: View {
 
     let log: Log
     let place: Place
+    /// Called before the log is deleted so the parent can clear navigation state
+    var onDelete: (() -> Void)?
 
     // Editable state
     @State private var rating: Rating
     @State private var note: String
     @State private var tags: [String]
     @State private var selectedTripID: String?
-    @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var selectedImage: UIImage?
     @State private var currentPhotoURL: String?
 
     // UI state
     @State private var showDeleteAlert = false
     @State private var showRemovePhotoAlert = false
+    @State private var showImagePicker = false
     @State private var isSaving = false
     @State private var hasChanges = false
     @State private var showSavedToast = false
     @FocusState private var isNoteFocused: Bool
 
-    @Query private var trips: [Trip]
+    @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
+    @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
+
+    @State private var showNewTripAlert = false
+    @State private var newTripName = ""
+    @State private var showAllTrips = false
 
     private let maxNoteLength = 280
 
-    init(log: Log, place: Place) {
+    /// Trips the user can add logs to (owned + collaborating),
+    /// sorted by most recently used (latest log added), then by creation date.
+    private var availableTrips: [Trip] {
+        guard let userID = authService.currentUser?.id else { return [] }
+        let accessible = allTrips.filter { trip in
+            trip.createdBy == userID || trip.collaboratorIDs.contains(userID)
+        }
+        let latestLogByTrip: [String: Date] = allLogs.reduce(into: [:]) { map, log in
+            guard let tripID = log.tripID else { return }
+            if map[tripID] == nil || log.createdAt > map[tripID]! {
+                map[tripID] = log.createdAt
+            }
+        }
+        return accessible.sorted { a, b in
+            let aDate = latestLogByTrip[a.id] ?? a.createdAt
+            let bDate = latestLogByTrip[b.id] ?? b.createdAt
+            return aDate > bDate
+        }
+    }
+
+    /// Chips to display: first 3 available trips, plus the currently selected trip if not already shown.
+    private var visibleTrips: [Trip] {
+        var result = Array(availableTrips.prefix(3))
+        if let tripID = selectedTripID,
+           !result.contains(where: { $0.id == tripID }),
+           let trip = availableTrips.first(where: { $0.id == tripID }) {
+            result.insert(trip, at: 0)
+        }
+        return result
+    }
+
+    private var selectedTripBinding: Binding<Trip?> {
+        Binding(
+            get: { allTrips.first(where: { $0.id == selectedTripID }) },
+            set: { selectedTripID = $0?.id }
+        )
+    }
+
+    init(log: Log, place: Place, onDelete: (() -> Void)? = nil) {
         self.log = log
         self.place = place
+        self.onDelete = onDelete
         _rating = State(initialValue: log.rating)
         _note = State(initialValue: log.note ?? "")
         _tags = State(initialValue: log.tags)
@@ -100,6 +145,7 @@ struct LogDetailView: View {
         }
         .navigationTitle(place.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(showImagePicker ? .hidden : .automatic, for: .tabBar)
         .overlay(alignment: .bottom) {
             Group {
                 if showSavedToast {
@@ -146,15 +192,16 @@ struct LogDetailView: View {
             .animation(.easeInOut(duration: 0.25), value: hasChanges)
             .animation(.easeInOut(duration: 0.25), value: showSavedToast)
         }
-        .onChange(of: selectedPhotoItem) { _, newValue in
-            Task {
-                if let data = try? await newValue?.loadTransferable(type: Data.self),
-                   let image = UIImage(data: data) {
-                    selectedImage = image
-                    currentPhotoURL = nil
-                    hasChanges = true
-                }
+        .sheet(isPresented: $showImagePicker) {
+            EditableImagePicker { image in
+                selectedImage = image
+                currentPhotoURL = nil
+                hasChanges = true
+                showImagePicker = false
+            } onCancel: {
+                showImagePicker = false
             }
+            .ignoresSafeArea()
         }
         .onChange(of: rating) { _, _ in hasChanges = true }
         .onChange(of: note) { _, _ in hasChanges = true }
@@ -173,11 +220,27 @@ struct LogDetailView: View {
             Button("Remove", role: .destructive) {
                 currentPhotoURL = nil
                 selectedImage = nil
-                selectedPhotoItem = nil
                 hasChanges = true
             }
         } message: {
             Text("Remove this photo from your log?")
+        }
+        .sheet(isPresented: $showAllTrips) {
+            AllTripsPickerSheet(
+                trips: availableTrips,
+                selectedTrip: selectedTripBinding,
+                isPresented: $showAllTrips
+            )
+        }
+        .alert("New Trip", isPresented: $showNewTripAlert) {
+            TextField("Trip name", text: $newTripName)
+            Button("Cancel", role: .cancel) { }
+            Button("Create") {
+                createNewTrip()
+            }
+            .disabled(newTripName.trimmingCharacters(in: .whitespaces).isEmpty)
+        } message: {
+            Text("Enter a name for your trip")
         }
     }
 
@@ -192,23 +255,11 @@ struct LogDetailView: View {
                         .resizable()
                         .scaledToFill()
                 } else if let urlString = currentPhotoURL, let url = URL(string: urlString) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .empty:
-                            photoPlaceholder
-                                .overlay { ProgressView() }
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        case .failure:
-                            placePhoto
-                        @unknown default:
-                            photoPlaceholder
-                        }
+                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 250)) {
+                        photoPlaceholder
                     }
                 } else {
-                    placePhoto
+                    photoPlaceholder
                 }
             }
             .frame(height: 250)
@@ -232,7 +283,9 @@ struct LogDetailView: View {
                 }
 
                 // Change photo button
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                Button {
+                    showImagePicker = true
+                } label: {
                     Image(systemName: "camera")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.white)
@@ -242,30 +295,6 @@ struct LogDetailView: View {
                 }
             }
             .padding(12)
-        }
-    }
-
-    @ViewBuilder
-    private var placePhoto: some View {
-        if let photoRef = place.photoReference,
-           let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 800) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .empty:
-                    photoPlaceholder
-                        .overlay { ProgressView() }
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                case .failure:
-                    photoPlaceholder
-                @unknown default:
-                    photoPlaceholder
-                }
-            }
-        } else {
-            photoPlaceholder
         }
     }
 
@@ -368,6 +397,7 @@ struct LogDetailView: View {
 
             TextField("Add a note...", text: $note, axis: .vertical)
                 .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkDark)
                 .lineLimit(3...10)
                 .padding(SonderSpacing.sm)
                 .background(SonderColors.warmGray)
@@ -396,44 +426,103 @@ struct LogDetailView: View {
     // MARK: - Trip Section
 
     private var tripSection: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Trip")
                 .font(SonderTypography.headline)
                 .foregroundColor(SonderColors.inkDark)
 
-            Menu {
-                Button("None") {
-                    selectedTripID = nil
-                }
-
-                ForEach(trips, id: \.id) { trip in
-                    Button(trip.name) {
-                        selectedTripID = trip.id
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: SonderSpacing.xs) {
+                    ForEach(visibleTrips, id: \.id) { trip in
+                        tripChip(trip)
                     }
-                }
-            } label: {
-                HStack {
-                    if let tripID = selectedTripID,
-                       let trip = trips.first(where: { $0.id == tripID }) {
-                        Label(trip.name, systemImage: "airplane")
-                            .font(SonderTypography.body)
-                            .foregroundColor(SonderColors.inkDark)
-                    } else {
-                        Label("No trip selected", systemImage: "airplane")
-                            .font(SonderTypography.body)
+
+                    if availableTrips.count > 3 {
+                        Button {
+                            showAllTrips = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "ellipsis")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text("More")
+                                    .font(SonderTypography.caption)
+                                    .fontWeight(.medium)
+                            }
+                            .padding(.horizontal, SonderSpacing.sm)
+                            .padding(.vertical, SonderSpacing.xs)
+                            .background(SonderColors.warmGray)
                             .foregroundColor(SonderColors.inkMuted)
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(SonderColors.inkLight.opacity(0.3), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
 
-                    Spacer()
-
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption)
-                        .foregroundColor(SonderColors.inkLight)
+                    Button {
+                        newTripName = ""
+                        showNewTripAlert = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("New Trip")
+                                .font(SonderTypography.caption)
+                                .fontWeight(.medium)
+                        }
+                        .padding(.horizontal, SonderSpacing.sm)
+                        .padding(.vertical, SonderSpacing.xs)
+                        .background(SonderColors.warmGray)
+                        .foregroundColor(SonderColors.inkDark)
+                        .clipShape(Capsule())
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(SonderColors.inkLight.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4]))
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .padding(SonderSpacing.md)
-                .background(SonderColors.warmGray)
-                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
             }
+
+            if let tripID = selectedTripID,
+               let trip = allTrips.first(where: { $0.id == tripID }) {
+                HStack(spacing: SonderSpacing.xxs) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(SonderColors.terracotta)
+                    Text("Saving to \(trip.name)")
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: selectedTripID)
+    }
+
+    private func tripChip(_ trip: Trip) -> some View {
+        let isSelected = selectedTripID == trip.id
+
+        return HStack(spacing: 4) {
+            Image(systemName: "suitcase.fill")
+                .font(.system(size: 10))
+            Text(trip.name)
+                .font(SonderTypography.caption)
+                .fontWeight(.medium)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, SonderSpacing.sm)
+        .padding(.vertical, SonderSpacing.xs)
+        .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
+        .foregroundColor(isSelected ? .white : SonderColors.inkDark)
+        .clipShape(Capsule())
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                selectedTripID = isSelected ? nil : trip.id
+            }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
     }
 
@@ -472,6 +561,22 @@ struct LogDetailView: View {
     }
 
     // MARK: - Actions
+
+    private func createNewTrip() {
+        guard let userId = authService.currentUser?.id else { return }
+        let trimmedName = newTripName.trimmingCharacters(in: .whitespaces)
+        guard !trimmedName.isEmpty else { return }
+
+        let trip = Trip(
+            name: trimmedName,
+            createdBy: userId
+        )
+
+        modelContext.insert(trip)
+        try? modelContext.save()
+
+        selectedTripID = trip.id
+    }
 
     private func save() {
         guard let userId = authService.currentUser?.id else { return }
@@ -526,14 +631,24 @@ struct LogDetailView: View {
     }
 
     private func deleteLog() {
-        modelContext.delete(log)
-        try? modelContext.save()
+        // Capture ID + engine before the view is removed from the hierarchy —
+        // @Environment wrappers may stop resolving after dismissal, and
+        // the @Model reference can become stale after navigation pop.
+        let logID = log.id
+        let engine = syncEngine
 
-        Task {
-            await syncEngine.syncNow()
-        }
-
+        // Let the parent clear its navigation state first so it won't
+        // re-evaluate with an invalidated model object after deletion.
+        onDelete?()
         dismiss()
+
+        Task { @MainActor in
+            // Wait for the navigation pop animation to finish before
+            // removing the model — prevents SwiftData EXC_BREAKPOINT.
+            try? await Task.sleep(for: .milliseconds(350))
+            // Deletes from local SwiftData AND Supabase (fetches fresh by ID)
+            await engine.deleteLog(id: logID)
+        }
     }
 }
 

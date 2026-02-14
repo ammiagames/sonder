@@ -24,6 +24,7 @@ enum JournalViewMode: String, CaseIterable {
 struct JournalView: View {
     @Environment(AuthenticationService.self) private var authService
     @Environment(TripService.self) private var tripService
+    @Environment(SyncEngine.self) private var syncEngine
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
     @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
@@ -154,29 +155,25 @@ struct JournalView: View {
     }
 
     var body: some View {
+        // Observe sync state so @Query re-evaluates after pull sync
+        let _ = syncEngine.lastSyncDate
+
         NavigationStack {
-            VStack(spacing: 0) {
-                // Search bar
-                searchBar
-                    .padding(.horizontal, SonderSpacing.md)
-                    .padding(.top, SonderSpacing.sm)
-
-                // Filter chips
-                filterChips
-                    .padding(.top, SonderSpacing.xs)
-                    .padding(.bottom, SonderSpacing.sm)
-
-                // Content
+            Group {
                 if userLogs.isEmpty {
                     emptyState
                 } else if filteredLogs.isEmpty {
-                    noResultsState
+                    VStack(spacing: 0) {
+                        searchAndFilters
+                        noResultsState
+                    }
                 } else {
                     logContent
                 }
             }
             .background(SonderColors.cream)
             .navigationTitle("Journal")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     // View mode toggle
@@ -221,13 +218,28 @@ struct JournalView: View {
             }
             .navigationDestination(item: $selectedLog) { log in
                 if let place = places.first(where: { $0.id == log.placeID }) {
-                    LogDetailView(log: log, place: place)
+                    LogDetailView(log: log, place: place, onDelete: {
+                        selectedLog = nil
+                    })
                 }
             }
             .task {
                 await loadInvitationCount()
             }
         }
+    }
+
+    // MARK: - Search & Filters (inline)
+
+    private var searchAndFilters: some View {
+        VStack(spacing: SonderSpacing.xs) {
+            searchBar
+                .padding(.horizontal, SonderSpacing.md)
+
+            filterChips
+        }
+        .padding(.top, SonderSpacing.xs)
+        .padding(.bottom, SonderSpacing.sm)
     }
 
     // MARK: - Search Bar
@@ -347,6 +359,14 @@ struct JournalView: View {
 
     private var listView: some View {
         List {
+            // Search & filters as scrollable header
+            Section {
+                searchAndFilters
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+
             ForEach(groupedLogs, id: \.0) { group, logs in
                 Section {
                     ForEach(logs, id: \.id) { log in
@@ -387,8 +407,12 @@ struct JournalView: View {
                         .foregroundColor(SonderColors.inkMuted)
                         .textCase(.uppercase)
                         .tracking(0.5)
-                        .padding(.top, SonderSpacing.sm)
-                        .padding(.bottom, SonderSpacing.xs)
+                        .listRowInsets(EdgeInsets(
+                            top: SonderSpacing.xs,
+                            leading: SonderSpacing.md,
+                            bottom: SonderSpacing.xs,
+                            trailing: SonderSpacing.md
+                        ))
                 }
             }
         }
@@ -399,6 +423,8 @@ struct JournalView: View {
     private var gridView: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: SonderSpacing.md) {
+                searchAndFilters
+
                 ForEach(groupedLogs, id: \.0) { group, logs in
                     VStack(alignment: .leading, spacing: SonderSpacing.sm) {
                         Text(group)
@@ -496,19 +522,28 @@ struct JournalView: View {
 
     private var emptyState: some View {
         VStack(spacing: SonderSpacing.md) {
-            Image(systemName: "book.closed")
-                .font(.system(size: 48))
-                .foregroundColor(SonderColors.inkLight)
+            if syncEngine.isSyncing {
+                ProgressView()
+                    .tint(SonderColors.terracotta)
 
-            Text("Your Journal Awaits")
-                .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
+                Text("Syncing your journal...")
+                    .font(SonderTypography.body)
+                    .foregroundColor(SonderColors.inkMuted)
+            } else {
+                Image(systemName: "book.closed")
+                    .font(.system(size: 48))
+                    .foregroundColor(SonderColors.inkLight)
 
-            Text("Start logging places to build your personal travel journal")
-                .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, SonderSpacing.xl)
+                Text("Your Journal Awaits")
+                    .font(SonderTypography.title)
+                    .foregroundColor(SonderColors.inkDark)
+
+                Text("Start logging places to build your personal travel journal")
+                    .font(SonderTypography.body)
+                    .foregroundColor(SonderColors.inkMuted)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, SonderSpacing.xl)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -558,8 +593,7 @@ struct JournalView: View {
     }
 
     private func deleteLog(_ log: Log) {
-        modelContext.delete(log)
-        try? modelContext.save()
+        Task { await syncEngine.deleteLog(id: log.id) }
     }
 
     private func addToTrip(_ log: Log, trip: Trip) {
@@ -648,12 +682,12 @@ struct JournalLogRow: View {
                 if let note = log.note, !note.isEmpty {
                     Text(note)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundColor(SonderColors.inkDark)
                         .lineLimit(1)
                 } else {
                     Text(place.address)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundColor(SonderColors.inkDark)
                         .lineLimit(1)
                 }
 
@@ -703,15 +737,8 @@ struct JournalLogRow: View {
     @ViewBuilder
     private var photoView: some View {
         if let urlString = log.photoURL, let url = URL(string: urlString) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    placePhotoView
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 64, height: 64)) {
+                placePhotoView
             }
         } else {
             placePhotoView
@@ -722,15 +749,8 @@ struct JournalLogRow: View {
     private var placePhotoView: some View {
         if let photoRef = place.photoReference,
            let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 200) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    photoPlaceholder
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 64, height: 64)) {
+                photoPlaceholder
             }
         } else {
             photoPlaceholder
@@ -793,15 +813,8 @@ struct JournalGridCell: View {
     @ViewBuilder
     private var photoView: some View {
         if let urlString = log.photoURL, let url = URL(string: urlString) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    placePhotoView
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 130, height: 130)) {
+                placePhotoView
             }
         } else {
             placePhotoView
@@ -812,15 +825,8 @@ struct JournalGridCell: View {
     private var placePhotoView: some View {
         if let photoRef = place.photoReference,
            let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 200) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    photoPlaceholder
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 130, height: 130)) {
+                photoPlaceholder
             }
         } else {
             photoPlaceholder

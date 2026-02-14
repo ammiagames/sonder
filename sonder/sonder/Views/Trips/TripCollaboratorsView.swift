@@ -136,6 +136,8 @@ struct TripCollaboratorsView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(SonderColors.cream)
     }
 
     // MARK: - Invite Sheet
@@ -261,22 +263,15 @@ struct TripCollaboratorsView: View {
     private func pendingAvatarView(for user: User) -> some View {
         if let urlString = user.avatarURL,
            let url = URL(string: urlString) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    Circle()
-                        .fill(SonderColors.ochre.opacity(0.2))
-                        .overlay {
-                            Text(user.username.prefix(1).uppercased())
-                                .font(SonderTypography.headline)
-                                .fontWeight(.bold)
-                                .foregroundColor(SonderColors.ochre)
-                        }
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 44, height: 44)) {
+                Circle()
+                    .fill(SonderColors.ochre.opacity(0.2))
+                    .overlay {
+                        Text(user.username.prefix(1).uppercased())
+                            .font(SonderTypography.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(SonderColors.ochre)
+                    }
             }
         } else {
             Circle()
@@ -411,15 +406,8 @@ struct CollaboratorRow: View {
     private var avatarView: some View {
         if let urlString = user.avatarURL,
            let url = URL(string: urlString) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    avatarPlaceholder
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 44, height: 44)) {
+                avatarPlaceholder
             }
         } else {
             avatarPlaceholder
@@ -497,15 +485,8 @@ struct InviteUserRow: View {
     private var avatarView: some View {
         if let urlString = user.avatarURL,
            let url = URL(string: urlString) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    avatarPlaceholder
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 44, height: 44)) {
+                avatarPlaceholder
             }
         } else {
             avatarPlaceholder

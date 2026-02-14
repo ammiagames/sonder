@@ -188,15 +188,8 @@ struct UserSearchRow: View {
                 // Avatar
                 if let urlString = user.avatarURL,
                    let url = URL(string: urlString) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        default:
-                            avatarPlaceholder
-                        }
+                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 50, height: 50)) {
+                        avatarPlaceholder
                     }
                     .frame(width: 50, height: 50)
                     .clipShape(Circle())

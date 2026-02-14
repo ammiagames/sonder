@@ -28,7 +28,7 @@ struct PlacePreviewView: View {
                 heroPhoto
 
                 // Content
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: SonderSpacing.md) {
                     // Name and address
                     nameSection
 
@@ -44,13 +44,17 @@ struct PlacePreviewView: View {
                     if !details.types.isEmpty {
                         typeTags
                     }
+
+                    // Log button
+                    logButton
+                        .padding(.top, SonderSpacing.sm)
                 }
-                .padding()
+                .padding(.horizontal, SonderSpacing.md)
+                .padding(.vertical, SonderSpacing.md)
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            logButton
-        }
+        .background(SonderColors.cream)
+        .scrollContentBackground(.hidden)
         .navigationTitle("Place Details")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -110,20 +114,8 @@ struct PlacePreviewView: View {
         Group {
             if let photoRef = details.photoReference,
                let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 800) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .empty:
-                        photoPlaceholder
-                            .overlay { ProgressView() }
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    case .failure:
-                        photoPlaceholder
-                    @unknown default:
-                        photoPlaceholder
-                    }
+                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 250)) {
+                    photoPlaceholder
                 }
             } else {
                 photoPlaceholder
@@ -252,10 +244,7 @@ struct PlacePreviewView: View {
                 .background(SonderColors.terracotta)
                 .foregroundColor(.white)
                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                .shadow(color: SonderColors.terracotta.opacity(0.3), radius: 8, y: 4)
         }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.cream)
     }
 
     // MARK: - Helpers

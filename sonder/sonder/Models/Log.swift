@@ -28,6 +28,14 @@ enum Rating: String, Codable, CaseIterable {
         case .mustSee: return "Must-See"
         }
     }
+
+    var subtitle: String {
+        switch self {
+        case .skip: return "Wouldn't recommend"
+        case .solid: return "Good, would go again"
+        case .mustSee: return "Go out of your way"
+        }
+    }
 }
 
 enum SyncStatus: String, Codable {
@@ -51,7 +59,7 @@ final class Log {
     var updatedAt: Date
     
     init(
-        id: String = UUID().uuidString,
+        id: String = UUID().uuidString.lowercased(),
         userID: String,
         placeID: String,
         rating: Rating,

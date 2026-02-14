@@ -12,16 +12,21 @@ struct TripCard: View {
     let trip: Trip
     let logCount: Int
     let isOwner: Bool
+    var compact: Bool = false
 
     private var hasCoverPhoto: Bool {
         trip.coverPhotoURL != nil
+    }
+
+    private var coverHeight: CGFloat {
+        compact ? 80 : 140
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Cover photo or gradient placeholder
             coverPhotoSection
-                .frame(height: 140)
+                .frame(height: coverHeight)
                 .clipped()
 
             // Info section
@@ -103,21 +108,8 @@ struct TripCard: View {
     private var coverPhotoSection: some View {
         if let urlString = trip.coverPhotoURL,
            let url = URL(string: urlString) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                case .failure:
-                    placeholderGradient
-                default:
-                    placeholderGradient
-                        .overlay {
-                            ProgressView()
-                                .tint(SonderColors.terracotta)
-                        }
-                }
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: compact ? 200 : 400, height: coverHeight)) {
+                placeholderGradient
             }
             .id(urlString)
         } else {
@@ -138,11 +130,11 @@ struct TripCard: View {
         .overlay {
             VStack(spacing: SonderSpacing.xs) {
                 Image(systemName: "suitcase.fill")
-                    .font(.system(size: 32))
+                    .font(.system(size: compact ? 20 : 32))
                     .foregroundColor(.white.opacity(0.6))
 
                 Text(trip.name)
-                    .font(SonderTypography.headline)
+                    .font(compact ? SonderTypography.caption : SonderTypography.headline)
                     .foregroundColor(.white.opacity(0.8))
             }
         }

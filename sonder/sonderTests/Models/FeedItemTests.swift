@@ -34,6 +34,7 @@ struct FeedItemTests {
             note: "Amazing",
             tags: ["food"],
             createdAt: date,
+            tripID: nil,
             user: TestData.feedUser(id: "u1", username: "alice"),
             place: TestData.feedPlace(id: "p1", name: "Cafe")
         )
@@ -60,6 +61,50 @@ struct FeedItemTests {
         #expect(json["created_at"] != nil)
         #expect(json["photoURL"] == nil)
         #expect(json["createdAt"] == nil)
+    }
+
+    // MARK: - Date.relativeDisplay
+
+    @Test func relativeDisplay_justNow() {
+        let date = Date()
+        #expect(date.relativeDisplay == "Just now")
+    }
+
+    @Test func relativeDisplay_secondsAgo() {
+        let date = Date().addingTimeInterval(-30)
+        #expect(date.relativeDisplay == "Just now")
+    }
+
+    @Test func relativeDisplay_minutesAgo() {
+        let date = Date().addingTimeInterval(-5 * 60)
+        #expect(date.relativeDisplay == "5m ago")
+    }
+
+    @Test func relativeDisplay_oneMinuteAgo() {
+        let date = Date().addingTimeInterval(-60)
+        #expect(date.relativeDisplay == "1m ago")
+    }
+
+    @Test func relativeDisplay_hoursAgo() {
+        let date = Date().addingTimeInterval(-3 * 3600)
+        #expect(date.relativeDisplay == "3h ago")
+    }
+
+    @Test func relativeDisplay_daysAgo() {
+        let date = Date().addingTimeInterval(-2 * 86400)
+        #expect(date.relativeDisplay == "2d ago")
+    }
+
+    @Test func relativeDisplay_sixDaysAgo() {
+        let date = Date().addingTimeInterval(-6 * 86400)
+        #expect(date.relativeDisplay == "6d ago")
+    }
+
+    @Test func relativeDisplay_olderThanWeek_showsDate() {
+        let date = Date().addingTimeInterval(-10 * 86400)
+        // Should fall back to abbreviated date, not relative
+        #expect(!date.relativeDisplay.contains("ago"))
+        #expect(!date.relativeDisplay.contains("Just now"))
     }
 
     @Test func feedUserCodableSnakeCase() throws {
