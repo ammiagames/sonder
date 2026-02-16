@@ -7,25 +7,30 @@
 
 import SwiftUI
 import SwiftData
+import CoreLocation
 
 /// Screen 2: Rate the selected place
 struct RatePlaceView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(AuthenticationService.self) private var authService
+    @Environment(PhotoService.self) private var photoService
     @Environment(SyncEngine.self) private var syncEngine
     @Environment(WantToGoService.self) private var wantToGoService
 
     let place: Place
-    let onLogComplete: () -> Void
+    let onLogComplete: (CLLocationCoordinate2D) -> Void
 
     @State private var selectedRating: Rating?
     @State private var selectedTrip: Trip?
     @State private var showAddDetails = false
     @State private var showConfirmation = false
-    @State private var showNewTripAlert = false
+    @State private var showNewTripSheet = false
     @State private var newTripName = ""
+    @State private var newTripCoverImage: UIImage?
     @State private var isSaving = false
+    @State private var coverNudgeTrip: Trip?
+    @State private var showCoverImagePicker = false
 
     @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
     @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
@@ -141,20 +146,41 @@ struct RatePlaceView: View {
             }
         }
         .fullScreenCover(isPresented: $showConfirmation) {
-            LogConfirmationView {
-                showConfirmation = false
-                onLogComplete()
-            }
+            LogConfirmationView(
+                onDismiss: {
+                    showConfirmation = false
+                    onLogComplete(place.coordinate)
+                },
+                tripName: coverNudgeTrip?.name,
+                onAddCover: {
+                    showConfirmation = false
+                    showCoverImagePicker = true
+                }
+            )
         }
-        .alert("New Trip", isPresented: $showNewTripAlert) {
-            TextField("Trip name", text: $newTripName)
-            Button("Cancel", role: .cancel) { }
-            Button("Create") {
-                createNewTrip()
+        .sheet(isPresented: $showNewTripSheet) {
+            newTripSheet
+        }
+        .sheet(isPresented: $showCoverImagePicker) {
+            EditableImagePicker { image in
+                showCoverImagePicker = false
+                if let trip = coverNudgeTrip, let userId = authService.currentUser?.id {
+                    Task {
+                        if let url = await photoService.uploadPhoto(image, for: userId) {
+                            trip.coverPhotoURL = url
+                            trip.updatedAt = Date()
+                            try? modelContext.save()
+                        }
+                    }
+                }
+                coverNudgeTrip = nil
+                onLogComplete(place.coordinate)
+            } onCancel: {
+                showCoverImagePicker = false
+                coverNudgeTrip = nil
+                onLogComplete(place.coordinate)
             }
-            .disabled(newTripName.trimmingCharacters(in: .whitespaces).isEmpty)
-        } message: {
-            Text("Enter a name for your trip")
+            .ignoresSafeArea()
         }
     }
 
@@ -242,7 +268,8 @@ struct RatePlaceView: View {
                     // New trip button
                     Button {
                         newTripName = ""
-                        showNewTripAlert = true
+                        newTripCoverImage = nil
+                        showNewTripSheet = true
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "plus")
@@ -308,6 +335,21 @@ struct RatePlaceView: View {
         }
     }
 
+    // MARK: - New Trip Sheet
+
+    @ViewBuilder
+    private var newTripSheet: some View {
+        NewTripSheetView(
+            tripName: $newTripName,
+            coverImage: $newTripCoverImage,
+            onCancel: { showNewTripSheet = false },
+            onCreate: {
+                createNewTrip()
+                showNewTripSheet = false
+            }
+        )
+    }
+
     // MARK: - Trip Creation
 
     private func createNewTrip() {
@@ -320,6 +362,12 @@ struct RatePlaceView: View {
             createdBy: userId
         )
 
+        // Use Google Places photo as immediate fallback if no user photo picked
+        if newTripCoverImage == nil, let ref = place.photoReference,
+           let url = GooglePlacesService.photoURL(for: ref) {
+            trip.coverPhotoURL = url.absoluteString
+        }
+
         modelContext.insert(trip)
         try? modelContext.save()
 
@@ -327,6 +375,17 @@ struct RatePlaceView: View {
             selectedTrip = trip
         }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
+        // Upload user-picked cover photo in background
+        if let coverImage = newTripCoverImage {
+            Task {
+                if let url = await photoService.uploadPhoto(coverImage, for: userId) {
+                    trip.coverPhotoURL = url
+                    trip.updatedAt = Date()
+                    try? modelContext.save()
+                }
+            }
+        }
     }
 
     // MARK: - Actions
@@ -349,6 +408,17 @@ struct RatePlaceView: View {
 
         do {
             try modelContext.save()
+
+            // Auto-assign Google Places photo if trip has no cover
+            if let trip = selectedTrip, trip.coverPhotoURL == nil,
+               let ref = place.photoReference,
+               let url = GooglePlacesService.photoURL(for: ref) {
+                trip.coverPhotoURL = url.absoluteString
+                trip.updatedAt = Date()
+                try? modelContext.save()
+                // Show nudge since it's only a Google photo placeholder
+                coverNudgeTrip = trip
+            }
 
             let notificationFeedback = UINotificationFeedbackGenerator()
             notificationFeedback.notificationOccurred(.success)
@@ -377,7 +447,7 @@ struct RatePlaceView: View {
                 latitude: 37.7749,
                 longitude: -122.4194
             )
-        ) {
+        ) { _ in
             print("Log complete")
         }
     }

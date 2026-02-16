@@ -18,6 +18,7 @@ final class FeedService {
     // Feed state
     var feedEntries: [FeedEntry] = []
     var isLoading = false
+    var hasLoadedOnce = false
     var hasMore = true
     var newPostsAvailable = false
 
@@ -49,6 +50,7 @@ final class FeedService {
             guard !followingIDs.isEmpty else {
                 feedEntries = []
                 isLoading = false
+                hasLoadedOnce = true
                 return
             }
 
@@ -74,7 +76,23 @@ final class FeedService {
 
             let tripFeedEntries = trips.map { FeedEntry.trip($0) }
 
-            var merged = standaloneLogs + tripFeedEntries
+            // Trip IDs that already appear as full trip cards (have logs)
+            let tripIDsWithLogs = Set(trips.map { $0.id })
+
+            // Fetch trip-created entries for trips with no logs (non-fatal)
+            let tripCreatedEntries: [FeedEntry]
+            do {
+                let tripCreated = try await fetchTripCreatedEntries(
+                    followingIDs: followingIDs,
+                    excludeTripIDs: tripIDsWithLogs
+                )
+                tripCreatedEntries = tripCreated.map { FeedEntry.tripCreated($0) }
+            } catch {
+                print("Error loading trip created entries (non-fatal): \(error)")
+                tripCreatedEntries = []
+            }
+
+            var merged = standaloneLogs + tripFeedEntries + tripCreatedEntries
             merged.sort { $0.sortDate > $1.sortDate }
 
             feedEntries = merged
@@ -85,6 +103,7 @@ final class FeedService {
         }
 
         isLoading = false
+        hasLoadedOnce = true
     }
 
     /// Load more feed items (pagination — standalone logs only, trips already fully loaded)
@@ -134,7 +153,7 @@ final class FeedService {
     private let selectQuery = """
         id,
         rating,
-        photo_url,
+        photo_urls,
         note,
         tags,
         created_at,
@@ -191,13 +210,32 @@ final class FeedService {
         let tripLogs: [TripLogWithTripID] = try await supabase
             .from("logs")
             .select("""
-                id, rating, photo_url, created_at, trip_id,
+                id, rating, photo_urls, created_at, trip_id,
                 places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference)
             """)
             .in("trip_id", values: tripIDs)
             .order("created_at", ascending: false)
             .execute()
             .value
+
+        // Fetch activities for these trips (non-fatal)
+        let activities: [TripActivityResponse]
+        do {
+            activities = try await supabase
+                .from("trip_activity")
+                .select("id, trip_id, activity_type, log_id, place_name, created_at")
+                .in("trip_id", values: tripIDs)
+                .order("created_at", ascending: false)
+                .execute()
+                .value
+        } catch {
+            print("Error fetching trip activities (non-fatal): \(error)")
+            activities = []
+        }
+
+        // Latest activity per trip for subtitle
+        let latestActivityByTrip = Dictionary(grouping: activities) { $0.tripID }
+            .compactMapValues { $0.first }
 
         // Group logs by trip_id
         let logsByTrip = Dictionary(grouping: tripLogs) { $0.tripID }
@@ -211,7 +249,7 @@ final class FeedService {
             let summaries = logs.map { log in
                 FeedTripItem.LogSummary(
                     id: log.id,
-                    photoURL: log.photoURL,
+                    photoURLs: log.photoURLs,
                     rating: log.rating,
                     placeName: log.place.name,
                     placePhotoReference: log.place.photoReference,
@@ -221,6 +259,14 @@ final class FeedService {
 
             let latestActivity = logs.first?.createdAt ?? Date.distantPast
 
+            // Compute activity subtitle from latest activity
+            let subtitle: String
+            if let activity = latestActivityByTrip[trip.id] {
+                subtitle = Self.activitySubtitle(for: activity)
+            } else {
+                subtitle = "trip"
+            }
+
             return FeedTripItem(
                 id: trip.id,
                 name: trip.name,
@@ -229,9 +275,50 @@ final class FeedService {
                 endDate: trip.endDate,
                 user: trip.user,
                 logs: summaries,
-                latestActivityAt: latestActivity
+                latestActivityAt: latestActivity,
+                activitySubtitle: subtitle
             )
         }
+    }
+
+    /// Compute a human-readable subtitle from a trip activity
+    nonisolated static func activitySubtitle(for activity: TripActivityResponse) -> String {
+        switch activity.activityType {
+        case "log_added":
+            if let name = activity.placeName, !name.isEmpty {
+                return "added \(name)"
+            }
+            return "added a new stop"
+        case "trip_created":
+            return "started this trip"
+        default:
+            return "trip"
+        }
+    }
+
+    // MARK: - Trip Created Entries (no-log trips)
+
+    private func fetchTripCreatedEntries(
+        followingIDs: [String],
+        excludeTripIDs: Set<String>
+    ) async throws -> [FeedTripCreatedItem] {
+        let responses: [TripCreatedActivityResponse] = try await supabase
+            .from("trip_activity")
+            .select("""
+                id, trip_id, activity_type, created_at,
+                trips!trip_activity_trip_id_fkey(id, name, cover_photo_url),
+                users!trip_activity_user_id_fkey(id, username, avatar_url, is_public)
+            """)
+            .in("user_id", values: followingIDs)
+            .eq("activity_type", value: "trip_created")
+            .order("created_at", ascending: false)
+            .limit(20)
+            .execute()
+            .value
+
+        return responses
+            .filter { !excludeTripIDs.contains($0.tripID) }
+            .map { $0.toFeedTripCreatedItem() }
     }
 
     /// Get IDs of users the current user is following
@@ -262,16 +349,33 @@ final class FeedService {
 
             let channel = supabase.channel("feed-\(currentUserID)")
 
-            let changes = channel.postgresChange(
+            let logChanges = channel.postgresChange(
                 InsertAction.self,
                 schema: "public",
                 table: "logs"
             )
 
+            let tripActivityChanges = channel.postgresChange(
+                InsertAction.self,
+                schema: "public",
+                table: "trip_activity"
+            )
+
             await channel.subscribe()
 
             Task {
-                for await change in changes {
+                for await change in logChanges {
+                    if let userID = change.record["user_id"]?.stringValue,
+                       followingIDs.contains(userID) {
+                        await MainActor.run {
+                            self.newPostsAvailable = true
+                        }
+                    }
+                }
+            }
+
+            Task {
+                for await change in tripActivityChanges {
                     if let userID = change.record["user_id"]?.stringValue,
                        followingIDs.contains(userID) {
                         await MainActor.run {
@@ -307,7 +411,7 @@ final class FeedService {
             .select("""
                 id,
                 rating,
-                photo_url,
+                photo_urls,
                 note,
                 tags,
                 created_at,
@@ -330,7 +434,7 @@ final class FeedService {
             .select("""
                 id,
                 rating,
-                photo_url,
+                photo_urls,
                 note,
                 tags,
                 created_at,
@@ -351,14 +455,17 @@ final class FeedService {
 private struct TripLogWithTripID: Codable {
     let id: String
     let rating: String
-    let photoURL: String?
+    let photoURLs: [String]
     let createdAt: Date
     let tripID: String
     let place: FeedItem.FeedPlace
 
+    /// Backward-compat: returns the first photo URL
+    var photoURL: String? { photoURLs.first }
+
     enum CodingKeys: String, CodingKey {
         case id, rating
-        case photoURL = "photo_url"
+        case photoURLs = "photo_urls"
         case createdAt = "created_at"
         case tripID = "trip_id"
         case place = "places"

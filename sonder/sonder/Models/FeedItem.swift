@@ -18,15 +18,18 @@ struct FeedItem: Identifiable, Codable {
     struct FeedLog: Codable {
         let id: String
         let rating: String
-        let photoURL: String?
+        let photoURLs: [String]
         let note: String?
         let tags: [String]
         let createdAt: Date
 
+        /// Backward-compat: returns the first photo URL
+        var photoURL: String? { photoURLs.first }
+
         enum CodingKeys: String, CodingKey {
             case id
             case rating
-            case photoURL = "photo_url"
+            case photoURLs = "photo_urls"
             case note
             case tags
             case createdAt = "created_at"
@@ -78,6 +81,17 @@ extension FeedItem {
     }
 }
 
+extension FeedItem.FeedPlace {
+    var cityName: String {
+        let parts = address.components(separatedBy: ", ")
+        guard parts.count >= 2 else { return address }
+        if parts.count >= 3 {
+            return parts[parts.count - 3]
+        }
+        return parts[0]
+    }
+}
+
 // MARK: - Relative Date Display
 
 extension Date {
@@ -114,14 +128,18 @@ struct FeedTripItem: Identifiable {
     let user: FeedItem.FeedUser
     let logs: [LogSummary]
     let latestActivityAt: Date
+    let activitySubtitle: String
 
     struct LogSummary: Identifiable {
         let id: String
-        let photoURL: String?
+        let photoURLs: [String]
         let rating: String
         let placeName: String
         let placePhotoReference: String?
         let createdAt: Date
+
+        /// Backward-compat: returns the first photo URL
+        var photoURL: String? { photoURLs.first }
     }
 
     var dateRangeDisplay: String? {
@@ -136,16 +154,30 @@ struct FeedTripItem: Identifiable {
     }
 }
 
+// MARK: - Trip Created Feed Item
+
+/// A lightweight DTO for newly created trips with no logs yet.
+struct FeedTripCreatedItem: Identifiable {
+    let id: String           // activity id
+    let tripID: String
+    let tripName: String
+    let coverPhotoURL: String?
+    let user: FeedItem.FeedUser
+    let createdAt: Date
+}
+
 // MARK: - Unified Feed Entry
 
 enum FeedEntry: Identifiable {
     case trip(FeedTripItem)
     case log(FeedItem)
+    case tripCreated(FeedTripCreatedItem)
 
     var id: String {
         switch self {
         case .trip(let item): return "trip-\(item.id)"
         case .log(let item): return "log-\(item.id)"
+        case .tripCreated(let item): return "tripCreated-\(item.id)"
         }
     }
 
@@ -153,6 +185,7 @@ enum FeedEntry: Identifiable {
         switch self {
         case .trip(let item): return item.latestActivityAt
         case .log(let item): return item.createdAt
+        case .tripCreated(let item): return item.createdAt
         }
     }
 }
@@ -163,7 +196,7 @@ enum FeedEntry: Identifiable {
 struct FeedLogResponse: Codable {
     let id: String
     let rating: String
-    let photoURL: String?
+    let photoURLs: [String]
     let note: String?
     let tags: [String]
     let createdAt: Date
@@ -171,10 +204,13 @@ struct FeedLogResponse: Codable {
     let user: FeedItem.FeedUser
     let place: FeedItem.FeedPlace
 
+    /// Backward-compat: returns the first photo URL
+    var photoURL: String? { photoURLs.first }
+
     enum CodingKeys: String, CodingKey {
         case id
         case rating
-        case photoURL = "photo_url"
+        case photoURLs = "photo_urls"
         case note
         case tags
         case createdAt = "created_at"
@@ -189,7 +225,7 @@ struct FeedLogResponse: Codable {
             log: FeedItem.FeedLog(
                 id: id,
                 rating: rating,
-                photoURL: photoURL,
+                photoURLs: photoURLs,
                 note: note,
                 tags: tags,
                 createdAt: createdAt
@@ -226,14 +262,79 @@ struct FeedTripResponse: Codable {
 struct TripLogResponse: Codable {
     let id: String
     let rating: String
-    let photoURL: String?
+    let photoURLs: [String]
     let createdAt: Date
     let place: FeedItem.FeedPlace
 
+    /// Backward-compat: returns the first photo URL
+    var photoURL: String? { photoURLs.first }
+
     enum CodingKeys: String, CodingKey {
         case id, rating
-        case photoURL = "photo_url"
+        case photoURLs = "photo_urls"
         case createdAt = "created_at"
         case place = "places"
+    }
+}
+
+// MARK: - Trip Activity Response
+
+/// Decodes rows from the `trip_activity` table
+struct TripActivityResponse: Codable {
+    let id: String
+    let tripID: String
+    let activityType: String
+    let logID: String?
+    let placeName: String?
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case tripID = "trip_id"
+        case activityType = "activity_type"
+        case logID = "log_id"
+        case placeName = "place_name"
+        case createdAt = "created_at"
+    }
+}
+
+/// Decodes joined query for standalone trip-created cards (activity + trips + users)
+struct TripCreatedActivityResponse: Codable {
+    let id: String
+    let tripID: String
+    let activityType: String
+    let createdAt: Date
+    let trip: TripInfo
+    let user: FeedItem.FeedUser
+
+    struct TripInfo: Codable {
+        let id: String
+        let name: String
+        let coverPhotoURL: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, name
+            case coverPhotoURL = "cover_photo_url"
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case tripID = "trip_id"
+        case activityType = "activity_type"
+        case createdAt = "created_at"
+        case trip = "trips"
+        case user = "users"
+    }
+
+    func toFeedTripCreatedItem() -> FeedTripCreatedItem {
+        FeedTripCreatedItem(
+            id: id,
+            tripID: trip.id,
+            tripName: trip.name,
+            coverPhotoURL: trip.coverPhotoURL,
+            user: user,
+            createdAt: createdAt
+        )
     }
 }

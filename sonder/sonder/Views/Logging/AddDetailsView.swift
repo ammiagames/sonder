@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import CoreLocation
 
 /// Screen 3: Add optional details (photo, note, tags, trip)
 struct AddDetailsView: View {
@@ -20,18 +21,23 @@ struct AddDetailsView: View {
     let place: Place
     let rating: Rating
     var initialTrip: Trip? = nil
-    let onLogComplete: () -> Void
+    let onLogComplete: (CLLocationCoordinate2D) -> Void
 
     @State private var note = ""
     @State private var tags: [String] = []
     @State private var selectedTrip: Trip?
-    @State private var selectedImage: UIImage?
+    @State private var selectedImages: [UIImage] = []
     @State private var showImagePicker = false
     @State private var showConfirmation = false
-    @State private var isSaving = false
-    @State private var showNewTripAlert = false
+    @State private var showNewTripSheet = false
     @State private var newTripName = ""
+    @State private var newTripCoverImage: UIImage?
     @State private var showAllTrips = false
+    @State private var tripWasCreatedThisSession = false
+    @State private var coverNudgeTrip: Trip?
+    @State private var showCoverImagePicker = false
+
+    private let maxPhotos = 5
 
     @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
     @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
@@ -88,10 +94,38 @@ struct AddDetailsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(showImagePicker ? .hidden : .automatic, for: .tabBar)
         .fullScreenCover(isPresented: $showConfirmation) {
-            LogConfirmationView {
-                showConfirmation = false
-                onLogComplete()
+            LogConfirmationView(
+                onDismiss: {
+                    showConfirmation = false
+                    onLogComplete(place.coordinate)
+                },
+                tripName: coverNudgeTrip?.name,
+                onAddCover: {
+                    showConfirmation = false
+                    showCoverImagePicker = true
+                }
+            )
+        }
+        .sheet(isPresented: $showCoverImagePicker) {
+            EditableImagePicker { image in
+                showCoverImagePicker = false
+                if let trip = coverNudgeTrip, let userId = authService.currentUser?.id {
+                    Task {
+                        if let url = await photoService.uploadPhoto(image, for: userId) {
+                            trip.coverPhotoURL = url
+                            trip.updatedAt = Date()
+                            try? modelContext.save()
+                        }
+                    }
+                }
+                coverNudgeTrip = nil
+                onLogComplete(place.coordinate)
+            } onCancel: {
+                showCoverImagePicker = false
+                coverNudgeTrip = nil
+                onLogComplete(place.coordinate)
             }
+            .ignoresSafeArea()
         }
         .onAppear {
             if selectedTrip == nil, let initialTrip {
@@ -100,7 +134,9 @@ struct AddDetailsView: View {
         }
         .sheet(isPresented: $showImagePicker) {
             EditableImagePicker { image in
-                selectedImage = image
+                if selectedImages.count < maxPhotos {
+                    selectedImages.append(image)
+                }
                 showImagePicker = false
             } onCancel: {
                 showImagePicker = false
@@ -139,33 +175,22 @@ struct AddDetailsView: View {
 
     private var photoSection: some View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-            Text("Photo")
-                .font(SonderTypography.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(SonderColors.inkMuted)
-                .textCase(.uppercase)
-                .tracking(0.5)
+            HStack {
+                Text("Photos")
+                    .font(SonderTypography.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(SonderColors.inkMuted)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
 
-            if let image = selectedImage {
-                ZStack(alignment: .topTrailing) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(height: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                        .onTapGesture { showImagePicker = true }
+                Spacer()
 
-                    Button {
-                        selectedImage = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.white)
-                            .shadow(radius: 2)
-                    }
-                    .padding(SonderSpacing.xs)
-                }
-            } else {
+                Text("\(selectedImages.count)/\(maxPhotos)")
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkLight)
+            }
+
+            if selectedImages.isEmpty {
                 Button { showImagePicker = true } label: {
                     HStack {
                         Image(systemName: "camera.fill")
@@ -178,6 +203,43 @@ struct AddDetailsView: View {
                     .background(SonderColors.warmGray)
                     .foregroundColor(SonderColors.inkMuted)
                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                }
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: SonderSpacing.xs) {
+                        ForEach(Array(selectedImages.enumerated()), id: \.offset) { index, image in
+                            ZStack(alignment: .topTrailing) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 80, height: 80)
+                                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+
+                                Button {
+                                    selectedImages.remove(at: index)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(.white)
+                                        .shadow(radius: 2)
+                                }
+                                .padding(2)
+                            }
+                        }
+
+                        if selectedImages.count < maxPhotos {
+                            Button { showImagePicker = true } label: {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 20, weight: .medium))
+                                }
+                                .frame(width: 80, height: 80)
+                                .background(SonderColors.warmGray)
+                                .foregroundColor(SonderColors.inkMuted)
+                                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -275,7 +337,8 @@ struct AddDetailsView: View {
 
                     Button {
                         newTripName = ""
-                        showNewTripAlert = true
+                        newTripCoverImage = nil
+                        showNewTripSheet = true
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "plus")
@@ -314,15 +377,8 @@ struct AddDetailsView: View {
         .sheet(isPresented: $showAllTrips) {
             allTripsSheet
         }
-        .alert("New Trip", isPresented: $showNewTripAlert) {
-            TextField("Trip name", text: $newTripName)
-            Button("Cancel", role: .cancel) { }
-            Button("Create") {
-                createNewTrip()
-            }
-            .disabled(newTripName.trimmingCharacters(in: .whitespaces).isEmpty)
-        } message: {
-            Text("Enter a name for your trip")
+        .sheet(isPresented: $showNewTripSheet) {
+            newTripSheet
         }
     }
 
@@ -359,6 +415,80 @@ struct AddDetailsView: View {
         )
     }
 
+    @ViewBuilder
+    private var newTripSheet: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: SonderSpacing.md) {
+                TextField("Trip name", text: $newTripName)
+                    .font(SonderTypography.body)
+                    .padding(SonderSpacing.sm)
+                    .background(SonderColors.warmGray)
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+
+                if !selectedImages.isEmpty {
+                    VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+                        Text("Tap a photo to use as the trip cover")
+                            .font(SonderTypography.caption)
+                            .foregroundColor(SonderColors.inkMuted)
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: SonderSpacing.xs) {
+                                ForEach(Array(selectedImages.enumerated()), id: \.offset) { _, image in
+                                    let isSelected = newTripCoverImage === image
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 64, height: 64)
+                                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
+                                                .strokeBorder(SonderColors.terracotta, lineWidth: isSelected ? 3 : 0)
+                                        )
+                                        .overlay(alignment: .bottomTrailing) {
+                                            if isSelected {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .font(.system(size: 16))
+                                                    .foregroundColor(SonderColors.terracotta)
+                                                    .background(Circle().fill(.white).padding(2))
+                                                    .offset(x: 4, y: 4)
+                                            }
+                                        }
+                                        .onTapGesture {
+                                            withAnimation(.easeInOut(duration: 0.15)) {
+                                                newTripCoverImage = isSelected ? nil : image
+                                            }
+                                        }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(SonderSpacing.md)
+            .background(SonderColors.cream)
+            .navigationTitle("New Trip")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showNewTripSheet = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        createNewTrip()
+                        showNewTripSheet = false
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(newTripName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+
     private func createNewTrip() {
         guard let userId = authService.currentUser?.id else { return }
         let trimmedName = newTripName.trimmingCharacters(in: .whitespaces)
@@ -369,34 +499,47 @@ struct AddDetailsView: View {
             createdBy: userId
         )
 
+        // Use Google Places photo as immediate fallback if no user photo picked
+        if newTripCoverImage == nil, let ref = place.photoReference,
+           let url = GooglePlacesService.photoURL(for: ref) {
+            trip.coverPhotoURL = url.absoluteString
+        }
+
         modelContext.insert(trip)
         try? modelContext.save()
 
         selectedTrip = trip
+        tripWasCreatedThisSession = true
+
+        if let coverImage = newTripCoverImage {
+            Task {
+                if let url = await photoService.uploadPhoto(coverImage, for: userId) {
+                    trip.coverPhotoURL = url
+                    trip.updatedAt = Date()
+                    try? modelContext.save()
+                }
+            }
+        }
     }
 
     // MARK: - Save Button
 
     private var saveButton: some View {
-        Button(action: save) {
-            HStack(spacing: SonderSpacing.xs) {
-                if isSaving {
-                    ProgressView()
-                        .tint(.white)
-                } else {
+        VStack(spacing: SonderSpacing.xxs) {
+            Button(action: save) {
+                HStack(spacing: SonderSpacing.xs) {
                     Image(systemName: "checkmark")
                     Text("Save")
                         .font(SonderTypography.headline)
                 }
+                .padding(.horizontal, SonderSpacing.lg)
+                .padding(.vertical, SonderSpacing.sm)
+                .background(SonderColors.terracotta)
+                .foregroundColor(.white)
+                .clipShape(Capsule())
+                .shadow(color: SonderColors.terracotta.opacity(0.3), radius: 8, y: 4)
             }
-            .padding(.horizontal, SonderSpacing.lg)
-            .padding(.vertical, SonderSpacing.sm)
-            .background(SonderColors.terracotta)
-            .foregroundColor(.white)
-            .clipShape(Capsule())
-            .shadow(color: SonderColors.terracotta.opacity(0.3), radius: 8, y: 4)
         }
-        .disabled(isSaving)
     }
 
     // MARK: - Actions
@@ -404,53 +547,104 @@ struct AddDetailsView: View {
     private func save() {
         guard let userId = authService.currentUser?.id else { return }
 
-        isSaving = true
+        let logID = UUID().uuidString.lowercased()
 
-        Task {
-            // Upload photo if selected
-            var photoURL: String?
-            if let image = selectedImage {
-                photoURL = await photoService.uploadPhoto(image, for: userId)
-                print("Photo upload result: \(photoURL ?? "nil")")
-            }
+        // Queue photos for background upload, get placeholder URLs immediately
+        var photoURLs: [String] = []
+        if !selectedImages.isEmpty {
+            let context = modelContext
+            let engine = syncEngine
+            photoURLs = photoService.queueBatchUpload(
+                images: selectedImages,
+                for: userId,
+                logID: logID
+            ) { results in
+                // Called when all uploads finish — replace placeholders with real URLs
+                let idToFind = logID
+                let descriptor = FetchDescriptor<Log>(
+                    predicate: #Predicate { log in log.id == idToFind }
+                )
+                guard let log = try? context.fetch(descriptor).first else { return }
 
-            // Create log
-            let log = Log(
-                userID: userId,
-                placeID: place.id,
-                rating: rating,
-                photoURL: photoURL,
-                note: note.isEmpty ? nil : note,
-                tags: tags,
-                tripID: selectedTrip?.id,
-                syncStatus: .pending
-            )
-
-            modelContext.insert(log)
-
-            do {
-                try modelContext.save()
-
-                // Haptic feedback
-                let notificationFeedback = UINotificationFeedbackGenerator()
-                notificationFeedback.notificationOccurred(.success)
-
-                // Remove from Want to Go if bookmarked
-                await wantToGoService.removeBookmarkIfLoggedPlace(placeID: place.id, userID: userId)
-
-                // Trigger immediate sync
-                await syncEngine.syncNow()
-
-                await MainActor.run {
-                    showConfirmation = true
+                log.photoURLs = log.photoURLs.compactMap { url in
+                    if url.hasPrefix("pending-upload:") {
+                        let placeholderID = String(url.dropFirst("pending-upload:".count))
+                        return results[placeholderID] // nil (removed) if upload failed
+                    }
+                    return url
                 }
-            } catch {
-                print("Failed to save log: \(error)")
-                await MainActor.run {
-                    isSaving = false
-                }
+                log.updatedAt = Date()
+                try? context.save()
+
+                Task { await engine.syncNow() }
             }
         }
+
+        // Create log immediately with placeholder URLs
+        let log = Log(
+            id: logID,
+            userID: userId,
+            placeID: place.id,
+            rating: rating,
+            photoURLs: photoURLs,
+            note: note.isEmpty ? nil : note,
+            tags: tags,
+            tripID: selectedTrip?.id,
+            syncStatus: .pending
+        )
+
+        modelContext.insert(log)
+
+        do {
+            try modelContext.save()
+
+            // Auto-assign first photo as trip cover if trip has none
+            if let trip = selectedTrip, trip.coverPhotoURL == nil || isGooglePhotoURL(trip.coverPhotoURL) {
+                if let firstImage = selectedImages.first {
+                    // Upload user photo as cover in background
+                    let tripToUpdate = trip
+                    Task {
+                        if let url = await photoService.uploadPhoto(firstImage, for: userId) {
+                            tripToUpdate.coverPhotoURL = url
+                            tripToUpdate.updatedAt = Date()
+                            try? modelContext.save()
+                        }
+                    }
+                } else if trip.coverPhotoURL == nil, let ref = place.photoReference,
+                          let url = GooglePlacesService.photoURL(for: ref) {
+                    // No photos selected — use Google Places photo as fallback
+                    trip.coverPhotoURL = url.absoluteString
+                    trip.updatedAt = Date()
+                    try? modelContext.save()
+                }
+            }
+
+            // Show nudge if trip was created this session and has no user-uploaded cover
+            if tripWasCreatedThisSession, let trip = selectedTrip, selectedImages.isEmpty {
+                coverNudgeTrip = trip
+            }
+
+            // Haptic feedback
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+            // If no photos, sync right away
+            if selectedImages.isEmpty {
+                Task { await syncEngine.syncNow() }
+            }
+
+            // Remove from Want to Go if bookmarked
+            Task { await wantToGoService.removeBookmarkIfLoggedPlace(placeID: place.id, userID: userId) }
+
+            showConfirmation = true
+        } catch {
+            print("Failed to save log: \(error)")
+        }
+    }
+
+    /// Check if a URL is a Google Places photo URL (not a user-uploaded photo)
+    private func isGooglePhotoURL(_ url: String?) -> Bool {
+        guard let url else { return false }
+        return url.contains("googleapis.com")
     }
 }
 
@@ -527,7 +721,7 @@ struct AllTripsPickerSheet: View {
                 longitude: -122.4194
             ),
             rating: .solid
-        ) {
+        ) { _ in
             print("Log complete")
         }
     }

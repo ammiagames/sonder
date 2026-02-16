@@ -16,7 +16,7 @@ struct RemoteLog: Codable {
     let userID: String
     let placeID: String
     let rating: String
-    let photoURL: String?
+    let photoURLs: [String]
     let note: String?
     let tags: [String]
     let tripID: String?
@@ -28,7 +28,8 @@ struct RemoteLog: Codable {
         case userID = "user_id"
         case placeID = "place_id"
         case rating
-        case photoURL = "photo_url"
+        case photoURLs = "photo_urls"
+        case photoURL = "photo_url" // Legacy key for decoder fallback
         case note
         case tags
         case tripID = "trip_id"
@@ -41,7 +42,7 @@ struct RemoteLog: Codable {
         userID: String,
         placeID: String,
         rating: String,
-        photoURL: String? = nil,
+        photoURLs: [String] = [],
         note: String? = nil,
         tags: [String] = [],
         tripID: String? = nil,
@@ -52,7 +53,7 @@ struct RemoteLog: Codable {
         self.userID = userID
         self.placeID = placeID
         self.rating = rating
-        self.photoURL = photoURL
+        self.photoURLs = photoURLs
         self.note = note
         self.tags = tags
         self.tripID = tripID
@@ -66,12 +67,35 @@ struct RemoteLog: Codable {
         userID = try container.decode(String.self, forKey: .userID)
         placeID = try container.decode(String.self, forKey: .placeID)
         rating = try container.decode(String.self, forKey: .rating)
-        photoURL = try container.decodeIfPresent(String.self, forKey: .photoURL)
+
+        // Try new format first, fall back to old single-photo for migration
+        if let urls = try container.decodeIfPresent([String].self, forKey: .photoURLs) {
+            photoURLs = urls
+        } else if let single = try container.decodeIfPresent(String.self, forKey: .photoURL) {
+            photoURLs = [single]
+        } else {
+            photoURLs = []
+        }
+
         note = try container.decodeIfPresent(String.self, forKey: .note)
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
         tripID = try container.decodeIfPresent(String.self, forKey: .tripID)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(userID, forKey: .userID)
+        try container.encode(placeID, forKey: .placeID)
+        try container.encode(rating, forKey: .rating)
+        try container.encode(photoURLs, forKey: .photoURLs)
+        try container.encodeIfPresent(note, forKey: .note)
+        try container.encode(tags, forKey: .tags)
+        try container.encodeIfPresent(tripID, forKey: .tripID)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
     }
 }
 
@@ -151,14 +175,14 @@ final class SyncEngine {
     /// `mergeRemoteLogs` skips these so pull sync doesn't resurrect them.
     var pendingDeletions: Set<String> = []
 
+    /// When true, another sync will run immediately after the current one finishes.
+    private var needsResync = false
+
     private let modelContext: ModelContext
     private let supabase = SupabaseConfig.client
     private var syncTask: Task<Void, Never>?
     private let networkMonitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.sonder.networkMonitor")
-
-    /// Photo service for coordinating photo uploads
-    var photoService: PhotoService?
 
     init(modelContext: ModelContext, startAutomatically: Bool = true) {
         self.modelContext = modelContext
@@ -201,7 +225,13 @@ final class SyncEngine {
 
     /// Sync all pending logs to Supabase and pull remote changes
     func syncNow() async {
-        guard !isSyncing else { return }
+        guard !isSyncing else {
+            // A sync is already running — schedule a follow-up so new
+            // pending items (e.g. a just-created log) aren't left waiting
+            // for the next periodic cycle.
+            needsResync = true
+            return
+        }
         guard isOnline else {
             print("Offline - skipping sync")
             return
@@ -218,15 +248,16 @@ final class SyncEngine {
         }
 
         isSyncing = true
-        defer { isSyncing = false }
 
         do {
             // First, process any pending photo uploads
             await processPendingPhotoUploads()
 
             // Push: sync local changes to remote
-            try await syncPendingTrips()
-            try await syncPendingLogs()
+            // Track failed trip IDs so we can skip logs referencing them
+            // (avoids trip_activity foreign key violations)
+            let failedTripIDs = try await syncPendingTrips()
+            try await syncPendingLogs(skippingTripIDs: failedTripIDs)
         } catch {
             print("Push sync error: \(error)")
         }
@@ -249,6 +280,17 @@ final class SyncEngine {
 
         lastSyncDate = Date()
         await updatePendingCount()
+
+        // Clear isSyncing BEFORE the resync check so the recursive call
+        // can pass the `guard !isSyncing` gate.
+        isSyncing = false
+
+        // If someone called syncNow() while we were busy, run again
+        // to pick up any items created during the previous sync.
+        if needsResync {
+            needsResync = false
+            await syncNow()
+        }
     }
 
     /// Force a sync even if already syncing (for user-triggered refresh)
@@ -259,19 +301,8 @@ final class SyncEngine {
 
     // MARK: - Photo Upload Coordination
 
-    private func processPendingPhotoUploads() async {
-        guard let photoService = photoService else { return }
-
-        if photoService.pendingUploadCount > 0 {
-            photoService.processQueue()
-
-            // Wait for queue to process (with timeout)
-            for _ in 0..<30 {
-                if photoService.pendingUploadCount == 0 { break }
-                try? await Task.sleep(for: .seconds(1))
-            }
-        }
-    }
+    /// Batch uploads are self-managed by PhotoService; nothing to do here.
+    private func processPendingPhotoUploads() async { }
 
     // MARK: - Periodic Sync
 
@@ -322,12 +353,21 @@ final class SyncEngine {
 
     // MARK: - Log Sync
 
-    private func syncPendingLogs() async throws {
+    private func syncPendingLogs(skippingTripIDs failedTripIDs: Set<String> = []) async throws {
         let descriptor = FetchDescriptor<Log>()
         let allLogs = try modelContext.fetch(descriptor)
         let pendingLogs = allLogs.filter { $0.syncStatus == .pending || $0.syncStatus == .failed }
 
         for log in pendingLogs {
+            // Skip logs that still have photos uploading in the background
+            if log.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") }) { continue }
+
+            // Skip logs whose trip hasn't synced yet (prevents foreign key violations)
+            if let tripID = log.tripID, failedTripIDs.contains(tripID) {
+                print("Skipping log \(log.id) — trip \(tripID) hasn't synced yet")
+                continue
+            }
+
             do {
                 try await uploadLog(log)
                 log.syncStatus = .synced
@@ -351,7 +391,7 @@ final class SyncEngine {
             let user_id: String
             let place_id: String
             let rating: String
-            let photo_url: String?
+            let photo_urls: [String]
             let note: String?
             let tags: [String]
             let trip_id: String?
@@ -364,7 +404,7 @@ final class SyncEngine {
             user_id: log.userID,
             place_id: log.placeID,
             rating: log.rating.rawValue,
-            photo_url: log.photoURL,
+            photo_urls: log.photoURLs,
             note: log.note,
             tags: log.tags,
             trip_id: log.tripID,
@@ -400,7 +440,9 @@ final class SyncEngine {
 
     // MARK: - Trip Sync
 
-    private func syncPendingTrips() async throws {
+    /// Returns the set of trip IDs that failed to sync.
+    @discardableResult
+    private func syncPendingTrips() async throws -> Set<String> {
         // Only push trips owned by the current user (collaborator trips are
         // managed by their owner and would be rejected by RLS anyway).
         let session = try await supabase.auth.session
@@ -410,6 +452,7 @@ final class SyncEngine {
         let trips = try modelContext.fetch(descriptor)
         let ownedTrips = trips.filter { $0.createdBy == currentUserID }
 
+        var failedTripIDs: Set<String> = []
         for trip in ownedTrips {
             do {
                 try await supabase.database
@@ -417,9 +460,11 @@ final class SyncEngine {
                     .upsert(trip)
                     .execute()
             } catch {
+                failedTripIDs.insert(trip.id)
                 print("⚠️ Failed to sync trip '\(trip.name)' (\(trip.id)): \(error)")
             }
         }
+        return failedTripIDs
     }
 
     // MARK: - Pull Sync
@@ -590,7 +635,7 @@ final class SyncEngine {
                     // Server wins if newer
                     if remote.updatedAt > local.updatedAt {
                         local.rating = Rating(rawValue: remote.rating) ?? local.rating
-                        local.photoURL = remote.photoURL
+                        local.photoURLs = remote.photoURLs
                         local.note = remote.note
                         local.tags = remote.tags
                         local.tripID = remote.tripID
@@ -604,7 +649,7 @@ final class SyncEngine {
                     userID: remote.userID,
                     placeID: remote.placeID,
                     rating: Rating(rawValue: remote.rating) ?? .solid,
-                    photoURL: remote.photoURL,
+                    photoURLs: remote.photoURLs,
                     note: remote.note,
                     tags: remote.tags,
                     tripID: remote.tripID,
@@ -637,6 +682,10 @@ final class SyncEngine {
             }
         )
         if let log = try? modelContext.fetch(descriptor).first {
+            // Resolve lazy attribute faults before deletion to prevent
+            // "detached backing data" crashes in observing views.
+            _ = log.photoURLs
+            _ = log.tags
             modelContext.delete(log)
             try? modelContext.save()
         }
@@ -680,7 +729,10 @@ final class SyncEngine {
     func updatePendingCount() async {
         let descriptor = FetchDescriptor<Log>()
         if let allLogs = try? modelContext.fetch(descriptor) {
-            pendingCount = allLogs.filter { $0.syncStatus == .pending || $0.syncStatus == .failed }.count
+            pendingCount = allLogs.filter {
+                ($0.syncStatus == .pending || $0.syncStatus == .failed) &&
+                !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
+            }.count
         }
     }
 

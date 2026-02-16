@@ -23,9 +23,37 @@ final class WantToGoService {
         self.modelContext = modelContext
     }
 
-    // MARK: - Add/Remove
+    // MARK: - Pending Deletion Tracking (persisted via UserDefaults)
 
-    /// Add a place to Want to Go list
+    private static let pendingDeletionsKey = "wtg_pending_deletion_place_ids"
+
+    /// Place IDs removed locally but not yet confirmed deleted on Supabase.
+    /// Persisted so they survive app kill and are retried on next sync.
+    private var pendingDeletionPlaceIDs: Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: Self.pendingDeletionsKey) ?? [])
+    }
+
+    private func addPendingDeletion(_ placeID: String) {
+        var ids = pendingDeletionPlaceIDs
+        ids.insert(placeID)
+        UserDefaults.standard.set(Array(ids), forKey: Self.pendingDeletionsKey)
+    }
+
+    private func removePendingDeletion(_ placeID: String) {
+        var ids = pendingDeletionPlaceIDs
+        ids.remove(placeID)
+        UserDefaults.standard.set(Array(ids), forKey: Self.pendingDeletionsKey)
+    }
+
+    private func clearPendingDeletions() {
+        UserDefaults.standard.removeObject(forKey: Self.pendingDeletionsKey)
+    }
+
+    // MARK: - Add/Remove (local-first)
+
+    /// Add a place to Want to Go list.
+    /// Writes to SwiftData immediately, then pushes to Supabase.
+    /// Data survives app kill; unsynced adds are pushed on next sync.
     func addToWantToGo(placeID: String, userID: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil, sourceLogID: String? = nil) async throws {
         // Check if already saved
         guard !isInWantToGo(placeID: placeID, userID: userID) else { return }
@@ -39,46 +67,47 @@ final class WantToGoService {
             sourceLogID: sourceLogID
         )
 
-        // Sync to Supabase
-        try await supabase
-            .from("want_to_go")
-            .upsert(item)
-            .execute()
+        // Cancel any pending remote deletion for this place
+        removePendingDeletion(placeID)
 
-        // Save locally only after Supabase succeeds
+        // Local first — data survives app kill
         modelContext.insert(item)
         try modelContext.save()
+        items = getWantToGoList(for: userID)
 
-        // Refresh local list
-        await refreshItems(for: userID)
+        // Then push to Supabase (failure is non-fatal; retried on next sync)
+        do {
+            try await supabase
+                .from("want_to_go")
+                .upsert(item)
+                .execute()
+        } catch {
+            print("WTG remote add deferred: \(error)")
+        }
     }
 
-    /// Remove a place from Want to Go list
+    /// Remove a place from Want to Go list.
+    /// Deletes from SwiftData immediately, then deletes from Supabase.
+    /// Pending deletion is persisted so it survives app kill.
     func removeFromWantToGo(placeID: String, userID: String) async throws {
-        // Delete from Supabase
-        try await supabase
-            .from("want_to_go")
-            .delete()
-            .eq("user_id", value: userID)
-            .eq("place_id", value: placeID)
-            .execute()
+        // Local first — immediate UI update
+        removeLocalBookmark(placeID: placeID, userID: userID)
 
-        // Remove locally
-        let userIDCopy = userID
-        let placeIDCopy = placeID
-        let descriptor = FetchDescriptor<WantToGo>(
-            predicate: #Predicate { item in
-                item.userID == userIDCopy && item.placeID == placeIDCopy
-            }
-        )
+        // Track for remote deletion (persisted across app restarts)
+        addPendingDeletion(placeID)
 
-        if let cached = try? modelContext.fetch(descriptor).first {
-            modelContext.delete(cached)
-            try modelContext.save()
+        // Then delete from Supabase (failure is non-fatal; retried on next sync)
+        do {
+            try await supabase
+                .from("want_to_go")
+                .delete()
+                .eq("user_id", value: userID)
+                .eq("place_id", value: placeID)
+                .execute()
+            removePendingDeletion(placeID)
+        } catch {
+            print("WTG remote delete deferred: \(error)")
         }
-
-        // Refresh local list
-        await refreshItems(for: userID)
     }
 
     /// Toggle want-to-go status for a place
@@ -139,13 +168,21 @@ final class WantToGoService {
         // Remove from local SwiftData
         removeLocalBookmark(placeID: placeID, userID: userID)
 
+        // Track for retry in case remote delete fails
+        addPendingDeletion(placeID)
+
         // Best-effort remote delete (don't block or fail the log flow)
-        try? await supabase
-            .from("want_to_go")
-            .delete()
-            .eq("user_id", value: userID)
-            .eq("place_id", value: placeID)
-            .execute()
+        do {
+            try await supabase
+                .from("want_to_go")
+                .delete()
+                .eq("user_id", value: userID)
+                .eq("place_id", value: placeID)
+                .execute()
+            removePendingDeletion(placeID)
+        } catch {
+            print("WTG auto-remove remote delete deferred: \(error)")
+        }
     }
 
     /// Removes a bookmark from the local SwiftData store and updates the cached items array.
@@ -168,10 +205,12 @@ final class WantToGoService {
 
     // MARK: - Sync
 
-    /// Sync Want to Go list from Supabase to local cache
+    /// Sync Want to Go list with Supabase.
+    /// Pushes local-only items first (handles adds that survived an app kill),
+    /// retries pending deletions, then imports remote-only items.
     func syncWantToGo(for userID: String) async {
         do {
-            // Fetch from Supabase
+            // 1. Fetch remote state
             let remoteItems: [WantToGo] = try await supabase
                 .from("want_to_go")
                 .select()
@@ -179,30 +218,44 @@ final class WantToGoService {
                 .execute()
                 .value
 
-            // Clear existing local cache for this user
-            let userIDCopy = userID
-            let descriptor = FetchDescriptor<WantToGo>(
-                predicate: #Predicate { item in
-                    item.userID == userIDCopy
-                }
-            )
+            let localItems = getWantToGoList(for: userID)
+            let remotePlaceIDs = Set(remoteItems.map(\.placeID))
+            let localPlaceIDs = Set(localItems.map(\.placeID))
 
-            let existing = try modelContext.fetch(descriptor)
-            for item in existing {
-                modelContext.delete(item)
+            // 2. Push local-only items to Supabase (added offline or before app kill)
+            let localOnly = localItems.filter {
+                !remotePlaceIDs.contains($0.placeID) && !pendingDeletionPlaceIDs.contains($0.placeID)
+            }
+            for item in localOnly {
+                try? await supabase
+                    .from("want_to_go")
+                    .upsert(item)
+                    .execute()
             }
 
-            // Insert fresh data
-            for item in remoteItems {
+            // 3. Retry pending remote deletions
+            for placeID in pendingDeletionPlaceIDs {
+                try? await supabase
+                    .from("want_to_go")
+                    .delete()
+                    .eq("user_id", value: userID)
+                    .eq("place_id", value: placeID)
+                    .execute()
+            }
+            let deletedPlaceIDs = pendingDeletionPlaceIDs
+            clearPendingDeletions()
+
+            // 4. Import remote-only items locally (except those pending deletion)
+            for item in remoteItems where !localPlaceIDs.contains(item.placeID) && !deletedPlaceIDs.contains(item.placeID) {
                 modelContext.insert(item)
             }
 
             try modelContext.save()
-
-            // Update cached list
-            items = remoteItems
+            items = getWantToGoList(for: userID)
         } catch {
             print("Error syncing want to go: \(error)")
+            // Offline: use whatever is in local SwiftData
+            items = getWantToGoList(for: userID)
         }
     }
 }

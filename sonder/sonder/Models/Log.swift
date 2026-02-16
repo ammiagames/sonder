@@ -50,20 +50,34 @@ final class Log {
     var userID: String
     var placeID: String
     var rating: Rating
-    var photoURL: String?
+    var photoURLs: [String] = []
     var note: String?
-    var tags: [String]
+    var tags: [String] = []
     var tripID: String?
     var syncStatus: SyncStatus
     var createdAt: Date
     var updatedAt: Date
-    
+
+    /// Returns the first user-uploaded photo URL, filtering out Google Places API URLs
+    /// and pending upload placeholders.
+    var photoURL: String? {
+        photoURLs.first { !$0.contains("googleapis.com") && !$0.hasPrefix("pending-upload:") }
+    }
+
+    /// User-uploaded photo URLs only (excludes Google Places API URLs and pending uploads).
+    var userPhotoURLs: [String] {
+        photoURLs.filter { !$0.contains("googleapis.com") && !$0.hasPrefix("pending-upload:") }
+    }
+
+    /// Whether this log has photos still being uploaded in the background.
+    var hasPendingUploads: Bool { photoURLs.contains { $0.hasPrefix("pending-upload:") } }
+
     init(
         id: String = UUID().uuidString.lowercased(),
         userID: String,
         placeID: String,
         rating: Rating,
-        photoURL: String? = nil,
+        photoURLs: [String] = [],
         note: String? = nil,
         tags: [String] = [],
         tripID: String? = nil,
@@ -75,7 +89,7 @@ final class Log {
         self.userID = userID
         self.placeID = placeID
         self.rating = rating
-        self.photoURL = photoURL
+        self.photoURLs = photoURLs
         self.note = note
         self.tags = tags
         self.tripID = tripID
@@ -92,7 +106,8 @@ extension Log: Codable {
         case userID = "user_id"
         case placeID = "place_id"
         case rating
-        case photoURL = "photo_url"
+        case photoURLs = "photo_urls"
+        case photoURL = "photo_url" // Legacy key for decoder fallback
         case note
         case tags
         case tripID = "trip_id"
@@ -107,7 +122,17 @@ extension Log: Codable {
         let userID = try container.decode(String.self, forKey: .userID)
         let placeID = try container.decode(String.self, forKey: .placeID)
         let rating = try container.decode(Rating.self, forKey: .rating)
-        let photoURL = try container.decodeIfPresent(String.self, forKey: .photoURL)
+
+        // Try new format first, fall back to old single-photo for migration
+        let photoURLs: [String]
+        if let urls = try container.decodeIfPresent([String].self, forKey: .photoURLs) {
+            photoURLs = urls
+        } else if let single = try container.decodeIfPresent(String.self, forKey: .photoURL) {
+            photoURLs = [single]
+        } else {
+            photoURLs = []
+        }
+
         let note = try container.decodeIfPresent(String.self, forKey: .note)
         let tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
         let tripID = try container.decodeIfPresent(String.self, forKey: .tripID)
@@ -120,7 +145,7 @@ extension Log: Codable {
             userID: userID,
             placeID: placeID,
             rating: rating,
-            photoURL: photoURL,
+            photoURLs: photoURLs,
             note: note,
             tags: tags,
             tripID: tripID,
@@ -136,7 +161,7 @@ extension Log: Codable {
         try container.encode(userID, forKey: .userID)
         try container.encode(placeID, forKey: .placeID)
         try container.encode(rating, forKey: .rating)
-        try container.encodeIfPresent(photoURL, forKey: .photoURL)
+        try container.encode(photoURLs, forKey: .photoURLs)
         try container.encodeIfPresent(note, forKey: .note)
         try container.encode(tags, forKey: .tags)
         try container.encodeIfPresent(tripID, forKey: .tripID)

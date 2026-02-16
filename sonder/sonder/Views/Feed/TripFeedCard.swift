@@ -49,9 +49,10 @@ struct TripFeedCard: View {
                     Text(tripItem.user.username)
                         .font(SonderTypography.headline)
                         .foregroundColor(SonderColors.inkDark)
-                    Text("trip")
+                    Text(tripItem.activitySubtitle)
                         .font(SonderTypography.caption)
                         .foregroundColor(SonderColors.inkMuted)
+                        .lineLimit(1)
                 }
 
                 Spacer()

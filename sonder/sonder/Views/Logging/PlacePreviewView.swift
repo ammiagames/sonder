@@ -114,16 +114,18 @@ struct PlacePreviewView: View {
         Group {
             if let photoRef = details.photoReference,
                let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 800) {
-                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 250)) {
-                    photoPlaceholder
+                Color.clear.overlay {
+                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 250)) {
+                        photoPlaceholder
+                    }
                 }
+                .clipped()
             } else {
                 photoPlaceholder
             }
         }
         .frame(height: 250)
         .frame(maxWidth: .infinity)
-        .clipped()
     }
 
     private var photoPlaceholder: some View {

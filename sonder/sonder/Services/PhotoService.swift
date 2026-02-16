@@ -18,13 +18,43 @@ final class PhotoService {
     private let maxDimension: CGFloat = 1200
     private let compressionQuality: CGFloat = 0.8
 
+    /// Single-upload state (used by uploadPhoto for cover photos / avatars)
     var isUploading = false
     var uploadProgress: Double = 0
     var error: PhotoError?
 
-    /// Queue of pending photo uploads (stores compressed JPEG Data, not UIImage)
-    private var uploadQueue: [(id: String, data: Data, userId: String)] = []
-    private var isProcessingQueue = false
+    // MARK: - Batch Upload Tracking
+
+    struct PhotoUploadBatch {
+        let logID: String
+        let totalCount: Int
+        var completedCount: Int = 0
+        var results: [String: String] = [:]    // placeholderID -> uploaded URL
+        var failedIDs: Set<String> = []
+    }
+
+    var activeBatches: [String: PhotoUploadBatch] = [:]
+
+    /// Whether any background photo uploads are in progress.
+    var hasActiveUploads: Bool { !activeBatches.isEmpty }
+
+    /// Overall progress across all active batches (0.0 – 1.0).
+    var overallProgress: Double {
+        let total = activeBatches.values.reduce(0) { $0 + $1.totalCount }
+        guard total > 0 else { return 0 }
+        let completed = activeBatches.values.reduce(0) { $0 + $1.completedCount }
+        return Double(completed) / Double(total)
+    }
+
+    /// Total number of photos still pending upload across all batches.
+    var totalPendingPhotos: Int {
+        activeBatches.values.reduce(0) { $0 + ($1.totalCount - $1.completedCount) }
+    }
+
+    /// Total number of photos being uploaded (across all batches).
+    var totalPhotosInFlight: Int {
+        activeBatches.values.reduce(0) { $0 + $1.totalCount }
+    }
 
     enum PhotoError: LocalizedError {
         case compressionFailed
@@ -46,13 +76,9 @@ final class PhotoService {
         }
     }
 
-    // MARK: - Public API
+    // MARK: - Public API (Single Upload)
 
-    /// Upload a photo for a user
-    /// - Parameters:
-    ///   - image: The UIImage to upload
-    ///   - userId: The user's ID for organizing photos
-    /// - Returns: The public URL of the uploaded photo, or nil if failed
+    /// Upload a photo for a user (used for cover photos, avatars)
     func uploadPhoto(_ image: UIImage, for userId: String) async -> String? {
         isUploading = true
         error = nil
@@ -63,7 +89,6 @@ final class PhotoService {
             uploadProgress = 0
         }
 
-        // Compress image
         guard let compressedData = compressImage(image) else {
             error = .compressionFailed
             return nil
@@ -71,10 +96,8 @@ final class PhotoService {
 
         uploadProgress = 0.3
 
-        // Generate unique filename
         let filename = "\(userId)/\(UUID().uuidString).jpg"
 
-        // Upload with retries
         var lastError: Error?
         for attempt in 1...maxRetries {
             do {
@@ -88,7 +111,6 @@ final class PhotoService {
 
                 uploadProgress = 1.0
 
-                // Get public URL
                 let publicURL = try SupabaseConfig.client.storage
                     .from(storageBucket)
                     .getPublicURL(path: result.path)
@@ -99,7 +121,6 @@ final class PhotoService {
                 print("Upload attempt \(attempt) failed: \(error)")
 
                 if attempt < maxRetries {
-                    // Wait before retry
                     try? await Task.sleep(for: .seconds(Double(attempt)))
                 }
             }
@@ -109,45 +130,82 @@ final class PhotoService {
         return nil
     }
 
-    /// Queue a photo for upload (for offline support)
-    /// Compresses immediately so we store ~100KB of Data instead of ~5MB UIImage
-    func queuePhotoUpload(image: UIImage, for userId: String) -> String {
-        let id = UUID().uuidString
-        guard let data = compressImage(image) else {
-            error = .compressionFailed
-            return id
-        }
-        uploadQueue.append((id: id, data: data, userId: userId))
-        processQueue()
-        return id
-    }
-
-    /// Process queued uploads
-    func processQueue() {
-        guard !isProcessingQueue && !uploadQueue.isEmpty else { return }
-
-        isProcessingQueue = true
-
-        Task {
-            while !uploadQueue.isEmpty {
-                let item = uploadQueue.removeFirst()
-                _ = await uploadCompressedData(item.data, for: item.userId)
+    /// Upload multiple photos sequentially with progress tracking
+    /// (kept for cover photo / avatar use cases)
+    func uploadPhotos(
+        _ images: [UIImage],
+        for userId: String,
+        onProgress: @escaping (Int, Int) -> Void
+    ) async -> [String] {
+        var urls: [String] = []
+        for (index, image) in images.enumerated() {
+            onProgress(index + 1, images.count)
+            if let url = await uploadPhoto(image, for: userId) {
+                urls.append(url)
             }
-            isProcessingQueue = false
         }
+        return urls
     }
 
-    /// Upload pre-compressed JPEG data (used by the queue)
-    private func uploadCompressedData(_ data: Data, for userId: String) async -> String? {
-        isUploading = true
-        error = nil
-        uploadProgress = 0.3
+    // MARK: - Batch Upload API
 
-        defer {
-            isUploading = false
-            uploadProgress = 0
+    /// Queue images for background upload, returning placeholder strings immediately.
+    ///
+    /// - Parameters:
+    ///   - images: The images to upload.
+    ///   - userId: User ID for storage path.
+    ///   - logID: The log these photos belong to.
+    ///   - onComplete: Called on MainActor when the batch finishes with a mapping
+    ///     of placeholder ID -> uploaded URL (failed uploads are omitted).
+    /// - Returns: Array of `"pending-upload:<uuid>"` placeholder strings.
+    func queueBatchUpload(
+        images: [UIImage],
+        for userId: String,
+        logID: String,
+        onComplete: @escaping @MainActor ([String: String]) -> Void
+    ) -> [String] {
+        // Compress images synchronously (fast, ~50ms each)
+        var entries: [(placeholderID: String, data: Data)] = []
+        for image in images {
+            let placeholderID = UUID().uuidString.lowercased()
+            guard let data = compressImage(image) else { continue }
+            entries.append((placeholderID: placeholderID, data: data))
         }
 
+        let placeholders = entries.map { "pending-upload:\($0.placeholderID)" }
+
+        // Create batch tracker
+        activeBatches[logID] = PhotoUploadBatch(
+            logID: logID,
+            totalCount: entries.count
+        )
+
+        // Fire off background uploads
+        Task {
+            for entry in entries {
+                let url = await uploadCompressedData(entry.data, for: userId)
+
+                if let url {
+                    activeBatches[logID]?.results[entry.placeholderID] = url
+                } else {
+                    activeBatches[logID]?.failedIDs.insert(entry.placeholderID)
+                }
+                activeBatches[logID]?.completedCount += 1
+            }
+
+            // Batch done — deliver results and clean up
+            let results = activeBatches[logID]?.results ?? [:]
+            activeBatches.removeValue(forKey: logID)
+            onComplete(results)
+        }
+
+        return placeholders
+    }
+
+    // MARK: - Internal Upload
+
+    /// Upload pre-compressed JPEG data (does NOT mutate single-upload state).
+    private func uploadCompressedData(_ data: Data, for userId: String) async -> String? {
         let filename = "\(userId)/\(UUID().uuidString).jpg"
 
         var lastError: Error?
@@ -161,8 +219,6 @@ final class PhotoService {
                         options: FileOptions(contentType: "image/jpeg")
                     )
 
-                uploadProgress = 1.0
-
                 let publicURL = try SupabaseConfig.client.storage
                     .from(storageBucket)
                     .getPublicURL(path: result.path)
@@ -177,22 +233,14 @@ final class PhotoService {
             }
         }
 
-        self.error = .uploadFailed(lastError ?? NSError(domain: "PhotoService", code: -1))
+        print("Photo upload failed after \(maxRetries) retries: \(lastError?.localizedDescription ?? "unknown")")
         return nil
-    }
-
-    /// Get the number of pending uploads
-    var pendingUploadCount: Int {
-        uploadQueue.count
     }
 
     // MARK: - Image Compression
 
     /// Compress and resize an image
-    /// - Parameter image: The original UIImage
-    /// - Returns: JPEG data of the compressed image
     private func compressImage(_ image: UIImage) -> Data? {
-        // Calculate new size maintaining aspect ratio
         let originalSize = image.size
         var newSize = originalSize
 
@@ -207,21 +255,15 @@ final class PhotoService {
             )
         }
 
-        // Resize image
         let renderer = UIGraphicsImageRenderer(size: newSize)
         let resizedImage = renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: newSize))
         }
 
-        // Compress to JPEG
         return resizedImage.jpegData(compressionQuality: compressionQuality)
     }
 
     /// Compress image to fit within a maximum file size
-    /// - Parameters:
-    ///   - image: The original UIImage
-    ///   - maxSizeBytes: Maximum file size in bytes
-    /// - Returns: JPEG data within the size limit
     func compressImage(_ image: UIImage, maxSizeBytes: Int) -> Data? {
         var quality = compressionQuality
         var data = compressImage(image)

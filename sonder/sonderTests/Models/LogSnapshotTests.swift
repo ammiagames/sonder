@@ -18,7 +18,7 @@ struct LogSnapshotTests {
             userID: "u1",
             placeID: "p1",
             rating: .mustSee,
-            photoURL: "https://example.com/photo.jpg",
+            photoURLs: ["https://example.com/photo.jpg"],
             note: "Amazing place!",
             tags: ["food", "dinner"],
             createdAt: fixedDate()
@@ -43,7 +43,7 @@ struct LogSnapshotTests {
         let log = TestData.log(
             id: "log-2",
             rating: .skip,
-            photoURL: nil,
+            photoURLs: [],
             note: nil,
             tags: []
         )
@@ -100,7 +100,7 @@ struct LogSnapshotTests {
         let log = TestData.log(
             id: "log-del",
             rating: .mustSee,
-            photoURL: "https://example.com/del.jpg",
+            photoURLs: ["https://example.com/del.jpg"],
             note: "Will be deleted"
         )
         context.insert(log)

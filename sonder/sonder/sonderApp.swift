@@ -112,7 +112,6 @@ struct sonderApp: App {
         // Initialize sync engine
         if syncEngine == nil {
             let engine = SyncEngine(modelContext: modelContainer.mainContext)
-            engine.photoService = photoService
             syncEngine = engine
         }
 
@@ -140,9 +139,7 @@ struct sonderApp: App {
     }
 
     private func createSyncEngine() -> SyncEngine {
-        let engine = SyncEngine(modelContext: modelContainer.mainContext)
-        engine.photoService = photoService
-        return engine
+        SyncEngine(modelContext: modelContainer.mainContext)
     }
 
     private func createPlacesCacheService() -> PlacesCacheService {

@@ -170,12 +170,27 @@ final class PlacesCacheService {
         let descriptor = FetchDescriptor<Place>()
         guard let allPlaces = try? modelContext.fetch(descriptor) else { return }
 
-        let missing = allPlaces.filter { $0.photoReference == nil }.prefix(limit)
+        let missing = Array(allPlaces.filter { $0.photoReference == nil }.prefix(limit))
         guard !missing.isEmpty else { return }
 
+        // Fetch place details concurrently
+        let results = await withTaskGroup(of: (String, String?).self) { group in
+            for place in missing {
+                group.addTask {
+                    let details = await placesService.getPlaceDetails(placeId: place.id)
+                    return (place.id, details?.photoReference)
+                }
+            }
+            var map: [String: String] = [:]
+            for await (placeID, photoRef) in group {
+                if let photoRef { map[placeID] = photoRef }
+            }
+            return map
+        }
+
+        // Apply results back on main thread (SwiftData models)
         for place in missing {
-            guard let details = await placesService.getPlaceDetails(placeId: place.id) else { continue }
-            if let photoRef = details.photoReference {
+            if let photoRef = results[place.id] {
                 place.photoReference = photoRef
             }
         }

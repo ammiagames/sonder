@@ -30,7 +30,7 @@ struct FeedItemTests {
         let response = FeedLogResponse(
             id: "log-1",
             rating: "must_see",
-            photoURL: "https://example.com/photo.jpg",
+            photoURLs: ["https://example.com/photo.jpg"],
             note: "Amazing",
             tags: ["food"],
             createdAt: date,
@@ -43,6 +43,7 @@ struct FeedItemTests {
 
         #expect(feedItem.id == "log-1")
         #expect(feedItem.log.rating == "must_see")
+        #expect(feedItem.log.photoURLs == ["https://example.com/photo.jpg"])
         #expect(feedItem.log.photoURL == "https://example.com/photo.jpg")
         #expect(feedItem.log.note == "Amazing")
         #expect(feedItem.log.tags == ["food"])
@@ -53,13 +54,13 @@ struct FeedItemTests {
     }
 
     @Test func feedLogCodableSnakeCase() throws {
-        let log = TestData.feedLog(photoURL: "https://example.com/pic.jpg")
+        let log = TestData.feedLog(photoURLs: ["https://example.com/pic.jpg"])
         let data = try makeEncoder().encode(log)
         let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
 
-        #expect(json["photo_url"] != nil)
+        #expect(json["photo_urls"] != nil)
         #expect(json["created_at"] != nil)
-        #expect(json["photoURL"] == nil)
+        #expect(json["photoURLs"] == nil)
         #expect(json["createdAt"] == nil)
     }
 
@@ -105,6 +106,80 @@ struct FeedItemTests {
         // Should fall back to abbreviated date, not relative
         #expect(!date.relativeDisplay.contains("ago"))
         #expect(!date.relativeDisplay.contains("Just now"))
+    }
+
+    // MARK: - Activity Subtitle
+
+    @Test func activitySubtitle_logAddedWithPlace() {
+        let activity = TestData.tripActivityResponse(activityType: "log_added", placeName: "Blue Bottle Coffee")
+        let subtitle = FeedService.activitySubtitle(for: activity)
+        #expect(subtitle == "added Blue Bottle Coffee")
+    }
+
+    @Test func activitySubtitle_logAddedWithoutPlace() {
+        let activity = TestData.tripActivityResponse(activityType: "log_added", placeName: nil)
+        let subtitle = FeedService.activitySubtitle(for: activity)
+        #expect(subtitle == "added a new stop")
+    }
+
+    @Test func activitySubtitle_logAddedEmptyPlace() {
+        let activity = TestData.tripActivityResponse(activityType: "log_added", placeName: "")
+        let subtitle = FeedService.activitySubtitle(for: activity)
+        #expect(subtitle == "added a new stop")
+    }
+
+    @Test func activitySubtitle_tripCreated() {
+        let activity = TestData.tripActivityResponse(activityType: "trip_created", logID: nil, placeName: nil)
+        let subtitle = FeedService.activitySubtitle(for: activity)
+        #expect(subtitle == "started this trip")
+    }
+
+    @Test func activitySubtitle_unknownFallback() {
+        let activity = TestData.tripActivityResponse(activityType: "unknown", logID: nil, placeName: nil)
+        let subtitle = FeedService.activitySubtitle(for: activity)
+        #expect(subtitle == "trip")
+    }
+
+    // MARK: - FeedEntry with tripCreated
+
+    @Test func feedEntry_tripCreated_id() {
+        let item = TestData.feedTripCreatedItem(id: "act-1")
+        let entry = FeedEntry.tripCreated(item)
+        #expect(entry.id == "tripCreated-act-1")
+    }
+
+    @Test func feedEntry_tripCreated_sortDate() {
+        let date = fixedDate()
+        let item = TestData.feedTripCreatedItem(createdAt: date)
+        let entry = FeedEntry.tripCreated(item)
+        #expect(entry.sortDate == date)
+    }
+
+    // MARK: - FeedTripItem activitySubtitle
+
+    @Test func feedTripItem_activitySubtitle() {
+        let item = TestData.feedTripItem(activitySubtitle: "added Blue Bottle Coffee")
+        #expect(item.activitySubtitle == "added Blue Bottle Coffee")
+    }
+
+    // MARK: - TripActivityResponse Codable
+
+    @Test func tripActivityResponseCodableSnakeCase() throws {
+        let response = TestData.tripActivityResponse(
+            tripID: "trip-123",
+            activityType: "log_added",
+            logID: "log-456",
+            placeName: "Cafe"
+        )
+        let data = try makeEncoder().encode(response)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+        #expect(json["trip_id"] as? String == "trip-123")
+        #expect(json["activity_type"] as? String == "log_added")
+        #expect(json["log_id"] as? String == "log-456")
+        #expect(json["place_name"] as? String == "Cafe")
+        #expect(json["tripID"] == nil)
+        #expect(json["activityType"] == nil)
     }
 
     @Test func feedUserCodableSnakeCase() throws {

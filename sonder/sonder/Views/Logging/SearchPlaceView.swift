@@ -16,6 +16,11 @@ struct SearchPlaceView: View {
     @Environment(GooglePlacesService.self) private var placesService
     @Environment(LocationService.self) private var locationService
     @Environment(PlacesCacheService.self) private var cacheService
+    @Environment(AuthenticationService.self) private var authService
+
+    var onLogComplete: ((CLLocationCoordinate2D) -> Void)?
+
+    @Query private var allLogs: [Log]
 
     @State private var searchText = ""
     @State private var predictions: [PlacePrediction] = []
@@ -112,7 +117,7 @@ struct SearchPlaceView: View {
         }
         .fullScreenCover(item: $placeToLog) { place in
             NavigationStack {
-                RatePlaceView(place: place) {
+                RatePlaceView(place: place) { coord in
                     // Pop the preview first (hidden under the cover)
                     showPreview = false
                     searchText = ""
@@ -120,6 +125,7 @@ struct SearchPlaceView: View {
                     DispatchQueue.main.async {
                         placeToLog = nil
                     }
+                    onLogComplete?(coord)
                 }
             }
         }
@@ -222,6 +228,7 @@ struct SearchPlaceView: View {
                     name: prediction.mainText,
                     address: prediction.secondaryText,
                     placeId: prediction.placeId,
+                    distanceText: formatDistance(meters: prediction.distanceMeters),
                     onBookmark: {}
                 )
                 .onTapGesture {
@@ -260,6 +267,7 @@ struct SearchPlaceView: View {
                     address: place.address,
                     photoReference: place.photoReference,
                     placeId: place.placeId,
+                    distanceText: distanceToNearby(place),
                     onBookmark: {}
                 )
                 .id("nearby-\(place.placeId)")
@@ -307,6 +315,12 @@ struct SearchPlaceView: View {
 
     // MARK: - Recent Searches
 
+    /// Place IDs the current user has already logged
+    private var loggedPlaceIDs: Set<String> {
+        guard let userID = authService.currentUser?.id else { return [] }
+        return Set(allLogs.filter { $0.userID == userID }.map { $0.placeID })
+    }
+
     /// IDs of recent searches (for filtering nearby)
     private var recentPlaceIds: Set<String> {
         Set(cacheService.getRecentSearches().prefix(5).map { $0.placeId })
@@ -316,7 +330,11 @@ struct SearchPlaceView: View {
     private var recentSearchesSection: some View {
         // Depend on version to trigger re-render when searches change
         let _ = cacheService.recentSearchesVersion
-        let recentSearches = Array(cacheService.getRecentSearches().prefix(5))
+        let recentSearches = Array(
+            cacheService.getRecentSearches()
+                .filter { !loggedPlaceIDs.contains($0.placeId) }
+                .prefix(5)
+        )
 
         if !recentSearches.isEmpty {
             sectionHeader("Recent")
@@ -490,6 +508,29 @@ struct SearchPlaceView: View {
             selectedDetails = details
             showPreview = true
         }
+    }
+
+    // MARK: - Distance Formatting
+
+    private func formatDistance(meters: Int?) -> String? {
+        guard let meters else { return nil }
+        let miles = Double(meters) / 1609.34
+        if miles < 0.1 {
+            let feet = Int(Double(meters) * 3.281)
+            return "\(feet) ft"
+        } else if miles < 10 {
+            return String(format: "%.1f mi", miles)
+        } else {
+            return "\(Int(miles)) mi"
+        }
+    }
+
+    private func distanceToNearby(_ place: NearbyPlace) -> String? {
+        guard let userLocation = locationService.currentLocation else { return nil }
+        let placeLocation = CLLocation(latitude: place.latitude, longitude: place.longitude)
+        let userCLLocation = CLLocation(latitude: userLocation.latitude, longitude: userLocation.longitude)
+        let meters = Int(userCLLocation.distance(from: placeLocation))
+        return formatDistance(meters: meters)
     }
 }
 

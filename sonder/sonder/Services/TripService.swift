@@ -95,6 +95,32 @@ final class TripService {
         try modelContext.save()
     }
 
+    /// Delete a trip and all its logs
+    func deleteTripAndLogs(_ trip: Trip, syncEngine: SyncEngine) async throws {
+        let tripID = trip.id
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { log in
+                log.tripID == tripID
+            }
+        )
+
+        let logs = try modelContext.fetch(descriptor)
+        for log in logs {
+            await syncEngine.deleteLog(id: log.id)
+        }
+
+        // Delete trip from Supabase
+        try await supabase
+            .from("trips")
+            .delete()
+            .eq("id", value: trip.id)
+            .execute()
+
+        // Delete locally
+        modelContext.delete(trip)
+        try modelContext.save()
+    }
+
     // MARK: - Fetch Operations
 
     /// Fetch all trips for a user (owned + collaborating)

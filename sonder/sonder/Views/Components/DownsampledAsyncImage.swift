@@ -89,8 +89,8 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
     }
 
     private func loadImage(from url: URL) async {
-        // Check cache first
-        let cacheKey = NSString(string: url.absoluteString)
+        // Check cache first (key includes target size to avoid serving tiny thumbnails)
+        let cacheKey = ImageDownsampler.cacheKey(for: url, pointSize: targetSize)
         if let cached = ImageDownsampler.cache.object(forKey: cacheKey) {
             self.image = cached
             return
@@ -139,6 +139,15 @@ enum ImageDownsampler {
         return cache
     }()
 
+    /// Builds a cache key that includes the target pixel dimensions so the same
+    /// URL rendered at different display sizes gets independent cache entries.
+    static func cacheKey(for url: URL, pointSize: CGSize) -> NSString {
+        let scale = UIScreen.main.scale
+        let pw = Int(pointSize.width * scale)
+        let ph = Int(pointSize.height * scale)
+        return NSString(string: "\(url.absoluteString)#\(pw)x\(ph)")
+    }
+
     /// URLSession with disk cache for raw responses. The NSCache above stores tiny
     /// downsampled bitmaps in memory; this URLCache persists the original JPEG data
     /// on disk so subsequent launches don't re-download from the network.
@@ -152,6 +161,19 @@ enum ImageDownsampler {
         config.requestCachePolicy = .returnCacheDataElseLoad
         return URLSession(configuration: config)
     }()
+
+    /// Downloads an image from a URL and downsamples it to the target point size.
+    /// Uses the shared disk-cached session so previously-viewed photos are instant.
+    /// Intended for export rendering where a synchronous UIImage is needed.
+    static func downloadImage(from url: URL, targetSize: CGSize) async -> UIImage? {
+        do {
+            let (data, _) = try await session.data(from: url)
+            let pixelSize = CGSize(width: targetSize.width * 2, height: targetSize.height * 2)
+            return downsample(data: data, to: pixelSize)
+        } catch {
+            return nil
+        }
+    }
 
     /// Downsamples image data to the target pixel size using ImageIO.
     /// This decodes directly at the target size, never allocating the full image.

@@ -26,17 +26,20 @@ struct LogDetailView: View {
     @State private var note: String
     @State private var tags: [String]
     @State private var selectedTripID: String?
-    @State private var selectedImage: UIImage?
-    @State private var currentPhotoURL: String?
+    @State private var selectedImages: [UIImage] = []
+    @State private var currentPhotoURLs: [String]
 
     // UI state
     @State private var showDeleteAlert = false
     @State private var showRemovePhotoAlert = false
+    @State private var showDiscardAlert = false
     @State private var showImagePicker = false
-    @State private var isSaving = false
     @State private var hasChanges = false
     @State private var showSavedToast = false
+    @State private var photoPageIndex = 0
     @FocusState private var isNoteFocused: Bool
+
+    private let maxPhotos = 5
 
     @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
     @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
@@ -93,10 +96,13 @@ struct LogDetailView: View {
         _note = State(initialValue: log.note ?? "")
         _tags = State(initialValue: log.tags)
         _selectedTripID = State(initialValue: log.tripID)
-        _currentPhotoURL = State(initialValue: log.photoURL)
+        _currentPhotoURLs = State(initialValue: log.userPhotoURLs)
     }
 
     var body: some View {
+        if log.isDeleted {
+            Color.clear
+        } else {
         ScrollView {
             VStack(spacing: 0) {
                 // Hero photo (tappable to change)
@@ -140,11 +146,24 @@ struct LogDetailView: View {
         .background(SonderColors.cream)
         .scrollContentBackground(.hidden)
         .scrollDismissesKeyboard(.interactively)
-        .onTapGesture {
-            isNoteFocused = false
-        }
         .navigationTitle(place.name)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(hasChanges)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                if hasChanges {
+                    Button {
+                        showDiscardAlert = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .fontWeight(.semibold)
+                                .imageScale(.medium)
+                        }
+                    }
+                }
+            }
+        }
         .toolbar(showImagePicker ? .hidden : .automatic, for: .tabBar)
         .overlay(alignment: .bottom) {
             Group {
@@ -163,28 +182,24 @@ struct LogDetailView: View {
                     .clipShape(Capsule())
                     .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
                 } else if hasChanges {
-                    // Save button (pill style)
-                    Button {
-                        save()
-                    } label: {
-                        HStack(spacing: SonderSpacing.xs) {
-                            if isSaving {
-                                ProgressView()
-                                    .tint(.white)
-                            } else {
+                    VStack(spacing: SonderSpacing.xxs) {
+                        // Save button (pill style)
+                        Button {
+                            save()
+                        } label: {
+                            HStack(spacing: SonderSpacing.xs) {
                                 Image(systemName: "checkmark")
                                 Text("Save")
                                     .font(SonderTypography.headline)
                             }
+                            .padding(.horizontal, SonderSpacing.lg)
+                            .padding(.vertical, SonderSpacing.sm)
+                            .background(SonderColors.terracotta)
+                            .foregroundColor(.white)
+                            .clipShape(Capsule())
+                            .shadow(color: SonderColors.terracotta.opacity(0.3), radius: 8, y: 4)
                         }
-                        .padding(.horizontal, SonderSpacing.lg)
-                        .padding(.vertical, SonderSpacing.sm)
-                        .background(SonderColors.terracotta)
-                        .foregroundColor(.white)
-                        .clipShape(Capsule())
-                        .shadow(color: SonderColors.terracotta.opacity(0.3), radius: 8, y: 4)
                     }
-                    .disabled(isSaving)
                 }
             }
             .padding(.bottom, SonderSpacing.lg)
@@ -194,9 +209,10 @@ struct LogDetailView: View {
         }
         .sheet(isPresented: $showImagePicker) {
             EditableImagePicker { image in
-                selectedImage = image
-                currentPhotoURL = nil
-                hasChanges = true
+                if totalPhotoCount < maxPhotos {
+                    selectedImages.append(image)
+                    hasChanges = true
+                }
                 showImagePicker = false
             } onCancel: {
                 showImagePicker = false
@@ -207,6 +223,13 @@ struct LogDetailView: View {
         .onChange(of: note) { _, _ in hasChanges = true }
         .onChange(of: tags) { _, _ in hasChanges = true }
         .onChange(of: selectedTripID) { _, _ in hasChanges = true }
+        .onChange(of: log.isDeleted ? [] as [String] : log.photoURLs) { _, newURLs in
+            // Guard against accessing a deleted/detached model (delete dismisses
+            // the view but onChange can still fire during the navigation pop).
+            guard !log.isDeleted else { return }
+            // Update displayed photos when background uploads replace placeholders
+            currentPhotoURLs = newURLs.filter { !$0.contains("googleapis.com") }
+        }
         .alert("Delete Log", isPresented: $showDeleteAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
@@ -218,12 +241,31 @@ struct LogDetailView: View {
         .alert("Remove Photo", isPresented: $showRemovePhotoAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Remove", role: .destructive) {
-                currentPhotoURL = nil
-                selectedImage = nil
+                let index = photoPageIndex
+                if index < currentPhotoURLs.count {
+                    currentPhotoURLs.remove(at: index)
+                } else {
+                    let selectedIndex = index - currentPhotoURLs.count
+                    if selectedIndex < selectedImages.count {
+                        selectedImages.remove(at: selectedIndex)
+                    }
+                }
+                // Clamp page index
+                if photoPageIndex >= totalPhotoCount && totalPhotoCount > 0 {
+                    photoPageIndex = totalPhotoCount - 1
+                }
                 hasChanges = true
             }
         } message: {
             Text("Remove this photo from your log?")
+        }
+        .alert("Unsaved Changes", isPresented: $showDiscardAlert) {
+            Button("Keep Editing", role: .cancel) { }
+            Button("Discard", role: .destructive) {
+                dismiss()
+            }
+        } message: {
+            Text("You have unsaved changes. Do you want to discard them?")
         }
         .sheet(isPresented: $showAllTrips) {
             AllTripsPickerSheet(
@@ -242,34 +284,70 @@ struct LogDetailView: View {
         } message: {
             Text("Enter a name for your trip")
         }
+        } // else !log.isDeleted
     }
 
     // MARK: - Photo Section
 
+    /// Total photo count across existing URLs and newly selected images
+    private var totalPhotoCount: Int {
+        currentPhotoURLs.count + selectedImages.count
+    }
+
     private var photoSection: some View {
         ZStack(alignment: .topTrailing) {
-            // Photo display
-            Group {
-                if let image = selectedImage {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                } else if let urlString = currentPhotoURL, let url = URL(string: urlString) {
-                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 250)) {
-                        photoPlaceholder
+            if totalPhotoCount == 0 {
+                photoPlaceholder
+                    .frame(height: 250)
+                    .frame(maxWidth: .infinity)
+                    .clipped()
+            } else {
+                TabView(selection: $photoPageIndex) {
+                    // Existing remote photos + pending upload placeholders
+                    ForEach(Array(currentPhotoURLs.enumerated()), id: \.offset) { index, urlString in
+                        if urlString.hasPrefix("pending-upload:") {
+                            // Uploading placeholder
+                            Rectangle()
+                                .fill(SonderColors.warmGray)
+                                .overlay {
+                                    VStack(spacing: SonderSpacing.xs) {
+                                        ProgressView()
+                                            .tint(SonderColors.terracotta)
+                                        Text("Uploading...")
+                                            .font(SonderTypography.caption)
+                                            .foregroundColor(SonderColors.inkMuted)
+                                    }
+                                }
+                        } else if let url = URL(string: urlString) {
+                            Color.clear.overlay {
+                                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 250)) {
+                                    photoPlaceholder
+                                }
+                            }
+                            .clipped()
+                        }
                     }
-                } else {
-                    photoPlaceholder
+
+                    // Newly selected images
+                    ForEach(Array(selectedImages.enumerated()), id: \.offset) { index, image in
+                        Color.clear.overlay {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                        }
+                        .clipped()
+                        .tag(currentPhotoURLs.count + index)
+                    }
                 }
+                .tabViewStyle(.page(indexDisplayMode: totalPhotoCount > 1 ? .automatic : .never))
+                .frame(height: 250)
+                .containerRelativeFrame(.horizontal)
             }
-            .frame(height: 250)
-            .frame(maxWidth: .infinity)
-            .clipped()
 
             // Photo controls overlay
             HStack(spacing: 12) {
-                // Remove photo button (if there's a user photo)
-                if selectedImage != nil || currentPhotoURL != nil {
+                // Remove current photo
+                if totalPhotoCount > 0 {
                     Button {
                         showRemovePhotoAlert = true
                     } label: {
@@ -282,16 +360,18 @@ struct LogDetailView: View {
                     }
                 }
 
-                // Change photo button
-                Button {
-                    showImagePicker = true
-                } label: {
-                    Image(systemName: "camera")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(10)
-                        .background(Color.black.opacity(0.6))
-                        .clipShape(Circle())
+                // Add photo button (if under max)
+                if totalPhotoCount < maxPhotos {
+                    Button {
+                        showImagePicker = true
+                    } label: {
+                        Image(systemName: "camera")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(10)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
+                    }
                 }
             }
             .padding(12)
@@ -581,52 +661,76 @@ struct LogDetailView: View {
     private func save() {
         guard let userId = authService.currentUser?.id else { return }
 
-        isSaving = true
         isNoteFocused = false // Dismiss keyboard
 
-        Task {
-            // Upload new photo if selected
-            var photoURL = currentPhotoURL
-            if let image = selectedImage {
-                photoURL = await photoService.uploadPhoto(image, for: userId)
-            }
+        // Queue new photos for background upload
+        var newURLs: [String] = []
+        if !selectedImages.isEmpty {
+            let logID = log.id
+            let context = modelContext
+            let engine = syncEngine
+            newURLs = photoService.queueBatchUpload(
+                images: selectedImages,
+                for: userId,
+                logID: logID
+            ) { results in
+                // Called when all uploads finish — replace placeholders with real URLs
+                let idToFind = logID
+                let descriptor = FetchDescriptor<Log>(
+                    predicate: #Predicate { log in log.id == idToFind }
+                )
+                guard let log = try? context.fetch(descriptor).first else { return }
 
-            // Update log properties
-            log.rating = rating
-            log.photoURL = photoURL
-            log.note = note.isEmpty ? nil : note
-            log.tags = tags
-            log.tripID = selectedTripID
-            log.updatedAt = Date()
-            log.syncStatus = .pending
-
-            do {
-                try modelContext.save()
-                await syncEngine.syncNow()
-
-                await MainActor.run {
-                    isSaving = false
-                    hasChanges = false
-
-                    // Haptic feedback
-                    let feedback = UINotificationFeedbackGenerator()
-                    feedback.notificationOccurred(.success)
-
-                    // Show toast
-                    showSavedToast = true
-
-                    // Auto-dismiss toast after 1.5 seconds
-                    Task {
-                        try? await Task.sleep(for: .seconds(1.5))
-                        showSavedToast = false
+                log.photoURLs = log.photoURLs.compactMap { url in
+                    if url.hasPrefix("pending-upload:") {
+                        let placeholderID = String(url.dropFirst("pending-upload:".count))
+                        return results[placeholderID]
                     }
+                    return url
                 }
-            } catch {
-                print("Failed to save log: \(error)")
-                await MainActor.run {
-                    isSaving = false
-                }
+                log.updatedAt = Date()
+                try? context.save()
+
+                Task { await engine.syncNow() }
             }
+        }
+
+        // Final photoURLs = existing URLs + placeholder/new URLs
+        let finalPhotoURLs = currentPhotoURLs + newURLs
+
+        // Update log properties immediately
+        log.rating = rating
+        log.photoURLs = finalPhotoURLs
+        log.note = note.isEmpty ? nil : note
+        log.tags = tags
+        log.tripID = selectedTripID
+        log.updatedAt = Date()
+        log.syncStatus = .pending
+
+        do {
+            try modelContext.save()
+
+            // Reset photo state to reflect saved values
+            currentPhotoURLs = finalPhotoURLs
+            selectedImages = []
+            hasChanges = false
+
+            // Haptic feedback
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+            // Show toast
+            showSavedToast = true
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                showSavedToast = false
+            }
+
+            // If no photos queued, sync right away
+            if newURLs.isEmpty {
+                Task { await syncEngine.syncNow() }
+            }
+        } catch {
+            print("Failed to save log: \(error)")
         }
     }
 

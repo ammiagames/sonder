@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-/// Pinterest-style masonry grid of trip cards with a configurable dotted trail line
+/// Pinterest-style masonry grid of trip cards with a zigzag dotted trail line
 /// connecting trips in reverse chronological order (most recent at top).
 struct MasonryTripsGrid: View {
     @Environment(AuthenticationService.self) private var authService
@@ -16,34 +16,37 @@ struct MasonryTripsGrid: View {
     let allLogs: [Log]
     let places: [Place]
     let filteredLogs: [Log]
-    let trailStyle: TrailStyle
     @Binding var selectedTrip: Trip?
     @Binding var selectedLog: Log?
     let deleteLog: (Log) -> Void
+    var searchText: String = ""
 
     @State private var cardFrames: [Int: CGRect] = [:]
     @State private var unassignedExpanded = false
 
-    // MARK: - Column Assignment
+    // MARK: - Precomputed Data
 
-    /// Assign each trip to left (0) or right (1) column, greedily picking the shorter column.
-    private var columnAssignments: [(trip: Trip, index: Int, column: Int)] {
-        var leftHeight: CGFloat = 0
-        var rightHeight: CGFloat = 0
-        var result: [(Trip, Int, Int)] = []
-        let spacing: CGFloat = 10 // matches SonderSpacing.sm
-
-        for (index, trip) in trips.enumerated() {
-            let h = estimateCardHeight(for: trip)
-            if leftHeight <= rightHeight {
-                result.append((trip, index, 0))
-                leftHeight += h + spacing
-            } else {
-                result.append((trip, index, 1))
-                rightHeight += h + spacing
+    /// O(L) log count dictionary — built once per render instead of O(T*L)
+    private var logCountsByTripID: [String: Int] {
+        var counts: [String: Int] = [:]
+        for log in allLogs {
+            if let tripID = log.tripID {
+                counts[tripID, default: 0] += 1
             }
         }
-        return result
+        return counts
+    }
+
+    /// O(P) place dictionary for O(1) lookups in unassigned logs section
+    private var placesByID: [String: Place] {
+        Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+    }
+
+    // MARK: - Column Assignment
+
+    /// Computed once; leftColumn and rightColumn are derived from it without re-calling
+    private var columnAssignments: [MasonryColumnAssignment] {
+        assignMasonryColumns(trips: trips, estimateHeight: estimateCardHeight)
     }
 
     private var leftColumn: [(trip: Trip, index: Int)] {
@@ -54,18 +57,9 @@ struct MasonryTripsGrid: View {
         columnAssignments.filter { $0.column == 1 }.map { ($0.trip, $0.index) }
     }
 
-    /// Map from chronological index → column (used by the trail overlay)
-    private var columnMap: [Int: Int] {
-        Dictionary(uniqueKeysWithValues: columnAssignments.map { ($0.index, $0.column) })
-    }
-
     /// Logs not belonging to any trip
     private var unassignedLogs: [Log] {
         filteredLogs.filter { $0.tripID == nil }
-    }
-
-    private func logCount(for trip: Trip) -> Int {
-        allLogs.filter { $0.tripID == trip.id }.count
     }
 
     // MARK: - Body
@@ -73,14 +67,12 @@ struct MasonryTripsGrid: View {
     var body: some View {
         ScrollView {
             VStack(spacing: SonderSpacing.md) {
-                if trips.isEmpty {
+                if trips.isEmpty && unassignedLogs.isEmpty {
                     tripsEmptyState
-                } else {
-                    // Masonry grid with trail
+                } else if !trips.isEmpty {
                     masonryGrid
                 }
 
-                // "Not in a trip" section
                 if !unassignedLogs.isEmpty {
                     notInTripSection
                 }
@@ -89,20 +81,24 @@ struct MasonryTripsGrid: View {
             }
             .padding(.top, SonderSpacing.sm)
         }
+        .scrollDismissesKeyboard(.interactively)
+        .onChange(of: searchText) { _, newValue in
+            if !newValue.isEmpty {
+                unassignedExpanded = true
+            }
+        }
     }
 
     // MARK: - Masonry Grid
 
     private var masonryGrid: some View {
         HStack(alignment: .top, spacing: SonderSpacing.sm) {
-            // Left column
             VStack(spacing: SonderSpacing.sm) {
                 ForEach(leftColumn, id: \.trip.id) { item in
                     tripCardView(trip: item.trip, index: item.index)
                 }
             }
 
-            // Right column
             VStack(spacing: SonderSpacing.sm) {
                 ForEach(rightColumn, id: \.trip.id) { item in
                     tripCardView(trip: item.trip, index: item.index)
@@ -112,15 +108,10 @@ struct MasonryTripsGrid: View {
         .padding(.horizontal, SonderSpacing.md)
         .coordinateSpace(name: "trailGrid")
         .onPreferenceChange(CardFramePreference.self) { frames in
-            cardFrames = frames
+            if frames != cardFrames { cardFrames = frames }
         }
         .background {
-            TrailOverlayView(
-                cardFrames: cardFrames,
-                columnMap: columnMap,
-                style: trailStyle,
-                totalCards: trips.count
-            )
+            ZigzagTrailView(cardFrames: cardFrames, totalCards: trips.count)
         }
     }
 
@@ -130,7 +121,7 @@ struct MasonryTripsGrid: View {
         } label: {
             TripCard(
                 trip: trip,
-                logCount: logCount(for: trip),
+                logCount: logCountsByTripID[trip.id] ?? 0,
                 isOwner: trip.createdBy == authService.currentUser?.id,
                 compact: true
             )
@@ -178,7 +169,7 @@ struct MasonryTripsGrid: View {
 
             if unassignedExpanded {
                 ForEach(unassignedLogs, id: \.id) { log in
-                    if let place = places.first(where: { $0.id == log.placeID }) {
+                    if let place = placesByID[log.placeID] {
                         Button {
                             selectedLog = log
                         } label: {
@@ -215,24 +206,22 @@ struct MasonryTripsGrid: View {
     // MARK: - Height Estimation (for column balancing)
 
     private func estimateCardHeight(for trip: Trip) -> CGFloat {
-        var h: CGFloat = 80  // compact cover photo
+        var h: CGFloat = 120  // compact cover photo
         h += 24              // info section padding
         h += 22              // name + owner badge
-        if let desc = trip.tripDescription, !desc.isEmpty { h += 30 }  // description (2 lines)
-        if trip.startDate != nil { h += 18 }                            // date range
+        if let desc = trip.tripDescription, !desc.isEmpty { h += 30 }
+        if trip.startDate != nil { h += 18 }
         h += 18              // stats row
         return h
     }
 }
 
-// MARK: - Trail Overlay
+// MARK: - Zigzag Trail
 
-/// Draws the dotted trail line connecting trip cards in chronological order.
-/// Renders as a background behind the masonry grid so lines peek out between cards.
-struct TrailOverlayView: View {
+/// Draws a smooth dotted zigzag line through trip card centers in chronological order.
+/// Rendered as a background so the line peeks out between staggered cards.
+struct ZigzagTrailView: View {
     let cardFrames: [Int: CGRect]
-    let columnMap: [Int: Int]
-    let style: TrailStyle
     let totalCards: Int
 
     var body: some View {
@@ -240,155 +229,40 @@ struct TrailOverlayView: View {
             let indices = (0..<totalCards).filter { cardFrames[$0] != nil }.sorted()
             guard indices.count >= 2 else { return }
 
-            let trailColor = Color(red: 0.76, green: 0.45, blue: 0.32).opacity(0.30) // terracotta-ish
+            let trailColor = Color(red: 0.76, green: 0.45, blue: 0.32).opacity(0.30)
             let dotColor = Color(red: 0.76, green: 0.45, blue: 0.32).opacity(0.50)
             let dashStyle = StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [6, 4])
 
-            switch style {
-            case .zigzag:
-                drawZigzag(context: &context, indices: indices, color: trailColor, dotColor: dotColor, dashStyle: dashStyle)
-            case .spine:
-                drawSpine(context: &context, indices: indices, size: size, color: trailColor, dotColor: dotColor, dashStyle: dashStyle)
-            case .columns:
-                drawColumnLines(context: &context, indices: indices, color: trailColor, dotColor: dotColor, dashStyle: dashStyle)
+            // Collect card center points
+            var points: [CGPoint] = []
+            for index in indices {
+                guard let rect = cardFrames[index] else { continue }
+                points.append(CGPoint(x: rect.midX, y: rect.midY))
+            }
+            guard points.count >= 2 else { return }
+
+            // Smooth bezier curve through card centers
+            var path = Path()
+            path.move(to: points[0])
+            for i in 1..<points.count {
+                let prev = points[i - 1]
+                let curr = points[i]
+                let midY = (prev.y + curr.y) / 2
+                path.addCurve(
+                    to: curr,
+                    control1: CGPoint(x: prev.x, y: midY),
+                    control2: CGPoint(x: curr.x, y: midY)
+                )
+            }
+            context.stroke(path, with: .color(trailColor), style: dashStyle)
+
+            // Dots at each card center
+            for (i, point) in points.enumerated() {
+                let r: CGFloat = i == 0 ? 5 : 4
+                let dotRect = CGRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)
+                context.fill(Path(ellipseIn: dotRect), with: .color(dotColor))
             }
         }
         .allowsHitTesting(false)
-    }
-
-    // MARK: - Option A: Zigzag Path
-
-    private func drawZigzag(context: inout GraphicsContext, indices: [Int], color: Color, dotColor: Color, dashStyle: StrokeStyle) {
-        var points: [CGPoint] = []
-        for index in indices {
-            guard let rect = cardFrames[index] else { continue }
-            points.append(CGPoint(x: rect.midX, y: rect.midY))
-        }
-        guard points.count >= 2 else { return }
-
-        // Smooth curve through card centers
-        var path = Path()
-        path.move(to: points[0])
-        for i in 1..<points.count {
-            let prev = points[i - 1]
-            let curr = points[i]
-            let midY = (prev.y + curr.y) / 2
-            path.addCurve(
-                to: curr,
-                control1: CGPoint(x: prev.x, y: midY),
-                control2: CGPoint(x: curr.x, y: midY)
-            )
-        }
-        context.stroke(path, with: .color(color), style: dashStyle)
-
-        // Dots at each card center
-        for (i, point) in points.enumerated() {
-            let r: CGFloat = i == 0 ? 5 : 4
-            let dotRect = CGRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)
-            context.fill(Path(ellipseIn: dotRect), with: .color(dotColor))
-        }
-    }
-
-    // MARK: - Option B: Center Spine with Branches
-
-    private func drawSpine(context: inout GraphicsContext, indices: [Int], size: CGSize, color: Color, dotColor: Color, dashStyle: StrokeStyle) {
-        let centerX = size.width / 2
-
-        // Collect card info
-        var entries: [(y: CGFloat, cardEdgeX: CGFloat, index: Int)] = []
-        for index in indices {
-            guard let rect = cardFrames[index], let col = columnMap[index] else { continue }
-            let edgeX: CGFloat = col == 0 ? rect.maxX + 4 : rect.minX - 4
-            entries.append((y: rect.midY, cardEdgeX: edgeX, index: index))
-        }
-        guard entries.count >= 2 else { return }
-
-        // Vertical spine
-        let topY = entries.first!.y
-        let bottomY = entries.last!.y
-        var spinePath = Path()
-        spinePath.move(to: CGPoint(x: centerX, y: topY))
-        spinePath.addLine(to: CGPoint(x: centerX, y: bottomY))
-        context.stroke(spinePath, with: .color(color), style: dashStyle)
-
-        // Branches + numbered circles
-        for (i, entry) in entries.enumerated() {
-            // Horizontal branch
-            var branchPath = Path()
-            branchPath.move(to: CGPoint(x: centerX, y: entry.y))
-            branchPath.addLine(to: CGPoint(x: entry.cardEdgeX, y: entry.y))
-            context.stroke(branchPath, with: .color(color), style: dashStyle)
-
-            // Circle on spine
-            let spinePoint = CGPoint(x: centerX, y: entry.y)
-            let circleR: CGFloat = 10
-            let circleRect = CGRect(x: spinePoint.x - circleR, y: spinePoint.y - circleR, width: circleR * 2, height: circleR * 2)
-            context.fill(Path(ellipseIn: circleRect), with: .color(dotColor))
-
-            // Number label
-            let text = context.resolve(
-                Text("\(i + 1)")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(.white)
-            )
-            context.draw(text, at: spinePoint, anchor: .center)
-        }
-    }
-
-    // MARK: - Option C: Column-Local Lines
-
-    private func drawColumnLines(context: inout GraphicsContext, indices: [Int], color: Color, dotColor: Color, dashStyle: StrokeStyle) {
-        // Group by column
-        var leftEntries: [(y: CGFloat, x: CGFloat, chronoIndex: Int)] = []
-        var rightEntries: [(y: CGFloat, x: CGFloat, chronoIndex: Int)] = []
-
-        for index in indices {
-            guard let rect = cardFrames[index], let col = columnMap[index] else { continue }
-            let entry = (y: rect.midY, x: rect.midX, chronoIndex: index)
-            if col == 0 {
-                leftEntries.append(entry)
-            } else {
-                rightEntries.append(entry)
-            }
-        }
-
-        // Draw each column's line + dots
-        for entries in [leftEntries, rightEntries] {
-            guard entries.count >= 2 else {
-                // Single card — just draw a dot
-                if let only = entries.first {
-                    drawNumberedDot(context: &context, at: CGPoint(x: only.x, y: only.y), number: only.chronoIndex + 1, dotColor: dotColor)
-                }
-                continue
-            }
-
-            // Vertical line through card centers
-            var linePath = Path()
-            linePath.move(to: CGPoint(x: entries.first!.x, y: entries.first!.y))
-            for entry in entries.dropFirst() {
-                linePath.addLine(to: CGPoint(x: entry.x, y: entry.y))
-            }
-            context.stroke(linePath, with: .color(color), style: dashStyle)
-
-            // Numbered dots
-            for entry in entries {
-                drawNumberedDot(context: &context, at: CGPoint(x: entry.x, y: entry.y), number: entry.chronoIndex + 1, dotColor: dotColor)
-            }
-        }
-    }
-
-    // MARK: - Helpers
-
-    private func drawNumberedDot(context: inout GraphicsContext, at point: CGPoint, number: Int, dotColor: Color) {
-        let r: CGFloat = 10
-        let rect = CGRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)
-        context.fill(Path(ellipseIn: rect), with: .color(dotColor))
-
-        let text = context.resolve(
-            Text("\(number)")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundColor(.white)
-        )
-        context.draw(text, at: point, anchor: .center)
     }
 }

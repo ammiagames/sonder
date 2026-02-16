@@ -18,8 +18,10 @@ struct CreateEditTripView: View {
     @Environment(AuthenticationService.self) private var authService
     @Environment(TripService.self) private var tripService
     @Environment(PhotoService.self) private var photoService
+    @Environment(SyncEngine.self) private var syncEngine
 
     let mode: TripFormMode
+    var onDelete: (() -> Void)?
 
     @State private var name = ""
     @State private var tripDescription = ""
@@ -164,8 +166,11 @@ struct CreateEditTripView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(SonderColors.cream)
             .navigationTitle(isEditing ? "Edit Trip" : "New Trip")
             .navigationBarTitleDisplayMode(.inline)
+            .environment(\.colorScheme, .light)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -174,31 +179,41 @@ struct CreateEditTripView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    if showSavedToast {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(SonderColors.sage)
-                            Text("Saved")
-                                .font(SonderTypography.headline)
-                                .foregroundColor(SonderColors.inkDark)
-                        }
-                        .transition(.opacity)
-                    } else {
-                        Button(isEditing ? "Save" : "Create") {
-                            saveTrip()
-                        }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    Button(isEditing ? "Save" : "Create") {
+                        saveTrip()
                     }
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if showSavedToast {
+                    HStack(spacing: SonderSpacing.xs) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(SonderColors.sage)
+                        Text("Saved")
+                            .font(SonderTypography.headline)
+                            .foregroundColor(SonderColors.inkDark)
+                    }
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.vertical, SonderSpacing.sm)
+                    .background(SonderColors.warmGray)
+                    .clipShape(Capsule())
+                    .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
+                    .padding(.bottom, SonderSpacing.lg)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .animation(.easeInOut(duration: 0.25), value: showSavedToast)
             .alert("Delete Trip", isPresented: $showDeleteAlert) {
-                Button("Cancel", role: .cancel) { }
-                Button("Delete", role: .destructive) {
-                    deleteTrip()
+                Button("Delete Trip & Logs", role: .destructive) {
+                    deleteTrip(keepLogs: false)
                 }
+                Button("Delete Trip, Keep Logs") {
+                    deleteTrip(keepLogs: true)
+                }
+                Button("Cancel", role: .cancel) { }
             } message: {
-                Text("Are you sure? This will remove all logs from this trip but won't delete the logs themselves.")
+                Text("Do you also want to delete all logs in this trip?")
             }
             .onAppear {
                 loadExistingData()
@@ -368,17 +383,22 @@ struct CreateEditTripView: View {
         }
     }
 
-    private func deleteTrip() {
+    private func deleteTrip(keepLogs: Bool) {
         guard let trip = existingTrip else { return }
 
         Task {
             do {
-                try await tripService.deleteTrip(trip)
+                if keepLogs {
+                    try await tripService.deleteTrip(trip)
+                } else {
+                    try await tripService.deleteTripAndLogs(trip, syncEngine: syncEngine)
+                }
 
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)
 
                 dismiss()
+                onDelete?()
             } catch {
                 print("Error deleting trip: \(error)")
             }

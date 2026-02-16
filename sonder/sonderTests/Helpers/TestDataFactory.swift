@@ -59,7 +59,7 @@ enum TestData {
         userID: String = "user-1",
         placeID: String = "place-1",
         rating: Rating = .solid,
-        photoURL: String? = nil,
+        photoURLs: [String] = [],
         note: String? = nil,
         tags: [String] = [],
         tripID: String? = nil,
@@ -72,7 +72,7 @@ enum TestData {
             userID: userID,
             placeID: placeID,
             rating: rating,
-            photoURL: photoURL,
+            photoURLs: photoURLs,
             note: note,
             tags: tags,
             tripID: tripID,
@@ -203,7 +203,7 @@ enum TestData {
     static func feedLog(
         id: String = "log-1",
         rating: String = "solid",
-        photoURL: String? = nil,
+        photoURLs: [String] = [],
         note: String? = "Great spot",
         tags: [String] = ["food"],
         createdAt: Date = fixedDate()
@@ -211,7 +211,7 @@ enum TestData {
         FeedItem.FeedLog(
             id: id,
             rating: rating,
-            photoURL: photoURL,
+            photoURLs: photoURLs,
             note: note,
             tags: tags,
             createdAt: createdAt
@@ -247,6 +247,72 @@ enum TestData {
             latitude: latitude,
             longitude: longitude,
             photoReference: photoReference
+        )
+    }
+
+    // MARK: - FeedTripItem
+
+    static func feedTripItem(
+        id: String = "trip-1",
+        name: String = "Test Trip",
+        coverPhotoURL: String? = nil,
+        startDate: Date? = nil,
+        endDate: Date? = nil,
+        user: FeedItem.FeedUser? = nil,
+        logs: [FeedTripItem.LogSummary] = [],
+        latestActivityAt: Date = fixedDate(),
+        activitySubtitle: String = "trip"
+    ) -> FeedTripItem {
+        FeedTripItem(
+            id: id,
+            name: name,
+            coverPhotoURL: coverPhotoURL,
+            startDate: startDate,
+            endDate: endDate,
+            user: user ?? feedUser(),
+            logs: logs,
+            latestActivityAt: latestActivityAt,
+            activitySubtitle: activitySubtitle
+        )
+    }
+
+    // MARK: - FeedTripCreatedItem
+
+    static func feedTripCreatedItem(
+        id: String = "activity-1",
+        tripID: String = "trip-1",
+        tripName: String = "Test Trip",
+        coverPhotoURL: String? = nil,
+        user: FeedItem.FeedUser? = nil,
+        createdAt: Date = fixedDate()
+    ) -> FeedTripCreatedItem {
+        FeedTripCreatedItem(
+            id: id,
+            tripID: tripID,
+            tripName: tripName,
+            coverPhotoURL: coverPhotoURL,
+            user: user ?? feedUser(),
+            createdAt: createdAt
+        )
+    }
+
+    // MARK: - TripActivityResponse
+
+    static func tripActivityResponse(
+        id: String = "activity-1",
+        tripID: String = "trip-1",
+        activityType: String = "log_added",
+        logID: String? = "log-1",
+        placeName: String? = "Test Place",
+        createdAt: Date = fixedDate()
+    ) -> TripActivityResponse {
+        TripActivityResponse(
+            id: id,
+            tripID: tripID,
+            activityType: activityType,
+            logID: logID,
+            placeName: placeName,
+            createdAt: createdAt
         )
     }
 

@@ -14,14 +14,16 @@ struct PlaceSearchRow: View {
     let photoReference: String?
     let icon: String?
     let placeId: String?
+    let distanceText: String?
     let onBookmark: (() -> Void)?
 
-    init(name: String, address: String, photoReference: String? = nil, icon: String? = nil, placeId: String? = nil, onBookmark: (() -> Void)? = nil) {
+    init(name: String, address: String, photoReference: String? = nil, icon: String? = nil, placeId: String? = nil, distanceText: String? = nil, onBookmark: (() -> Void)? = nil) {
         self.name = name
         self.address = address
         self.photoReference = photoReference
         self.icon = icon
         self.placeId = placeId
+        self.distanceText = distanceText
         self.onBookmark = onBookmark
     }
 
@@ -56,6 +58,12 @@ struct PlaceSearchRow: View {
             }
 
             Spacer()
+
+            if let distanceText {
+                Text(distanceText)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(SonderColors.inkLight)
+            }
 
             // Bookmark button (if provided)
             if let placeId = placeId, onBookmark != nil {

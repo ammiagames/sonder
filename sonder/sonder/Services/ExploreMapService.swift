@@ -41,7 +41,7 @@ final class ExploreMapService {
             let selectQuery = """
                 id,
                 rating,
-                photo_url,
+                photo_urls,
                 note,
                 tags,
                 created_at,
@@ -237,6 +237,27 @@ final class ExploreMapService {
         var copy = place
         copy.logs = filtered
         return copy
+    }
+
+    // MARK: - Pin Drop Helper
+
+    /// Finds the unified pin closest to the given coordinate within a threshold.
+    /// Extracted as a static method for testability.
+    nonisolated static func findPinByProximity(
+        coordinate: CLLocationCoordinate2D,
+        in pins: [UnifiedMapPin],
+        threshold: Double = 0.0005
+    ) -> UnifiedMapPin? {
+        pins
+            .filter { pin in
+                abs(pin.coordinate.latitude - coordinate.latitude) < threshold &&
+                abs(pin.coordinate.longitude - coordinate.longitude) < threshold
+            }
+            .min { a, b in
+                let aDist = abs(a.coordinate.latitude - coordinate.latitude) + abs(a.coordinate.longitude - coordinate.longitude)
+                let bDist = abs(b.coordinate.latitude - coordinate.latitude) + abs(b.coordinate.longitude - coordinate.longitude)
+                return aDist < bDist
+            }
     }
 
     // MARK: - Private Helpers

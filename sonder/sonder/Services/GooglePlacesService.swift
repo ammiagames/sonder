@@ -15,6 +15,7 @@ struct PlacePrediction: Identifiable {
     let placeId: String
     let mainText: String
     let secondaryText: String
+    let distanceMeters: Int?
 
     var id: String { placeId }
     var description: String { "\(mainText), \(secondaryText)" }
@@ -180,8 +181,9 @@ final class GooglePlacesService {
                 }
 
                 let secondaryText = (structuredFormat["secondaryText"] as? [String: Any])?["text"] as? String ?? ""
+                let distanceMeters = placePrediction["distanceMeters"] as? Int
 
-                return PlacePrediction(placeId: placeId, mainText: mainText, secondaryText: secondaryText)
+                return PlacePrediction(placeId: placeId, mainText: mainText, secondaryText: secondaryText, distanceMeters: distanceMeters)
             }
         } catch let urlError as URLError where urlError.code == .notConnectedToInternet {
             self.error = .offline

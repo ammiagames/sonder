@@ -7,66 +7,148 @@
 
 import SwiftUI
 import SwiftData
+import CoreLocation
 
 struct MainTabView: View {
     @State private var selectedTab = 0
     @State private var showLogFlow = false
     @State private var exploreFocusMyPlaces = false
     @State private var exploreHasSelection = false
+    @State private var pendingPinDrop: CLLocationCoordinate2D?
+    @State private var pendingLogCoord: CLLocationCoordinate2D?
     @Environment(SyncEngine.self) private var syncEngine
+    @Environment(PhotoService.self) private var photoService
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            TabView(selection: $selectedTab) {
-                ExploreMapView(focusMyPlaces: $exploreFocusMyPlaces, hasSelection: $exploreHasSelection)
-                    .tabItem {
-                        Label("Explore", systemImage: "safari")
-                    }
-                    .tag(0)
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                TabView(selection: $selectedTab) {
+                    FeedView()
+                        .tabItem {
+                            Label("Feed", systemImage: "bubble.left.and.bubble.right")
+                        }
+                        .tag(0)
 
-                FeedView()
-                    .tabItem {
-                        Label("Feed", systemImage: "bubble.left.and.bubble.right")
-                    }
-                    .tag(1)
+                    ExploreMapView(focusMyPlaces: $exploreFocusMyPlaces, hasSelection: $exploreHasSelection, pendingPinDrop: $pendingPinDrop)
+                        .tabItem {
+                            Label("Explore", systemImage: "safari")
+                        }
+                        .tag(1)
 
-                JournalContainerView()
-                    .tabItem {
-                        Label("Journal", systemImage: "book.closed")
-                    }
-                    .tag(2)
+                    // Placeholder for center + button (never actually selected)
+                    Color.clear
+                        .tabItem {
+                            Label("Log", systemImage: "plus.circle.fill")
+                        }
+                        .tag(10)
 
-                ProfileView(selectedTab: $selectedTab, exploreFocusMyPlaces: $exploreFocusMyPlaces)
-                    .tabItem {
-                        Label("Profile", systemImage: "person")
-                    }
-                    .tag(3)
-            }
-            .tint(SonderColors.terracotta)
-            .toolbarBackground(SonderColors.cream, for: .tabBar)
-            .toolbarBackground(.visible, for: .tabBar)
-            .toolbarColorScheme(.light, for: .tabBar)
-            .toolbarColorScheme(.light, for: .navigationBar)
+                    JournalContainerView()
+                        .tabItem {
+                            Label("Journal", systemImage: "book.closed")
+                        }
+                        .tag(2)
 
-            // FAB for explore, feed, and journal tabs (hidden when explore card is showing)
-            if selectedTab <= 2 && !(selectedTab == 0 && exploreHasSelection) {
-                VStack(spacing: 8) {
-                    // Pending sync indicator
-                    if syncEngine.pendingCount > 0 {
-                        PendingSyncBadge(count: syncEngine.pendingCount)
-                    }
+                    ProfileView(selectedTab: $selectedTab, exploreFocusMyPlaces: $exploreFocusMyPlaces)
+                        .tabItem {
+                            Label("Profile", systemImage: "person")
+                        }
+                        .tag(3)
+                }
+                .tint(SonderColors.terracotta)
+                .toolbarBackground(SonderColors.cream, for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+                .toolbarColorScheme(.light, for: .tabBar)
+                .toolbarColorScheme(.light, for: .navigationBar)
 
-                    FloatingActionButton {
+                // Invisible tap interceptor over the center tab item
+                // Captures the touch before it reaches the tab bar
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: geometry.size.width / 5, height: 56)
+                    .onTapGesture {
+                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                        impactFeedback.impactOccurred()
                         showLogFlow = true
                     }
+
+                // Pending sync badge
+                if syncEngine.pendingCount > 0 {
+                    HStack {
+                        Spacer()
+                        PendingSyncBadge(count: syncEngine.pendingCount)
+                            .padding(.trailing, 16)
+                    }
+                    .padding(.bottom, 56)
                 }
-                .padding(.trailing, 16)
-                .padding(.bottom, 80) // Above tab bar
+            }
+            .overlay(alignment: .top) {
+                if photoService.hasActiveUploads {
+                    PhotoUploadBanner(
+                        completed: photoService.totalPhotosInFlight - photoService.totalPendingPhotos,
+                        total: photoService.totalPhotosInFlight,
+                        progress: photoService.overallProgress
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.top, 4)
+                }
+            }
+            .animation(.easeInOut(duration: 0.3), value: photoService.hasActiveUploads)
+        }
+        .fullScreenCover(isPresented: $showLogFlow, onDismiss: {
+            guard let coord = pendingLogCoord else { return }
+            pendingLogCoord = nil
+            pendingPinDrop = coord
+        }) {
+            SearchPlaceView { coord in
+                pendingLogCoord = coord
+                selectedTab = 1
+                showLogFlow = false
             }
         }
-        .fullScreenCover(isPresented: $showLogFlow) {
-            SearchPlaceView()
+    }
+}
+
+// MARK: - Photo Upload Banner
+
+struct PhotoUploadBanner: View {
+    let completed: Int
+    let total: Int
+    let progress: Double
+
+    var body: some View {
+        HStack(spacing: SonderSpacing.sm) {
+            // Circular progress
+            ZStack {
+                Circle()
+                    .stroke(SonderColors.terracotta.opacity(0.2), lineWidth: 3)
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(SonderColors.terracotta, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: "photo")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(SonderColors.terracotta)
+            }
+            .frame(width: 28, height: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Uploading photos...")
+                    .font(SonderTypography.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(SonderColors.inkDark)
+                Text("\(completed) of \(total)")
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
+            }
+
+            Spacer()
         }
+        .padding(.horizontal, SonderSpacing.md)
+        .padding(.vertical, SonderSpacing.sm)
+        .background(SonderColors.cream)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+        .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+        .padding(.horizontal, SonderSpacing.md)
     }
 }
 
@@ -529,11 +611,12 @@ struct ProfileView: View {
                     // Social stats (followers/following)
                     socialStatsSection
 
+                    // Want to Go link
+                    wantToGoLink
+
                     // Journey stats (only show if has logs)
                     if !logs.isEmpty {
                         heroStatSection
-
-                        ratingBreakdownSection
 
                         if !topTags.isEmpty {
                             youLoveSection
@@ -542,17 +625,13 @@ struct ProfileView: View {
                         recentActivitySection
                     }
 
-                    // City breakdown options for comparison
-                    if uniqueCities.count > 1 {
-                        cityOption6_PhotoCards
+                    // Top cities
+                    if !uniqueCities.isEmpty {
                         cityOption7_PhotoMosaic
                     }
 
                     // View My Map
                     viewMyMapBanner
-
-                    // Want to Go link
-                    wantToGoLink
                 }
                 .padding(SonderSpacing.md)
             }
@@ -724,7 +803,7 @@ struct ProfileView: View {
         Button {
             if !logs.isEmpty {
                 exploreFocusMyPlaces = true
-                selectedTab = 0
+                selectedTab = 1
             }
         } label: {
             HStack(spacing: SonderSpacing.sm) {
@@ -943,73 +1022,13 @@ struct ProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
     }
 
-    // MARK: - Rating Breakdown Section
-
-    private var ratingBreakdownSection: some View {
-        let total = max(logs.count, 1)
-        let mustSeeCount = logs.filter { $0.rating == .mustSee }.count
-        let solidCount = logs.filter { $0.rating == .solid }.count
-        let skipCount = logs.filter { $0.rating == .skip }.count
-
-        return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            Text("Your ratings")
-                .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
-                .textCase(.uppercase)
-                .tracking(0.5)
-
-            // Horizontal stacked bar
-            GeometryReader { geo in
-                HStack(spacing: 2) {
-                    if mustSeeCount > 0 {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(SonderColors.ratingMustSee)
-                            .frame(width: max(geo.size.width * CGFloat(mustSeeCount) / CGFloat(total), 8))
-                    }
-                    if solidCount > 0 {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(SonderColors.ratingSolid)
-                            .frame(width: max(geo.size.width * CGFloat(solidCount) / CGFloat(total), 8))
-                    }
-                    if skipCount > 0 {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(SonderColors.ratingSkip)
-                            .frame(width: max(geo.size.width * CGFloat(skipCount) / CGFloat(total), 8))
-                    }
-                }
-            }
-            .frame(height: 12)
-
-            // Legend row
-            HStack(spacing: SonderSpacing.md) {
-                ratingLegendItem(emoji: Rating.mustSee.emoji, label: "Must-See", count: mustSeeCount)
-                ratingLegendItem(emoji: Rating.solid.emoji, label: "Solid", count: solidCount)
-                ratingLegendItem(emoji: Rating.skip.emoji, label: "Skip", count: skipCount)
-                Spacer()
-            }
-        }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
-    }
-
-    private func ratingLegendItem(emoji: String, label: String, count: Int) -> some View {
-        HStack(spacing: SonderSpacing.xxs) {
-            Text(emoji)
-                .font(.system(size: 14))
-            Text("\(count)")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(SonderColors.inkDark)
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundColor(SonderColors.inkMuted)
-        }
-    }
-
     // MARK: - You Love Section
 
     private var youLoveSection: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+        let tagData = topTagsWithCounts
+        let maxCount = tagData.first?.count ?? 1
+
+        return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("You love")
                 .font(SonderTypography.caption)
                 .foregroundColor(SonderColors.inkMuted)
@@ -1017,25 +1036,14 @@ struct ProfileView: View {
                 .tracking(0.5)
 
             FlowLayoutWrapper {
-                ForEach(topTags, id: \.self) { tag in
+                ForEach(tagData, id: \.tag) { item in
                     NavigationLink {
                         FilteredLogsListView(
-                            title: tag,
-                            logs: logsForTag(tag)
+                            title: item.tag,
+                            logs: logsForTag(item.tag)
                         )
                     } label: {
-                        HStack(spacing: SonderSpacing.xxs) {
-                            Text(tag)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(SonderColors.terracotta)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(SonderColors.terracotta.opacity(0.6))
-                        }
-                        .padding(.horizontal, SonderSpacing.sm)
-                        .padding(.vertical, SonderSpacing.xxs + 2)
-                        .background(SonderColors.terracotta.opacity(0.12))
-                        .clipShape(Capsule())
+                        tagChip(tag: item.tag, count: item.count, isTop: item.tag == tagData.first?.tag, maxCount: maxCount)
                     }
                     .buttonStyle(.plain)
                 }
@@ -1044,6 +1052,29 @@ struct ProfileView: View {
         .padding(SonderSpacing.md)
         .background(SonderColors.warmGray)
         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+    }
+
+    private func tagChip(tag: String, count: Int, isTop: Bool, maxCount: Int) -> some View {
+        let weight = CGFloat(count) / CGFloat(maxCount)
+        let fontSize: CGFloat = isTop ? 16 : (12 + 4 * weight)
+        let hPad: CGFloat = isTop ? SonderSpacing.md : SonderSpacing.sm
+        let vPad: CGFloat = isTop ? SonderSpacing.xs : (SonderSpacing.xxs + 2)
+        let bgColor: Color = isTop ? SonderColors.terracotta : SonderColors.terracotta.opacity(0.08 + 0.12 * Double(weight))
+        let textColor: Color = isTop ? .white : SonderColors.terracotta
+        let countColor: Color = isTop ? .white.opacity(0.8) : SonderColors.terracotta.opacity(0.6)
+
+        return HStack(spacing: 4) {
+            Text(tag)
+                .font(.system(size: fontSize, weight: isTop ? .bold : .medium))
+                .foregroundColor(textColor)
+            Text("\(count)")
+                .font(.system(size: fontSize - 2, weight: .regular))
+                .foregroundColor(countColor)
+        }
+        .padding(.horizontal, hPad)
+        .padding(.vertical, vPad)
+        .background(bgColor)
+        .clipShape(Capsule())
     }
 
     // MARK: - Recent Activity Section
@@ -1088,6 +1119,7 @@ struct ProfileView: View {
                                 .foregroundColor(SonderColors.inkLight)
                         }
                     }
+                    .contentShape(Rectangle())
                     .buttonStyle(.plain)
 
                     if log.id != recentLogs.last?.id {
@@ -1113,6 +1145,7 @@ struct ProfileView: View {
                             .foregroundColor(SonderColors.terracotta)
                     }
                 }
+                .contentShape(Rectangle())
                 .buttonStyle(.plain)
             }
         }
@@ -1160,87 +1193,13 @@ struct ProfileView: View {
         return nil
     }
 
-    // MARK: - Option 6: Photo Cards
-
-    private var cityOption6_PhotoCards: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            Text("Option 6 — Photo Cards")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundColor(.red)
-
-            Text("Your cities")
-                .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
-                .textCase(.uppercase)
-                .tracking(0.5)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: SonderSpacing.sm) {
-                    ForEach(Array(cityCounts.prefix(8).enumerated()), id: \.element.city) { index, item in
-                        NavigationLink {
-                            FilteredLogsListView(title: item.city, logs: logsForCity(item.city))
-                        } label: {
-                            ZStack(alignment: .bottomLeading) {
-                                // Photo background or gradient fallback
-                                if let url = cityPhotoURL(item.city) {
-                                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 160, height: 200)) {
-                                        cityPhotoFallback(index: index)
-                                    }
-                                    .frame(width: 160, height: 200)
-                                    .clipped()
-                                } else {
-                                    cityPhotoFallback(index: index)
-                                        .frame(width: 160, height: 200)
-                                }
-
-                                // Dark gradient overlay
-                                LinearGradient(
-                                    colors: [.clear, .clear, .black.opacity(0.7)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-
-                                // Text overlay
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Spacer()
-
-                                    Text(item.city)
-                                        .font(.system(size: 17, weight: .bold, design: .serif))
-                                        .foregroundColor(.white)
-                                        .lineLimit(1)
-
-                                    Text("\(item.count) place\(item.count == 1 ? "" : "s")")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.8))
-                                }
-                                .padding(SonderSpacing.sm)
-                            }
-                            .frame(width: 160, height: 200)
-                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                            .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, SonderSpacing.xxs)
-            }
-        }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
-    }
-
-    // MARK: - Option 7: Photo Mosaic
+    // MARK: - Top Cities Photo Mosaic
 
     private var cityOption7_PhotoMosaic: some View {
         let items = Array(cityCounts.prefix(5))
 
         return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            Text("Option 7 — Photo Mosaic")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundColor(.red)
-
-            Text("Your cities")
+            Text("Your top cities")
                 .font(SonderTypography.caption)
                 .foregroundColor(SonderColors.inkMuted)
                 .textCase(.uppercase)
@@ -1249,7 +1208,7 @@ struct ProfileView: View {
             if let hero = items.first {
                 // Hero: full-width photo card for top city
                 NavigationLink {
-                    FilteredLogsListView(title: hero.city, logs: logsForCity(hero.city))
+                    CityLogsView(title: hero.city, logs: logsForCity(hero.city))
                 } label: {
                     ZStack(alignment: .bottomLeading) {
                         if let url = cityPhotoURL(hero.city, maxWidth: 600) {
@@ -1302,7 +1261,7 @@ struct ProfileView: View {
                 LazyVGrid(columns: columns, spacing: SonderSpacing.xs) {
                     ForEach(Array(rest.enumerated()), id: \.element.city) { index, item in
                         NavigationLink {
-                            FilteredLogsListView(title: item.city, logs: logsForCity(item.city))
+                            CityLogsView(title: item.city, logs: logsForCity(item.city))
                         } label: {
                             ZStack(alignment: .bottomLeading) {
                                 if let url = cityPhotoURL(item.city) {
@@ -1394,14 +1353,19 @@ struct ProfileView: View {
         return Array(tagCounts.prefix(4).map { $0.key })
     }
 
-    /// Top tags for the profile "You love" section
-    private var topTags: [String] {
+    /// Top tags with counts for the profile "You love" section
+    private var topTagsWithCounts: [(tag: String, count: Int)] {
         let allTags = logs.flatMap { $0.tags }
         guard !allTags.isEmpty else { return [] }
         let tagCounts = Dictionary(grouping: allTags, by: { $0 })
             .mapValues { $0.count }
             .sorted { $0.value > $1.value }
-        return Array(tagCounts.prefix(6).map { $0.key })
+        return Array(tagCounts.prefix(6).map { (tag: $0.key, count: $0.value) })
+    }
+
+    /// Top tags for the profile "You love" section
+    private var topTags: [String] {
+        topTagsWithCounts.map(\.tag)
     }
 
     /// Number of logs created this calendar month
@@ -1603,29 +1567,33 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 // Account section
-                Section("Account") {
+                Section {
                     if let user = authService.currentUser {
-                        LabeledContent("Username", value: user.username)
+                        settingsRow(label: "Username", value: user.username)
 
                         Button {
                             editedEmail = user.email ?? ""
                             showEditEmailAlert = true
                         } label: {
-                            HStack {
-                                Text("Email")
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                Text(user.email ?? "Not set")
-                                    .foregroundColor(.secondary)
-                            }
+                            settingsRow(label: "Email", value: user.email ?? "Not set")
                         }
                     }
+                } header: {
+                    settingsSectionHeader("Account")
                 }
+                .listRowBackground(SonderColors.warmGray)
 
                 // Notifications section
                 Section {
                     Toggle(isOn: $proximityAlertsEnabled) {
-                        Label("Nearby Place Alerts", systemImage: "location.fill")
+                        Label {
+                            Text("Nearby Place Alerts")
+                                .font(SonderTypography.body)
+                                .foregroundColor(SonderColors.inkDark)
+                        } icon: {
+                            Image(systemName: "location.fill")
+                                .foregroundColor(SonderColors.terracotta)
+                        }
                     }
                     .onChange(of: proximityAlertsEnabled) { _, newValue in
                         Task {
@@ -1637,56 +1605,97 @@ struct SettingsView: View {
                         }
                     }
                 } header: {
-                    Text("Notifications")
+                    settingsSectionHeader("Notifications")
                 } footer: {
                     Text("Get notified when you're near a place on your Want to Go list")
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkLight)
                 }
+                .listRowBackground(SonderColors.warmGray)
 
                 // Privacy section
-                Section("Privacy") {
+                Section {
                     NavigationLink {
                         Text("Privacy Policy")
                             .navigationTitle("Privacy Policy")
                     } label: {
-                        Label("Privacy Policy", systemImage: "hand.raised")
+                        Label {
+                            Text("Privacy Policy")
+                                .font(SonderTypography.body)
+                                .foregroundColor(SonderColors.inkDark)
+                        } icon: {
+                            Image(systemName: "hand.raised")
+                                .foregroundColor(SonderColors.terracotta)
+                        }
                     }
 
                     NavigationLink {
                         Text("Terms of Service")
                             .navigationTitle("Terms of Service")
                     } label: {
-                        Label("Terms of Service", systemImage: "doc.text")
+                        Label {
+                            Text("Terms of Service")
+                                .font(SonderTypography.body)
+                                .foregroundColor(SonderColors.inkDark)
+                        } icon: {
+                            Image(systemName: "doc.text")
+                                .foregroundColor(SonderColors.terracotta)
+                        }
                     }
+                } header: {
+                    settingsSectionHeader("Privacy")
                 }
+                .listRowBackground(SonderColors.warmGray)
 
                 // Data section
-                Section("Data") {
+                Section {
                     Button {
                         showClearCacheAlert = true
                     } label: {
-                        Label("Clear Cache", systemImage: "trash")
+                        Label {
+                            Text("Clear Cache")
+                                .font(SonderTypography.body)
+                                .foregroundColor(SonderColors.terracotta)
+                        } icon: {
+                            Image(systemName: "trash")
+                                .foregroundColor(SonderColors.terracotta)
+                        }
                     }
+                } header: {
+                    settingsSectionHeader("Data")
                 }
+                .listRowBackground(SonderColors.warmGray)
 
                 // About section
-                Section("About") {
-                    LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
-                    LabeledContent("Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1")
+                Section {
+                    settingsRow(label: "Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                    settingsRow(label: "Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1")
+                } header: {
+                    settingsSectionHeader("About")
                 }
+                .listRowBackground(SonderColors.warmGray)
 
                 // Sign out section
                 Section {
-                    Button(role: .destructive) {
+                    Button {
                         showSignOutAlert = true
                     } label: {
-                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                        HStack {
+                            Spacer()
+                            Text("Sign Out")
+                                .font(SonderTypography.headline)
+                                .foregroundColor(SonderColors.dustyRose)
+                            Spacer()
+                        }
                     }
                 }
+                .listRowBackground(SonderColors.warmGray)
             }
             .scrollContentBackground(.hidden)
             .background(SonderColors.cream)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .environment(\.colorScheme, .light)
             .tint(SonderColors.terracotta)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -1729,6 +1738,28 @@ struct SettingsView: View {
             .onAppear {
                 proximityAlertsEnabled = proximityService.isMonitoring
             }
+        }
+    }
+
+    // MARK: - Settings Helpers
+
+    private func settingsSectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(SonderTypography.caption)
+            .foregroundColor(SonderColors.terracotta)
+            .textCase(.uppercase)
+            .tracking(0.5)
+    }
+
+    private func settingsRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkDark)
+            Spacer()
+            Text(value)
+                .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkMuted)
         }
     }
 

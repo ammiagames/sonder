@@ -10,10 +10,13 @@ import SwiftUI
 /// Screen 4: Success confirmation with auto-dismiss
 struct LogConfirmationView: View {
     let onDismiss: () -> Void
+    var tripName: String? = nil
+    var onAddCover: (() -> Void)? = nil
 
     @State private var showContent = false
     @State private var contentScale: CGFloat = 0.6
     @State private var showParticles = false
+    @State private var showNudge = false
 
     private let messages = [
         "Another one for the journal",
@@ -76,6 +79,42 @@ struct LogConfirmationView: View {
                 }
                 .opacity(showContent ? 1 : 0)
                 .offset(y: showContent ? 0 : 12)
+
+                // Cover photo nudge
+                if let name = tripName, let addCover = onAddCover {
+                    Button {
+                        addCover()
+                    } label: {
+                        HStack(spacing: SonderSpacing.sm) {
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 16))
+                                .foregroundColor(SonderColors.terracotta)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Add a cover photo")
+                                    .font(SonderTypography.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(SonderColors.inkDark)
+                                Text("for \"\(name)\"")
+                                    .font(SonderTypography.caption)
+                                    .foregroundColor(SonderColors.inkMuted)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(SonderColors.inkLight)
+                        }
+                        .padding(SonderSpacing.sm)
+                        .background(SonderColors.warmGray.opacity(0.8))
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                    }
+                    .padding(.horizontal, SonderSpacing.xl)
+                    .opacity(showNudge ? 1 : 0)
+                    .offset(y: showNudge ? 0 : 8)
+                }
             }
         }
         .onAppear {
@@ -91,7 +130,16 @@ struct LogConfirmationView: View {
                 showParticles = true
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            // Show nudge with a slight delay
+            if tripName != nil {
+                withAnimation(.easeOut(duration: 0.4).delay(0.5)) {
+                    showNudge = true
+                }
+            }
+
+            // Extend auto-dismiss when nudge is shown
+            let dismissDelay: Double = tripName != nil ? 3.0 : 1.5
+            DispatchQueue.main.asyncAfter(deadline: .now() + dismissDelay) {
                 onDismiss()
             }
         }
@@ -142,8 +190,16 @@ struct LogConfirmationView: View {
     }
 }
 
-#Preview {
+#Preview("Basic") {
     LogConfirmationView {
         print("Dismissed")
     }
+}
+
+#Preview("With Nudge") {
+    LogConfirmationView(
+        onDismiss: { print("Dismissed") },
+        tripName: "Tokyo 2026",
+        onAddCover: { print("Add cover tapped") }
+    )
 }

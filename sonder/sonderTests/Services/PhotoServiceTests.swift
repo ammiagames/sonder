@@ -22,9 +22,10 @@ struct PhotoServiceTests {
         #expect(data!.count <= 50_000)
     }
 
-    @Test func pendingUploadCount_zero() {
+    @Test func hasActiveUploads_false() {
         let service = PhotoService()
-        #expect(service.pendingUploadCount == 0)
+        #expect(service.hasActiveUploads == false)
+        #expect(service.totalPendingPhotos == 0)
     }
 
     @Test func isUploading_false() {

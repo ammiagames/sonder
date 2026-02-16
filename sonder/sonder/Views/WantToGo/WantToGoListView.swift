@@ -55,7 +55,7 @@ struct WantToGoListView: View {
         }
         .fullScreenCover(item: $placeToLog) { place in
             NavigationStack {
-                RatePlaceView(place: place) {
+                RatePlaceView(place: place) { _ in
                     let placeID = placeIDToRemove
                     // Pop the preview first (hidden under the cover)
                     selectedDetails = nil
@@ -135,7 +135,7 @@ struct WantToGoListView: View {
                 .foregroundColor(SonderColors.inkMuted)
                 .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(SonderSpacing.xl)
     }
 

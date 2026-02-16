@@ -24,7 +24,11 @@ struct FeedView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if feedService.feedEntries.isEmpty && !feedService.isLoading {
+                if !feedService.hasLoadedOnce {
+                    ProgressView()
+                        .tint(SonderColors.terracotta)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if feedService.feedEntries.isEmpty {
                     ScrollView {
                         emptyState
                             .frame(maxWidth: .infinity, minHeight: 400)
@@ -149,6 +153,10 @@ struct FeedView: View {
                                 toggleWantToGo(for: feedItem)
                             }
                         )
+                    case .tripCreated(let item):
+                        TripCreatedCard(item: item) {
+                            selectedUserID = item.user.id
+                        }
                     }
                 }
 

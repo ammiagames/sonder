@@ -9,6 +9,12 @@ import SwiftUI
 
 /// Card displaying trip summary in the trips list
 struct TripCard: View {
+    private static let mediumDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        return f
+    }()
+
     let trip: Trip
     let logCount: Int
     let isOwner: Bool
@@ -19,7 +25,7 @@ struct TripCard: View {
     }
 
     private var coverHeight: CGFloat {
-        compact ? 80 : 140
+        compact ? 120 : 140
     }
 
     var body: some View {
@@ -143,15 +149,12 @@ struct TripCard: View {
     // MARK: - Helpers
 
     private var dateRangeText: String? {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-
         if let start = trip.startDate, let end = trip.endDate {
-            return "\(formatter.string(from: start)) - \(formatter.string(from: end))"
+            return "\(Self.mediumDateFormatter.string(from: start)) - \(Self.mediumDateFormatter.string(from: end))"
         } else if let start = trip.startDate {
-            return "From \(formatter.string(from: start))"
+            return "From \(Self.mediumDateFormatter.string(from: start))"
         } else if let end = trip.endDate {
-            return "Until \(formatter.string(from: end))"
+            return "Until \(Self.mediumDateFormatter.string(from: end))"
         }
         return nil
     }
