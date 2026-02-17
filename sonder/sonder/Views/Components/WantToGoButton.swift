@@ -10,6 +10,9 @@ import SwiftUI
 /// Bookmark toggle button for saving places to Want to Go list
 struct WantToGoButton: View {
     let placeID: String
+    let placeName: String?
+    let placeAddress: String?
+    let photoReference: String?
     let sourceLogID: String?
 
     @Environment(AuthenticationService.self) private var authService
@@ -17,8 +20,11 @@ struct WantToGoButton: View {
 
     @State private var isLoading = false
 
-    init(placeID: String, sourceLogID: String? = nil) {
+    init(placeID: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil, sourceLogID: String? = nil) {
         self.placeID = placeID
+        self.placeName = placeName
+        self.placeAddress = placeAddress
+        self.photoReference = photoReference
         self.sourceLogID = sourceLogID
     }
 
@@ -57,6 +63,9 @@ struct WantToGoButton: View {
                 try await wantToGoService.toggleWantToGo(
                     placeID: placeID,
                     userID: userID,
+                    placeName: placeName,
+                    placeAddress: placeAddress,
+                    photoReference: photoReference,
                     sourceLogID: sourceLogID
                 )
 
@@ -76,6 +85,9 @@ struct WantToGoButton: View {
 /// A larger version for inline use with label
 struct WantToGoButtonLarge: View {
     let placeID: String
+    let placeName: String?
+    let placeAddress: String?
+    let photoReference: String?
     let sourceLogID: String?
 
     @Environment(AuthenticationService.self) private var authService
@@ -83,8 +95,11 @@ struct WantToGoButtonLarge: View {
 
     @State private var isLoading = false
 
-    init(placeID: String, sourceLogID: String? = nil) {
+    init(placeID: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil, sourceLogID: String? = nil) {
         self.placeID = placeID
+        self.placeName = placeName
+        self.placeAddress = placeAddress
+        self.photoReference = photoReference
         self.sourceLogID = sourceLogID
     }
 
@@ -127,6 +142,9 @@ struct WantToGoButtonLarge: View {
                 try await wantToGoService.toggleWantToGo(
                     placeID: placeID,
                     userID: userID,
+                    placeName: placeName,
+                    placeAddress: placeAddress,
+                    photoReference: photoReference,
                     sourceLogID: sourceLogID
                 )
 

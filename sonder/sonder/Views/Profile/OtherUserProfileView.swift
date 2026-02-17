@@ -14,6 +14,7 @@ struct OtherUserProfileView: View {
     @Environment(AuthenticationService.self) private var authService
     @Environment(SocialService.self) private var socialService
     @Environment(FeedService.self) private var feedService
+    @Environment(TripService.self) private var tripService
 
     @State private var user: User?
     @State private var isLoading = true
@@ -22,6 +23,7 @@ struct OtherUserProfileView: View {
     @State private var followerCount = 0
     @State private var followingCount = 0
     @State private var userLogs: [FeedItem] = []
+    @State private var userTrips: [Trip] = []
 
     var body: some View {
         ScrollView {
@@ -50,6 +52,20 @@ struct OtherUserProfileView: View {
                         followButton
                             .padding(.top, SonderSpacing.md)
                             .padding(.horizontal, SonderSpacing.lg)
+                    }
+
+                    // Recent trips film strip
+                    if !recentTrips.isEmpty {
+                        recentTripsSection
+                            .padding(.top, SonderSpacing.lg)
+                            .padding(.horizontal, SonderSpacing.md)
+                    }
+
+                    // Recent activity
+                    if !userLogs.isEmpty {
+                        recentActivitySection
+                            .padding(.top, SonderSpacing.lg)
+                            .padding(.horizontal, SonderSpacing.md)
                     }
 
                     // Divider
@@ -291,6 +307,200 @@ struct OtherUserProfileView: View {
         }
     }
 
+    // MARK: - Recent Activity Section
+
+    private var recentActivitySection: some View {
+        let recentLogs = Array(userLogs.sorted { $0.createdAt > $1.createdAt }.prefix(3))
+
+        return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            Text("Recent activity")
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            ForEach(recentLogs) { item in
+                NavigationLink {
+                    FeedLogDetailView(feedItem: item)
+                } label: {
+                    HStack(spacing: SonderSpacing.sm) {
+                        Text(item.rating.emoji)
+                            .font(.system(size: 20))
+                            .frame(width: 36, height: 36)
+                            .background(SonderColors.pinColor(for: item.rating).opacity(0.2))
+                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.place.name)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(SonderColors.inkDark)
+                                .lineLimit(1)
+
+                            Text(item.createdAt.relativeDisplay)
+                                .font(.system(size: 12))
+                                .foregroundColor(SonderColors.inkLight)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(SonderColors.inkLight)
+                    }
+                }
+                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+
+                if item.id != recentLogs.last?.id {
+                    Divider()
+                }
+            }
+        }
+        .padding(SonderSpacing.md)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+    }
+
+    // MARK: - Recent Trips (Boarding Pass)
+
+    private var recentTrips: [Trip] {
+        Array(userTrips.prefix(5))
+    }
+
+    private func tripDateText(_ trip: Trip) -> String? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM yyyy"
+        if let start = trip.startDate, let end = trip.endDate {
+            let startText = formatter.string(from: start)
+            let endText = formatter.string(from: end)
+            return startText == endText ? startText : "\(formatter.string(from: start)) – \(formatter.string(from: end))"
+        } else if let start = trip.startDate {
+            return formatter.string(from: start)
+        } else if let end = trip.endDate {
+            return formatter.string(from: end)
+        }
+        return nil
+    }
+
+    private func tripCoverURL(_ trip: Trip) -> URL? {
+        if let cover = trip.coverPhotoURL, let url = URL(string: cover) {
+            return url
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private func tripCoverPhoto(_ trip: Trip, size: CGSize) -> some View {
+        if let url = tripCoverURL(trip) {
+            DownsampledAsyncImage(url: url, targetSize: size) {
+                tripPlaceholderGradient(trip)
+            }
+        } else {
+            tripPlaceholderGradient(trip)
+        }
+    }
+
+    private func tripPlaceholderGradient(_ trip: Trip) -> some View {
+        let gradients: [(Color, Color)] = [
+            (SonderColors.terracotta, SonderColors.ochre),
+            (SonderColors.warmBlue, SonderColors.sage),
+            (SonderColors.dustyRose, SonderColors.terracotta),
+            (SonderColors.sage, SonderColors.warmBlue),
+            (SonderColors.ochre, SonderColors.dustyRose),
+        ]
+        let grad = gradients[abs(trip.id.hashValue) % gradients.count]
+        return LinearGradient(
+            colors: [grad.0.opacity(0.7), grad.1.opacity(0.7)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .overlay {
+            Image(systemName: "airplane")
+                .font(.system(size: 24, weight: .light))
+                .foregroundColor(.white.opacity(0.4))
+        }
+    }
+
+    private var recentTripsSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            Text("Recent trips")
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: SonderSpacing.sm) {
+                    ForEach(recentTrips, id: \.id) { trip in
+                        NavigationLink {
+                            TripDetailView(trip: trip)
+                        } label: {
+                            boardingPassCard(trip: trip)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func boardingPassCard(trip: Trip) -> some View {
+        HStack(spacing: 0) {
+            tripCoverPhoto(trip, size: CGSize(width: 72, height: 100))
+                .frame(width: 72, height: 100)
+                .clipped()
+
+            VStack(spacing: 4) {
+                ForEach(0..<8, id: \.self) { _ in
+                    Circle()
+                        .fill(SonderColors.cream)
+                        .frame(width: 4, height: 4)
+                }
+            }
+            .frame(width: 12)
+            .background(SonderColors.warmGray)
+
+            VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
+                Text("DESTINATION")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(SonderColors.inkLight)
+                    .tracking(0.5)
+
+                Text(trip.name)
+                    .font(.system(size: 15, weight: .bold, design: .serif))
+                    .foregroundColor(SonderColors.inkDark)
+                    .lineLimit(1)
+
+                Spacer()
+
+                HStack(spacing: SonderSpacing.md) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("DATE")
+                            .font(.system(size: 7, weight: .medium))
+                            .foregroundColor(SonderColors.inkLight)
+                            .tracking(0.5)
+                        Text(tripDateText(trip) ?? "—")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(SonderColors.inkDark)
+                    }
+                }
+
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(SonderColors.terracotta)
+                    .frame(height: 3)
+            }
+            .padding(SonderSpacing.sm)
+            .frame(width: 140, height: 100, alignment: .leading)
+            .background(SonderColors.warmGray)
+        }
+        .frame(height: 100)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+        .overlay(
+            RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
+                .stroke(SonderColors.warmGrayDark, lineWidth: 0.5)
+        )
+    }
+
     // MARK: - Data Loading
 
     private func loadData() async {
@@ -317,6 +527,13 @@ struct OtherUserProfileView: View {
             userLogs = try await feedService.fetchUserLogs(userID: userID)
         } catch {
             print("Error loading user logs: \(error)")
+        }
+
+        // Load trips
+        do {
+            userTrips = try await tripService.fetchTrips(for: userID)
+        } catch {
+            print("Error loading user trips: \(error)")
         }
 
         isLoading = false

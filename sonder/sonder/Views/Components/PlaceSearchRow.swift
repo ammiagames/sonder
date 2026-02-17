@@ -29,18 +29,6 @@ struct PlaceSearchRow: View {
 
     var body: some View {
         HStack(spacing: SonderSpacing.sm) {
-            // Photo or icon
-            if photoReference != nil {
-                PlacePhotoView(photoReference: photoReference, size: 44, cornerRadius: SonderSpacing.radiusSm)
-            } else {
-                Image(systemName: icon ?? "mappin.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(SonderColors.terracotta)
-                    .frame(width: 44, height: 44)
-                    .background(SonderColors.terracotta.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-            }
-
             // Place info
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
@@ -180,7 +168,6 @@ struct RecentSearchRow: View {
     let placeId: String?
     let onDelete: () -> Void
 
-    @State private var isDeletePressed = false
 
     init(name: String, address: String, photoReference: String? = nil, placeId: String? = nil, onDelete: @escaping () -> Void) {
         self.name = name
@@ -192,19 +179,10 @@ struct RecentSearchRow: View {
 
     var body: some View {
         HStack(spacing: SonderSpacing.sm) {
-            // Photo with clock badge
-            ZStack(alignment: .bottomTrailing) {
-                PlacePhotoView(photoReference: photoReference, size: 44, cornerRadius: SonderSpacing.radiusSm)
-
-                // Clock badge overlay
-                Image(systemName: "clock.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white)
-                    .padding(3)
-                    .background(SonderColors.inkMuted)
-                    .clipShape(Circle())
-                    .offset(x: 4, y: 4)
-            }
+            // Clock icon for recent search
+            Image(systemName: "clock")
+                .font(.system(size: 16))
+                .foregroundColor(SonderColors.inkLight)
 
             // Place info
             VStack(alignment: .leading, spacing: 2) {
@@ -229,27 +207,17 @@ struct RecentSearchRow: View {
                 BookmarkButton(placeId: placeId, placeName: name, placeAddress: address, photoReference: photoReference)
             }
 
-            // Delete button with press animation
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 20))
-                .foregroundColor(SonderColors.inkLight)
-                .scaleEffect(isDeletePressed ? 0.8 : 1.0)
-                .animation(.easeInOut(duration: 0.1), value: isDeletePressed)
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { _ in
-                            if !isDeletePressed {
-                                isDeletePressed = true
-                            }
-                        }
-                        .onEnded { _ in
-                            isDeletePressed = false
-                            // Haptic feedback
-                            let generator = UIImpactFeedbackGenerator(style: .light)
-                            generator.impactOccurred()
-                            onDelete()
-                        }
-                )
+            // Delete button
+            Button {
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
+                onDelete()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(SonderColors.inkLight)
+            }
+            .buttonStyle(ScaleButtonStyle(scale: 0.8))
         }
         .padding(.vertical, SonderSpacing.xs)
         .padding(.horizontal, SonderSpacing.md)
@@ -263,7 +231,7 @@ struct RecentSearchRow: View {
             name: "Blue Bottle Coffee",
             address: "123 Main St, San Francisco, CA"
         )
-        Divider().padding(.leading, 68)
+        Divider().padding(.leading, SonderSpacing.md)
         PlaceSearchRow(
             name: "Tartine Bakery",
             address: "600 Guerrero St, San Francisco, CA",

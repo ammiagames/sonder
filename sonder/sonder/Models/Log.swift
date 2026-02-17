@@ -54,6 +54,8 @@ final class Log {
     var note: String?
     var tags: [String] = []
     var tripID: String?
+    var tripSortOrder: Int?
+    var visitedAt: Date = Date()
     var syncStatus: SyncStatus
     var createdAt: Date
     var updatedAt: Date
@@ -72,6 +74,12 @@ final class Log {
     /// Whether this log has photos still being uploaded in the background.
     var hasPendingUploads: Bool { photoURLs.contains { $0.hasPrefix("pending-upload:") } }
 
+    /// Whether this log is effectively unassigned to any trip
+    /// (nil, empty string, or any blank-only value).
+    var hasNoTrip: Bool {
+        tripID == nil || tripID?.trimmingCharacters(in: .whitespaces).isEmpty == true
+    }
+
     init(
         id: String = UUID().uuidString.lowercased(),
         userID: String,
@@ -81,6 +89,8 @@ final class Log {
         note: String? = nil,
         tags: [String] = [],
         tripID: String? = nil,
+        tripSortOrder: Int? = nil,
+        visitedAt: Date = Date(),
         syncStatus: SyncStatus = .pending,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -93,6 +103,8 @@ final class Log {
         self.note = note
         self.tags = tags
         self.tripID = tripID
+        self.tripSortOrder = tripSortOrder
+        self.visitedAt = visitedAt
         self.syncStatus = syncStatus
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -111,6 +123,8 @@ extension Log: Codable {
         case note
         case tags
         case tripID = "trip_id"
+        case tripSortOrder = "trip_sort_order"
+        case visitedAt = "visited_at"
         case syncStatus = "sync_status"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -135,7 +149,10 @@ extension Log: Codable {
 
         let note = try container.decodeIfPresent(String.self, forKey: .note)
         let tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
-        let tripID = try container.decodeIfPresent(String.self, forKey: .tripID)
+        let rawTripID = try container.decodeIfPresent(String.self, forKey: .tripID)
+        let tripID = (rawTripID?.trimmingCharacters(in: .whitespaces).isEmpty == true) ? nil : rawTripID
+        let tripSortOrder = try container.decodeIfPresent(Int.self, forKey: .tripSortOrder)
+        let visitedAt = try container.decodeIfPresent(Date.self, forKey: .visitedAt)
         let syncStatus = try container.decodeIfPresent(SyncStatus.self, forKey: .syncStatus) ?? .synced
         let createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         let updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
@@ -149,6 +166,8 @@ extension Log: Codable {
             note: note,
             tags: tags,
             tripID: tripID,
+            tripSortOrder: tripSortOrder,
+            visitedAt: visitedAt ?? createdAt,
             syncStatus: syncStatus,
             createdAt: createdAt,
             updatedAt: updatedAt
@@ -165,6 +184,8 @@ extension Log: Codable {
         try container.encodeIfPresent(note, forKey: .note)
         try container.encode(tags, forKey: .tags)
         try container.encodeIfPresent(tripID, forKey: .tripID)
+        try container.encodeIfPresent(tripSortOrder, forKey: .tripSortOrder)
+        try container.encode(visitedAt, forKey: .visitedAt)
         try container.encode(syncStatus, forKey: .syncStatus)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)

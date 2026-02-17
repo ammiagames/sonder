@@ -67,6 +67,7 @@ struct SearchPlaceView: View {
                         }
                     }
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
             .background(SonderColors.cream)
             .navigationTitle("Log a Place")
@@ -209,31 +210,35 @@ struct SearchPlaceView: View {
             } else {
                 sectionHeader("Cached Places")
                 ForEach(cachedResults, id: \.id) { place in
-                    PlaceSearchRow(
-                        name: place.name,
-                        address: place.address,
-                        photoReference: place.photoReference,
-                        placeId: place.id,
-                        onBookmark: {}
-                    )
-                    .onTapGesture {
+                    Button {
                         selectPlace(place)
+                    } label: {
+                        PlaceSearchRow(
+                            name: place.name,
+                            address: place.address,
+                            photoReference: place.photoReference,
+                            placeId: place.id,
+                            onBookmark: {}
+                        )
                     }
-                    Divider().padding(.leading, 68)
+                    .buttonStyle(.plain)
+                    Divider().padding(.leading, SonderSpacing.md)
                 }
             }
         } else {
             ForEach(predictions) { prediction in
-                PlaceSearchRow(
-                    name: prediction.mainText,
-                    address: prediction.secondaryText,
-                    placeId: prediction.placeId,
-                    distanceText: formatDistance(meters: prediction.distanceMeters),
-                    onBookmark: {}
-                )
-                .onTapGesture {
+                Button {
                     selectPrediction(prediction)
+                } label: {
+                    PlaceSearchRow(
+                        name: prediction.mainText,
+                        address: prediction.secondaryText,
+                        placeId: prediction.placeId,
+                        distanceText: formatDistance(meters: prediction.distanceMeters),
+                        onBookmark: {}
+                    )
                 }
+                .buttonStyle(.plain)
                 Divider().padding(.leading, 68)
             }
         }
@@ -262,18 +267,20 @@ struct SearchPlaceView: View {
         } else {
             sectionHeader("Nearby")
             ForEach(filteredNearby) { place in
-                PlaceSearchRow(
-                    name: place.name,
-                    address: place.address,
-                    photoReference: place.photoReference,
-                    placeId: place.placeId,
-                    distanceText: distanceToNearby(place),
-                    onBookmark: {}
-                )
-                .id("nearby-\(place.placeId)")
-                .onTapGesture {
+                Button {
                     selectNearbyPlace(place)
+                } label: {
+                    PlaceSearchRow(
+                        name: place.name,
+                        address: place.address,
+                        photoReference: place.photoReference,
+                        placeId: place.placeId,
+                        distanceText: distanceToNearby(place),
+                        onBookmark: {}
+                    )
                 }
+                .buttonStyle(.plain)
+                .id("nearby-\(place.placeId)")
                 Divider().padding(.leading, 68)
             }
         }
@@ -341,33 +348,40 @@ struct SearchPlaceView: View {
 
             ForEach(recentSearches, id: \.placeId) { search in
                 let cachedPlace = cacheService.getPlace(by: search.placeId)
-                RecentSearchRow(
-                    name: search.name,
-                    address: search.address,
-                    photoReference: cachedPlace?.photoReference,
-                    placeId: search.placeId
-                ) {
-                    // Track as removing so it doesn't appear in nearby during animation
-                    removingPlaceIds.insert(search.placeId)
+                let isRemoving = removingPlaceIds.contains(search.placeId)
 
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        cacheService.clearRecentSearch(placeId: search.placeId)
-                    }
+                VStack(spacing: 0) {
+                    Button {
+                        selectRecentSearch(search)
+                    } label: {
+                        RecentSearchRow(
+                            name: search.name,
+                            address: search.address,
+                            photoReference: cachedPlace?.photoReference,
+                            placeId: search.placeId
+                        ) {
+                            // Step 1: Animate the row out
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                removingPlaceIds.insert(search.placeId)
+                            }
 
-                    // Remove from tracking after animation completes
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        removingPlaceIds.remove(search.placeId)
+                            // Step 2: Delete data after animation completes
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                cacheService.clearRecentSearch(placeId: search.placeId)
+                                removingPlaceIds.remove(search.placeId)
+                            }
+                        }
                     }
+                    .buttonStyle(.plain)
+
+                    Divider().padding(.leading, SonderSpacing.md)
                 }
+                .offset(x: isRemoving ? UIScreen.main.bounds.width : 0)
+                .opacity(isRemoving ? 0 : 1)
+                .frame(height: isRemoving ? 0 : nil, alignment: .top)
+                .clipped()
+                .animation(.easeOut(duration: 0.25), value: isRemoving)
                 .id("recent-\(search.placeId)")
-                .onTapGesture {
-                    selectRecentSearch(search)
-                }
-                .transition(.asymmetric(
-                    insertion: .identity,
-                    removal: .move(edge: .trailing).combined(with: .opacity)
-                ))
-                Divider().padding(.leading, 68)
             }
         }
     }
@@ -434,7 +448,17 @@ struct SearchPlaceView: View {
             }
 
             print("[Nearby] Got location: \(location.latitude), \(location.longitude)")
+
+            // Check cache first to avoid redundant API calls
+            if let cached = cacheService.getCachedNearby(for: location) {
+                print("[Nearby] Using cached results (\(cached.count) places)")
+                nearbyPlaces = cached
+                isLoadingNearby = false
+                return
+            }
+
             nearbyPlaces = await placesService.nearbySearch(location: location)
+            cacheService.cacheNearbyResults(nearbyPlaces, location: location)
             print("[Nearby] Got \(nearbyPlaces.count) nearby places")
             isLoadingNearby = false
         }

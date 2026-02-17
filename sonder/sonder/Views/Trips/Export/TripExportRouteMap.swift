@@ -9,141 +9,199 @@ import SwiftUI
 import MapKit
 import UIKit
 
-/// Style 3: Bold Route Map — large map with numbered photo circles and bold info below.
-/// Rendered at 1080x1920 for Instagram Stories.
+/// Style 2: The Annotated Map — clean map with small markers + field notes list.
 struct TripExportRouteMap: View {
     let data: TripExportData
     let mapSnapshot: UIImage?
+    var theme: ExportColorTheme = .classic
+    var canvasSize: CGSize = CGSize(width: 1080, height: 1920)
 
-    var body: some View {
-        VStack(spacing: 0) {
-            // Map section
-            mapSection
-                .frame(width: 1080, height: 1150)
-                .clipped()
+    private var s: CGFloat { canvasSize.height / 1920 }
 
-            // Info section on cream
-            VStack(alignment: .leading, spacing: 16) {
-                // Brand mark
-                Text("sonder")
-                    .font(.system(size: 36, weight: .semibold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta)
-                    .tracking(2)
-
-                // Trip name — bold serif
-                Text(data.tripName)
-                    .font(.system(size: 80, weight: .bold, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.6)
-
-                // Date + stats
-                HStack(spacing: 12) {
-                    if let dateText = data.dateRangeText {
-                        Text(dateText)
-                        Text("\u{00B7}")
-                    }
-                    Text("\(data.placeCount) \(data.placeCount == 1 ? "place" : "places")")
-                }
-                .font(.system(size: 32))
-                .foregroundColor(SonderColors.inkMuted)
-
-                // Ratings
-                HStack(spacing: 24) {
-                    if data.ratingCounts.mustSee > 0 {
-                        Text("\(Rating.mustSee.emoji) \(data.ratingCounts.mustSee)")
-                    }
-                    if data.ratingCounts.solid > 0 {
-                        Text("\(Rating.solid.emoji) \(data.ratingCounts.solid)")
-                    }
-                    if data.ratingCounts.skip > 0 {
-                        Text("\(Rating.skip.emoji) \(data.ratingCounts.skip)")
-                    }
-                }
-                .font(.system(size: 36))
-                .foregroundColor(SonderColors.inkMuted)
-
-                // Stop list (up to 5)
-                if !data.stops.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(data.stops.prefix(5).enumerated()), id: \.offset) { index, stop in
-                            HStack(spacing: 12) {
-                                Text("\(index + 1).")
-                                    .font(.system(size: 30, weight: .semibold, design: .rounded))
-                                    .foregroundColor(SonderColors.terracotta)
-                                    .frame(width: 48, alignment: .trailing)
-
-                                Text(stop.placeName)
-                                    .font(.system(size: 30))
-                                    .foregroundColor(SonderColors.inkDark)
-                                    .lineLimit(1)
-
-                                Spacer()
-
-                                Text(stop.rating.emoji)
-                                    .font(.system(size: 32))
-                            }
-                        }
-                    }
-                    .padding(.top, 4)
-                }
-            }
-            .padding(.horizontal, 48)
-            .padding(.top, 20)
-
-            Spacer(minLength: 0)
-
-            // Footer
-            HStack {
-                Spacer()
-                Text("sonder")
-                    .font(.system(size: 24, weight: .semibold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta) +
-                Text("  \u{00B7}  your travel story")
-                    .font(.system(size: 24))
-                    .foregroundColor(SonderColors.inkLight)
-                Spacer()
-            }
-            .padding(.bottom, 40)
+    private var maxFieldNotes: Int {
+        switch canvasSize.height {
+        case 1920: return 6
+        case 1350: return 4
+        default: return 3
         }
-        .frame(width: 1080, height: 1920)
-        .background(SonderColors.cream)
     }
 
-    // MARK: - Map Section
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            // Map — top ~55%
+            mapBackground
 
-    private var mapSection: some View {
-        ZStack {
+            // Frosted info panel — bottom ~45%
+            VStack(alignment: .leading, spacing: 0) {
+                Spacer()
+
+                VStack(alignment: .leading, spacing: 16 * s) {
+                    // Trip name
+                    Text(data.tripName)
+                        .font(.system(size: 72 * s, weight: .bold, design: .serif))
+                        .foregroundColor(theme.textPrimary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.5)
+
+                    // Date range
+                    if let dateText = data.dateRangeText {
+                        Text(dateText)
+                            .font(.system(size: 28 * s))
+                            .foregroundColor(theme.textSecondary)
+                    }
+
+                    // Field notes list
+                    fieldNotesList
+
+                    // Rating summary
+                    HStack(spacing: 24 * s) {
+                        if data.ratingCounts.mustSee > 0 {
+                            Text("\(Rating.mustSee.emoji) \(data.ratingCounts.mustSee)")
+                        }
+                        if data.ratingCounts.solid > 0 {
+                            Text("\(Rating.solid.emoji) \(data.ratingCounts.solid)")
+                        }
+                        if data.ratingCounts.skip > 0 {
+                            Text("\(Rating.skip.emoji) \(data.ratingCounts.skip)")
+                        }
+                    }
+                    .font(.system(size: 34 * s))
+                    .foregroundColor(theme.textSecondary.opacity(0.85))
+
+                    // Caption
+                    if let caption = data.customCaption, !caption.isEmpty {
+                        Text(caption)
+                            .font(.system(size: 26 * s, design: .serif))
+                            .italic()
+                            .foregroundColor(theme.textSecondary)
+                            .lineLimit(2)
+                    }
+
+                    // Footer
+                    HStack {
+                        Spacer()
+                        Text("sonder")
+                            .font(.system(size: 22 * s, weight: .semibold, design: .rounded))
+                            .foregroundColor(theme.textTertiary) +
+                        Text("  \u{00B7}  your travel story")
+                            .font(.system(size: 22 * s))
+                            .foregroundColor(theme.textTertiary)
+                        Spacer()
+                    }
+                    .padding(.top, 4 * s)
+                }
+                .padding(.horizontal, 56 * s)
+                .padding(.bottom, 40 * s)
+            }
+            .background(alignment: .bottom) {
+                LinearGradient(
+                    stops: theme.overlayGradient,
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 960 * s)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+            }
+        }
+        .frame(width: canvasSize.width, height: canvasSize.height)
+        .clipped()
+    }
+
+    // MARK: - Map Background
+
+    private var mapBackground: some View {
+        Group {
             if let snapshot = mapSnapshot {
                 Image(uiImage: snapshot)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: 1080, height: 1150)
+                    .frame(width: canvasSize.width, height: canvasSize.height)
+                    .clipped()
             } else {
-                Rectangle()
-                    .fill(SonderColors.warmGray)
-                    .frame(width: 1080, height: 1150)
-                    .overlay {
-                        VStack(spacing: 12) {
-                            Image(systemName: "map")
-                                .font(.system(size: 48))
-                                .foregroundColor(SonderColors.inkLight)
-                            Text("Map")
-                                .font(.system(size: 20))
-                                .foregroundColor(SonderColors.inkLight)
-                        }
+                LinearGradient(
+                    colors: [theme.backgroundSecondary, theme.background],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .overlay {
+                    VStack(spacing: 12 * s) {
+                        Image(systemName: "map")
+                            .font(.system(size: 64 * s))
+                            .foregroundColor(theme.textTertiary)
+                        Text("Map unavailable")
+                            .font(.system(size: 24 * s))
+                            .foregroundColor(theme.textTertiary)
                     }
+                }
+            }
+        }
+    }
+
+    // MARK: - Field Notes List
+
+    private var fieldNotesList: some View {
+        let stops = Array(data.stops.prefix(maxFieldNotes))
+        return VStack(alignment: .leading, spacing: 14 * s) {
+            ForEach(Array(stops.enumerated()), id: \.offset) { index, stop in
+                fieldNoteRow(index: index + 1, stop: stop)
             }
 
-            // Bottom fade into cream
-            VStack {
-                Spacer()
-                LinearGradient(
-                    colors: [.clear, SonderColors.cream],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 100)
+            // "+N more stops" if truncated
+            if data.stops.count > maxFieldNotes {
+                Text("+\(data.stops.count - maxFieldNotes) more stops")
+                    .font(.system(size: 22 * s))
+                    .foregroundColor(theme.textTertiary)
+                    .padding(.leading, 44 * s)
+            }
+        }
+        .padding(.vertical, 8 * s)
+    }
+
+    private func fieldNoteRow(index: Int, stop: ExportStop) -> some View {
+        HStack(alignment: .top, spacing: 12 * s) {
+            // Number badge
+            Text("\(index)")
+                .font(.system(size: 18 * s, weight: .bold, design: .rounded))
+                .foregroundColor(theme.background)
+                .frame(width: 30 * s, height: 30 * s)
+                .background(theme.accent)
+                .clipShape(Circle())
+
+            // Stop info
+            VStack(alignment: .leading, spacing: 4 * s) {
+                // Place name + rating
+                HStack(spacing: 8 * s) {
+                    Text(stop.placeName)
+                        .font(.system(size: 26 * s, weight: .semibold))
+                        .foregroundColor(theme.textPrimary)
+                        .lineLimit(1)
+                    Text(stop.rating.emoji)
+                        .font(.system(size: 24 * s))
+                }
+
+                // Note (italic)
+                if let note = stop.note, !note.isEmpty {
+                    Text("\u{201C}\(note)\u{201D}")
+                        .font(.system(size: 22 * s, design: .serif))
+                        .italic()
+                        .foregroundColor(theme.textSecondary)
+                        .lineLimit(1)
+                }
+
+                // Tags
+                if !stop.tags.isEmpty {
+                    HStack(spacing: 6 * s) {
+                        ForEach(Array(stop.tags.prefix(3)), id: \.self) { tag in
+                            Text("#\(tag)")
+                                .font(.system(size: 18 * s, weight: .medium))
+                                .foregroundColor(theme.accent)
+                                .padding(.horizontal, 8 * s)
+                                .padding(.vertical, 3 * s)
+                                .background(theme.accent.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
             }
         }
     }
@@ -152,15 +210,16 @@ struct TripExportRouteMap: View {
 // MARK: - Map Snapshot Generator
 
 enum TripMapSnapshotGenerator {
-    /// Generates a map snapshot with numbered circles at each stop and dashed route lines.
-    /// The snapshot is at 1080x1150 pixels.
+    /// Generates a map snapshot with numbered dots at each stop and dashed route lines.
     static func generateSnapshot(
         stops: [ExportStop],
-        logPhotos: [LogPhotoData]
+        logPhotos: [LogPhotoData],
+        size: CGSize = CGSize(width: 1080, height: 1920),
+        markerSize: CGFloat = 48,
+        tintColor: UIColor = UIColor(SonderColors.terracotta)
     ) async -> UIImage? {
         guard !stops.isEmpty else { return nil }
 
-        // Calculate region covering all stops with padding
         let lats = stops.map(\.coordinate.latitude)
         let lngs = stops.map(\.coordinate.longitude)
         guard let minLat = lats.min(), let maxLat = lats.max(),
@@ -179,14 +238,14 @@ enum TripMapSnapshotGenerator {
 
         let options = MKMapSnapshotter.Options()
         options.region = region
-        options.size = CGSize(width: 1080, height: 1150)
+        options.size = size
         options.mapType = .mutedStandard
 
         let snapshotter = MKMapSnapshotter(options: options)
 
         do {
             let snapshot = try await snapshotter.start()
-            return drawOverlay(on: snapshot, stops: stops, logPhotos: logPhotos)
+            return drawOverlay(on: snapshot, stops: stops, markerSize: markerSize, tintColor: tintColor)
         } catch {
             return nil
         }
@@ -195,26 +254,24 @@ enum TripMapSnapshotGenerator {
     private static func drawOverlay(
         on snapshot: MKMapSnapshotter.Snapshot,
         stops: [ExportStop],
-        logPhotos: [LogPhotoData]
+        markerSize: CGFloat,
+        tintColor: UIColor
     ) -> UIImage {
         let image = snapshot.image
         let size = image.size
 
         let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { ctx in
-            // Draw the map base
             image.draw(at: .zero)
 
             let context = ctx.cgContext
-
-            // Convert stops to screen points
             let points = stops.map { snapshot.point(for: $0.coordinate) }
 
-            // Draw dashed route line (6pt width)
+            // Dashed route line
             if points.count >= 2 {
-                context.setStrokeColor(UIColor(SonderColors.terracotta).cgColor)
+                context.setStrokeColor(tintColor.cgColor)
                 context.setLineWidth(6)
-                context.setLineDash(phase: 0, lengths: [16, 10])
+                context.setLineDash(phase: 0, lengths: [14, 8])
                 context.setLineCap(.round)
 
                 context.move(to: points[0])
@@ -224,8 +281,8 @@ enum TripMapSnapshotGenerator {
                 context.strokePath()
             }
 
-            // Draw numbered circles at each stop (100pt diameter)
-            let circleSize: CGFloat = 100
+            // Numbered colored dots at each stop
+            let circleSize: CGFloat = markerSize
             for (index, point) in points.enumerated() {
                 let rect = CGRect(
                     x: point.x - circleSize / 2,
@@ -234,58 +291,31 @@ enum TripMapSnapshotGenerator {
                     height: circleSize
                 )
 
-                // White border circle (5pt)
+                // White border
                 context.setFillColor(UIColor.white.cgColor)
-                context.fillEllipse(in: rect.insetBy(dx: -5, dy: -5))
+                context.fillEllipse(in: rect.insetBy(dx: -4, dy: -4))
 
-                // Photo circle or colored fill
-                if index < logPhotos.count {
-                    // Clip to circle and draw photo
-                    context.saveGState()
-                    context.addEllipse(in: rect)
-                    context.clip()
-                    logPhotos[index].image.draw(in: rect)
-                    context.restoreGState()
-                } else {
-                    // Terracotta fill fallback
-                    context.setFillColor(UIColor(SonderColors.terracotta).withAlphaComponent(0.3).cgColor)
-                    context.fillEllipse(in: rect)
-                }
+                // Colored fill
+                context.setFillColor(tintColor.cgColor)
+                context.fillEllipse(in: rect)
 
                 // White border stroke
                 context.setStrokeColor(UIColor.white.cgColor)
-                context.setLineWidth(5)
+                context.setLineWidth(4)
                 context.setLineDash(phase: 0, lengths: [])
                 context.strokeEllipse(in: rect)
 
-                // Number badge (36pt diameter)
-                let badgeSize: CGFloat = 36
-                let badgeRect = CGRect(
-                    x: point.x + circleSize / 2 - badgeSize / 2,
-                    y: point.y - circleSize / 2 - badgeSize / 4,
-                    width: badgeSize,
-                    height: badgeSize
-                )
-
-                // Badge background
-                context.setFillColor(UIColor(SonderColors.terracotta).cgColor)
-                context.fillEllipse(in: badgeRect)
-
-                // Badge border
-                context.setStrokeColor(UIColor.white.cgColor)
-                context.setLineWidth(3)
-                context.strokeEllipse(in: badgeRect)
-
-                // Badge number (20pt font)
+                // Number text
                 let numberStr = "\(index + 1)" as NSString
+                let fontSize: CGFloat = circleSize * 0.5
                 let attrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 20, weight: .bold),
+                    .font: UIFont.systemFont(ofSize: fontSize, weight: .bold),
                     .foregroundColor: UIColor.white
                 ]
                 let strSize = numberStr.size(withAttributes: attrs)
                 let strRect = CGRect(
-                    x: badgeRect.midX - strSize.width / 2,
-                    y: badgeRect.midY - strSize.height / 2,
+                    x: rect.midX - strSize.width / 2,
+                    y: rect.midY - strSize.height / 2,
                     width: strSize.width,
                     height: strSize.height
                 )

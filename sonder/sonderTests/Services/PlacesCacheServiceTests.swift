@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import SwiftData
+import CoreLocation
 @testable import sonder
 
 @Suite(.serialized)
@@ -224,5 +225,71 @@ struct PlacesCacheServiceTests {
         let results = service.searchCachedPlaces(query: "pizza")
         #expect(results.count == 1)
         #expect(results.first?.id == "p1")
+    }
+
+    // MARK: - Nearby Cache
+
+    @Test func getCachedNearby_returnsNilWhenEmpty() throws {
+        let (service, _, container) = try makeSUT()
+        _ = container
+
+        let location = CLLocationCoordinate2D(latitude: 40.7128, longitude: -74.0060)
+        let result = service.getCachedNearby(for: location)
+        #expect(result == nil)
+    }
+
+    @Test func getCachedNearby_returnsCachedResults() throws {
+        let (service, _, container) = try makeSUT()
+        _ = container
+
+        let location = CLLocationCoordinate2D(latitude: 40.7128, longitude: -74.0060)
+        let places = [TestData.nearbyPlace(placeId: "nb-1"), TestData.nearbyPlace(placeId: "nb-2")]
+        service.cacheNearbyResults(places, location: location)
+
+        let result = service.getCachedNearby(for: location)
+        #expect(result != nil)
+        #expect(result?.count == 2)
+    }
+
+    @Test func getCachedNearby_returnsNilWhenTooFar() throws {
+        let (service, _, container) = try makeSUT()
+        _ = container
+
+        let originalLocation = CLLocationCoordinate2D(latitude: 40.7128, longitude: -74.0060)
+        let places = [TestData.nearbyPlace(placeId: "nb-1")]
+        service.cacheNearbyResults(places, location: originalLocation)
+
+        // ~500m away (well beyond 300m threshold)
+        let farLocation = CLLocationCoordinate2D(latitude: 40.7173, longitude: -74.0060)
+        let result = service.getCachedNearby(for: farLocation)
+        #expect(result == nil)
+    }
+
+    @Test func getCachedNearby_returnsResultsWhenCloseEnough() throws {
+        let (service, _, container) = try makeSUT()
+        _ = container
+
+        let originalLocation = CLLocationCoordinate2D(latitude: 40.7128, longitude: -74.0060)
+        let places = [TestData.nearbyPlace(placeId: "nb-1")]
+        service.cacheNearbyResults(places, location: originalLocation)
+
+        // ~100m away (within 300m threshold)
+        let nearLocation = CLLocationCoordinate2D(latitude: 40.7137, longitude: -74.0060)
+        let result = service.getCachedNearby(for: nearLocation)
+        #expect(result != nil)
+        #expect(result?.count == 1)
+    }
+
+    @Test func cacheNearbyResults_overwritesPreviousCache() throws {
+        let (service, _, container) = try makeSUT()
+        _ = container
+
+        let location = CLLocationCoordinate2D(latitude: 40.7128, longitude: -74.0060)
+        service.cacheNearbyResults([TestData.nearbyPlace(placeId: "nb-1")], location: location)
+        service.cacheNearbyResults([TestData.nearbyPlace(placeId: "nb-2"), TestData.nearbyPlace(placeId: "nb-3")], location: location)
+
+        let result = service.getCachedNearby(for: location)
+        #expect(result?.count == 2)
+        #expect(result?.first?.placeId == "nb-2")
     }
 }

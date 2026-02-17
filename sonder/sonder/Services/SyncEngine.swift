@@ -20,6 +20,8 @@ struct RemoteLog: Codable {
     let note: String?
     let tags: [String]
     let tripID: String?
+    let tripSortOrder: Int?
+    let visitedAt: Date
     let createdAt: Date
     let updatedAt: Date
 
@@ -33,6 +35,8 @@ struct RemoteLog: Codable {
         case note
         case tags
         case tripID = "trip_id"
+        case tripSortOrder = "trip_sort_order"
+        case visitedAt = "visited_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -46,6 +50,8 @@ struct RemoteLog: Codable {
         note: String? = nil,
         tags: [String] = [],
         tripID: String? = nil,
+        tripSortOrder: Int? = nil,
+        visitedAt: Date = Date(),
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -57,6 +63,8 @@ struct RemoteLog: Codable {
         self.note = note
         self.tags = tags
         self.tripID = tripID
+        self.tripSortOrder = tripSortOrder
+        self.visitedAt = visitedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -80,7 +88,10 @@ struct RemoteLog: Codable {
         note = try container.decodeIfPresent(String.self, forKey: .note)
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
         tripID = try container.decodeIfPresent(String.self, forKey: .tripID)
-        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        tripSortOrder = try container.decodeIfPresent(Int.self, forKey: .tripSortOrder)
+        let decodedCreatedAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        visitedAt = try container.decodeIfPresent(Date.self, forKey: .visitedAt) ?? decodedCreatedAt
+        createdAt = decodedCreatedAt
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
     }
 
@@ -94,6 +105,8 @@ struct RemoteLog: Codable {
         try container.encodeIfPresent(note, forKey: .note)
         try container.encode(tags, forKey: .tags)
         try container.encodeIfPresent(tripID, forKey: .tripID)
+        try container.encodeIfPresent(tripSortOrder, forKey: .tripSortOrder)
+        try container.encode(visitedAt, forKey: .visitedAt)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
@@ -167,13 +180,13 @@ struct RemoteTrip: Codable {
 @Observable
 final class SyncEngine {
     var isSyncing = false
-    var lastSyncDate: Date?
+    @ObservationIgnored var lastSyncDate: Date?
     var pendingCount = 0
     var isOnline = true
 
     /// Log IDs deleted locally but not yet confirmed deleted on Supabase.
     /// `mergeRemoteLogs` skips these so pull sync doesn't resurrect them.
-    var pendingDeletions: Set<String> = []
+    @ObservationIgnored var pendingDeletions: Set<String> = []
 
     /// When true, another sync will run immediately after the current one finishes.
     private var needsResync = false
@@ -237,10 +250,13 @@ final class SyncEngine {
             return
         }
 
-        // Check for valid Supabase session
+        // Check for valid Supabase session (local Keychain check, no network)
         let userID: String
         do {
-            let session = try await supabase.auth.session
+            guard let session = try supabase.auth.currentSession else {
+                print("No Supabase session - skipping sync (debug mode)")
+                return
+            }
             userID = session.user.id.uuidString
         } catch {
             print("No Supabase session - skipping sync (debug mode)")
@@ -254,10 +270,8 @@ final class SyncEngine {
             await processPendingPhotoUploads()
 
             // Push: sync local changes to remote
-            // Track failed trip IDs so we can skip logs referencing them
-            // (avoids trip_activity foreign key violations)
-            let failedTripIDs = try await syncPendingTrips()
-            try await syncPendingLogs(skippingTripIDs: failedTripIDs)
+            try await syncPendingTrips()
+            try await syncPendingLogs()
         } catch {
             print("Push sync error: \(error)")
         }
@@ -353,20 +367,19 @@ final class SyncEngine {
 
     // MARK: - Log Sync
 
-    private func syncPendingLogs(skippingTripIDs failedTripIDs: Set<String> = []) async throws {
-        let descriptor = FetchDescriptor<Log>()
-        let allLogs = try modelContext.fetch(descriptor)
-        let pendingLogs = allLogs.filter { $0.syncStatus == .pending || $0.syncStatus == .failed }
+    private func syncPendingLogs() async throws {
+        let pending = SyncStatus.pending
+        let failed = SyncStatus.failed
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { log in
+                log.syncStatus == pending || log.syncStatus == failed
+            }
+        )
+        let pendingLogs = try modelContext.fetch(descriptor)
 
         for log in pendingLogs {
             // Skip logs that still have photos uploading in the background
             if log.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") }) { continue }
-
-            // Skip logs whose trip hasn't synced yet (prevents foreign key violations)
-            if let tripID = log.tripID, failedTripIDs.contains(tripID) {
-                print("Skipping log \(log.id) — trip \(tripID) hasn't synced yet")
-                continue
-            }
 
             do {
                 try await uploadLog(log)
@@ -385,6 +398,19 @@ final class SyncEngine {
         // First ensure place exists in Supabase
         try await syncPlace(placeID: log.placeID)
 
+        // If the log has a trip, ensure the trip exists in Supabase first.
+        // If the trip can't be synced, upload the log without the trip reference
+        // to avoid a permanent foreign key failure on the trip_activity trigger.
+        var tripIDForUpload = log.tripID
+        if let tripID = log.tripID {
+            do {
+                try await syncTrip(tripID: tripID)
+            } catch {
+                print("Trip \(tripID) failed to sync, uploading log without trip reference: \(error)")
+                tripIDForUpload = nil
+            }
+        }
+
         // Prepare log data for upload (excluding local-only fields)
         struct LogUpload: Codable {
             let id: String
@@ -395,6 +421,8 @@ final class SyncEngine {
             let note: String?
             let tags: [String]
             let trip_id: String?
+            let trip_sort_order: Int?
+            let visited_at: Date
             let created_at: Date
             let updated_at: Date
         }
@@ -407,7 +435,9 @@ final class SyncEngine {
             photo_urls: log.photoURLs,
             note: log.note,
             tags: log.tags,
-            trip_id: log.tripID,
+            trip_id: tripIDForUpload,
+            trip_sort_order: log.tripSortOrder,
+            visited_at: log.visitedAt,
             created_at: log.createdAt,
             updated_at: log.updatedAt
         )
@@ -417,6 +447,27 @@ final class SyncEngine {
             .from("logs")
             .upsert(uploadData)
             .execute()
+    }
+
+    /// Ensure a specific trip exists in Supabase before uploading a log that references it.
+    private func syncTrip(tripID: String) async throws {
+        let tripIDCopy = tripID
+        let descriptor = FetchDescriptor<Trip>(
+            predicate: #Predicate { trip in
+                trip.id == tripIDCopy
+            }
+        )
+
+        guard let trip = try modelContext.fetch(descriptor).first else {
+            throw SyncError.invalidData
+        }
+
+        try await supabase.database
+            .from("trips")
+            .upsert(trip)
+            .execute()
+
+        trip.syncStatus = .synced
     }
 
     private func syncPlace(placeID: String) async throws {
@@ -440,31 +491,36 @@ final class SyncEngine {
 
     // MARK: - Trip Sync
 
-    /// Returns the set of trip IDs that failed to sync.
-    @discardableResult
-    private func syncPendingTrips() async throws -> Set<String> {
-        // Only push trips owned by the current user (collaborator trips are
+    private func syncPendingTrips() async throws {
+        // Only push dirty trips owned by the current user (collaborator trips are
         // managed by their owner and would be rejected by RLS anyway).
-        let session = try await supabase.auth.session
+        guard let session = try supabase.auth.currentSession else { return }
         let currentUserID = session.user.id.uuidString
 
-        let descriptor = FetchDescriptor<Trip>()
-        let trips = try modelContext.fetch(descriptor)
-        let ownedTrips = trips.filter { $0.createdBy == currentUserID }
+        let ownerID = currentUserID
+        let pending = SyncStatus.pending
+        let descriptor = FetchDescriptor<Trip>(
+            predicate: #Predicate { trip in
+                trip.createdBy == ownerID && trip.syncStatus == pending
+            }
+        )
+        let dirtyTrips = try modelContext.fetch(descriptor)
 
-        var failedTripIDs: Set<String> = []
-        for trip in ownedTrips {
+        for trip in dirtyTrips {
             do {
                 try await supabase.database
                     .from("trips")
                     .upsert(trip)
                     .execute()
+                trip.syncStatus = SyncStatus.synced
             } catch {
-                failedTripIDs.insert(trip.id)
                 print("⚠️ Failed to sync trip '\(trip.name)' (\(trip.id)): \(error)")
             }
         }
-        return failedTripIDs
+
+        if !dirtyTrips.isEmpty {
+            try modelContext.save()
+        }
     }
 
     // MARK: - Pull Sync
@@ -524,8 +580,8 @@ final class SyncEngine {
 
         for remote in remoteTrips {
             if let local = localTripsByID[remote.id.lowercased()] {
-                // Update if remote is newer
-                if remote.updatedAt > local.updatedAt {
+                // Update if remote is newer and local isn't dirty
+                if remote.updatedAt > local.updatedAt && local.syncStatus != .pending {
                     local.name = remote.name
                     local.tripDescription = remote.tripDescription
                     local.coverPhotoURL = remote.coverPhotoURL
@@ -533,6 +589,7 @@ final class SyncEngine {
                     local.endDate = remote.endDate
                     local.collaboratorIDs = remote.collaboratorIDs
                     local.updatedAt = remote.updatedAt
+                    local.syncStatus = .synced
                 }
             } else {
                 // New trip from server
@@ -546,7 +603,8 @@ final class SyncEngine {
                     collaboratorIDs: remote.collaboratorIDs,
                     createdBy: remote.createdBy,
                     createdAt: remote.createdAt,
-                    updatedAt: remote.updatedAt
+                    updatedAt: remote.updatedAt,
+                    syncStatus: .synced
                 )
                 modelContext.insert(trip)
             }
@@ -565,10 +623,16 @@ final class SyncEngine {
 
         guard !remoteLogs.isEmpty else { return }
 
-        // Find place IDs we don't have locally
+        // Find place IDs we don't have locally — only check IDs we need
         let remotePlaceIDs = Set(remoteLogs.map(\.placeID))
-        let localPlaces = try modelContext.fetch(FetchDescriptor<Place>())
-        let localPlaceIDs = Set(localPlaces.map(\.id))
+        var localPlaceIDs = Set<String>()
+        for placeID in remotePlaceIDs {
+            let pid = placeID
+            let desc = FetchDescriptor<Place>(predicate: #Predicate { $0.id == pid })
+            if (try? modelContext.fetchCount(desc)) ?? 0 > 0 {
+                localPlaceIDs.insert(placeID)
+            }
+        }
         let missingPlaceIDs = remotePlaceIDs.subtracting(localPlaceIDs)
 
         // Fetch missing places from Supabase
@@ -622,6 +686,8 @@ final class SyncEngine {
 
         for remote in remoteLogs {
             let remoteID = remote.id.lowercased()
+            // Normalize empty-string tripID to nil
+            let remoteTripID = (remote.tripID?.trimmingCharacters(in: .whitespaces).isEmpty == true) ? nil : remote.tripID
 
             // Skip logs that were deleted locally but not yet confirmed on Supabase
             if pendingDeletions.contains(remoteID) { continue }
@@ -638,7 +704,9 @@ final class SyncEngine {
                         local.photoURLs = remote.photoURLs
                         local.note = remote.note
                         local.tags = remote.tags
-                        local.tripID = remote.tripID
+                        local.tripID = remoteTripID
+                        local.tripSortOrder = remote.tripSortOrder
+                        local.visitedAt = remote.visitedAt
                         local.updatedAt = remote.updatedAt
                     }
                 }
@@ -652,7 +720,9 @@ final class SyncEngine {
                     photoURLs: remote.photoURLs,
                     note: remote.note,
                     tags: remote.tags,
-                    tripID: remote.tripID,
+                    tripID: remoteTripID,
+                    tripSortOrder: remote.tripSortOrder,
+                    visitedAt: remote.visitedAt,
                     syncStatus: .synced,
                     createdAt: remote.createdAt,
                     updatedAt: remote.updatedAt
@@ -727,10 +797,15 @@ final class SyncEngine {
     // MARK: - Helpers
 
     func updatePendingCount() async {
-        let descriptor = FetchDescriptor<Log>()
-        if let allLogs = try? modelContext.fetch(descriptor) {
-            pendingCount = allLogs.filter {
-                ($0.syncStatus == .pending || $0.syncStatus == .failed) &&
+        let pending = SyncStatus.pending
+        let failed = SyncStatus.failed
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { log in
+                log.syncStatus == pending || log.syncStatus == failed
+            }
+        )
+        if let logs = try? modelContext.fetch(descriptor) {
+            pendingCount = logs.filter {
                 !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
             }.count
         }
@@ -738,9 +813,26 @@ final class SyncEngine {
 
     /// Get failed logs for retry UI
     func getFailedLogs() -> [Log] {
-        let descriptor = FetchDescriptor<Log>()
-        guard let allLogs = try? modelContext.fetch(descriptor) else { return [] }
-        return allLogs.filter { $0.syncStatus == .failed }
+        let failed = SyncStatus.failed
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { log in log.syncStatus == failed }
+        )
+        return (try? modelContext.fetch(descriptor)) ?? []
+    }
+
+    /// Get all logs that contribute to the pending badge (pending or failed, excluding active photo uploads)
+    func getStuckLogs() -> [Log] {
+        let pending = SyncStatus.pending
+        let failed = SyncStatus.failed
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { log in
+                log.syncStatus == pending || log.syncStatus == failed
+            }
+        )
+        guard let logs = try? modelContext.fetch(descriptor) else { return [] }
+        return logs.filter {
+            !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
+        }
     }
 
     /// Retry a specific failed log
@@ -748,6 +840,16 @@ final class SyncEngine {
         log.syncStatus = .pending
         try? modelContext.save()
         await syncNow()
+    }
+
+    /// Force-mark all stuck logs as synced, clearing the pending badge.
+    /// Use when a log is permanently stuck and the user wants to dismiss it.
+    func dismissStuckLogs() {
+        for log in getStuckLogs() {
+            log.syncStatus = .synced
+        }
+        try? modelContext.save()
+        pendingCount = 0
     }
 }
 

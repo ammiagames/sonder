@@ -8,12 +8,22 @@ struct CityLogsView: View {
     @Query private var trips: [Trip]
 
     private var tripGroups: [(trip: Trip?, logs: [Log])] {
+        Self.buildTripGroups(logs: logs, trips: trips)
+    }
+
+    /// Groups logs by their associated trip, with untripped/orphaned logs in a nil-trip section.
+    /// Exposed as static for testability.
+    static func buildTripGroups(logs: [Log], trips: [Trip]) -> [(trip: Trip?, logs: [Log])] {
         let grouped = Dictionary(grouping: logs) { $0.tripID }
         var sections: [(trip: Trip?, logs: [Log])] = []
+        var orphanedLogs: [Log] = []
 
         for (tripID, groupLogs) in grouped {
             if let tripID, let trip = trips.first(where: { $0.id == tripID }) {
                 sections.append((trip: trip, logs: groupLogs))
+            } else if tripID != nil {
+                // Logs with a tripID that no longer matches a local Trip
+                orphanedLogs.append(contentsOf: groupLogs)
             }
         }
 
@@ -24,10 +34,10 @@ struct CityLogsView: View {
             return aDate > bDate
         }
 
-        // Append untripped logs at bottom
-        let untripped = logs.filter { $0.tripID == nil }
+        // Append untripped + orphaned logs at bottom
+        let untripped = logs.filter { $0.tripID == nil } + orphanedLogs
         if !untripped.isEmpty {
-            sections.append((trip: nil, logs: untripped))
+            sections.append((trip: nil, logs: untripped.sorted { $0.createdAt > $1.createdAt }))
         }
 
         return sections
@@ -63,6 +73,7 @@ struct CityLogsView: View {
                     tripSection(trip: group.trip, logs: group.logs)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(SonderSpacing.md)
         }
         .background(SonderColors.cream)

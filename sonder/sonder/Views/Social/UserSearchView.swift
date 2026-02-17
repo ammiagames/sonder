@@ -146,6 +146,7 @@ struct UserSearchView: View {
             }
         }
         .listStyle(.plain)
+        .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
         .background(SonderColors.cream)
     }

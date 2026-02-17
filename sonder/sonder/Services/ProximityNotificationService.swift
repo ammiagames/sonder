@@ -52,6 +52,8 @@ final class ProximityNotificationService: NSObject {
 
     // MARK: - Monitoring Control
 
+    /// Starts monitoring and prompts for notification + location permissions if needed.
+    /// Only call this from an explicit user action (e.g. Settings toggle).
     func startMonitoring() async {
         guard !isMonitoring else { return }
 
@@ -78,6 +80,32 @@ final class ProximityNotificationService: NSObject {
             locationManager?.startUpdatingLocation()
             isMonitoring = true
         }
+    }
+
+    /// Silently resumes monitoring if permissions were already granted.
+    /// Does NOT prompt the user — safe to call on app launch.
+    func resumeMonitoringIfAuthorized() async {
+        guard !isMonitoring else { return }
+
+        // Check notification permission without prompting
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        guard settings.authorizationStatus == .authorized else { return }
+
+        // Check location permission without prompting
+        let locationManager = CLLocationManager()
+        let authStatus = locationManager.authorizationStatus
+        guard authStatus == .authorizedWhenInUse || authStatus == .authorizedAlways else { return }
+
+        // Both permissions already granted — start silently
+        self.locationManager = locationManager
+        self.locationManager?.delegate = self
+        self.locationManager?.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        self.locationManager?.allowsBackgroundLocationUpdates = false
+        self.locationManager?.pausesLocationUpdatesAutomatically = true
+
+        await refreshCachedPlaces()
+        self.locationManager?.startUpdatingLocation()
+        isMonitoring = true
     }
 
     func stopMonitoring() {

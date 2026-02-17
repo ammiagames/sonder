@@ -84,6 +84,7 @@ struct CreateCustomPlaceView: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Your Own Spot")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

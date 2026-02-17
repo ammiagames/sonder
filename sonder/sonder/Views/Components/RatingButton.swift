@@ -13,8 +13,6 @@ struct RatingButton: View {
     let isSelected: Bool
     let action: () -> Void
 
-    @State private var isPressed = false
-
     private var emoji: String {
         switch rating {
         case .skip:
@@ -98,14 +96,18 @@ struct RatingButton: View {
                     .stroke(borderColor, lineWidth: 2)
             )
         }
-        .buttonStyle(.plain)
-        .scaleEffect(isPressed ? 0.95 : 1.0)
-        .animation(.spring(response: 0.3), value: isPressed)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded { _ in isPressed = false }
-        )
+        .buttonStyle(ScaleButtonStyle())
+    }
+}
+
+/// Button style that provides a press-scale animation without competing gestures
+struct ScaleButtonStyle: ButtonStyle {
+    var scale: CGFloat = 0.95
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1.0)
+            .animation(.spring(response: 0.3), value: configuration.isPressed)
     }
 }
 

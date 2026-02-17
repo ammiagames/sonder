@@ -8,6 +8,12 @@
 import SwiftUI
 import SwiftData
 import CoreLocation
+import Photos
+
+private struct IdentifiedImage: Identifiable {
+    let id = UUID()
+    let image: UIImage
+}
 
 /// Screen 3: Add optional details (photo, note, tags, trip)
 struct AddDetailsView: View {
@@ -17,16 +23,19 @@ struct AddDetailsView: View {
     @Environment(PhotoService.self) private var photoService
     @Environment(SyncEngine.self) private var syncEngine
     @Environment(WantToGoService.self) private var wantToGoService
+    @Environment(PhotoSuggestionService.self) private var photoSuggestionService
 
     let place: Place
     let rating: Rating
     var initialTrip: Trip? = nil
+    var initialVisitedAt: Date = Date()
     let onLogComplete: (CLLocationCoordinate2D) -> Void
 
     @State private var note = ""
     @State private var tags: [String] = []
     @State private var selectedTrip: Trip?
-    @State private var selectedImages: [UIImage] = []
+    @State private var visitedAt = Date()
+    @State private var selectedImages: [IdentifiedImage] = []
     @State private var showImagePicker = false
     @State private var showConfirmation = false
     @State private var showNewTripSheet = false
@@ -36,11 +45,14 @@ struct AddDetailsView: View {
     @State private var tripWasCreatedThisSession = false
     @State private var coverNudgeTrip: Trip?
     @State private var showCoverImagePicker = false
+    @State private var suggestionThumbnails: [String: UIImage] = [:] // asset localIdentifier -> thumbnail
+    @State private var loadingSuggestion: String? = nil
 
     private let maxPhotos = 5
 
     @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
     @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
+    @Query private var allPlaces: [Place]
 
     private let maxNoteLength = 280
 
@@ -53,7 +65,9 @@ struct AddDetailsView: View {
         }
         let latestLogByTrip: [String: Date] = allLogs.reduce(into: [:]) { map, log in
             guard let tripID = log.tripID else { return }
-            if map[tripID] == nil || log.createdAt > map[tripID]! {
+            if let existing = map[tripID] {
+                if log.createdAt > existing { map[tripID] = log.createdAt }
+            } else {
                 map[tripID] = log.createdAt
             }
         }
@@ -81,9 +95,13 @@ struct AddDetailsView: View {
 
                 // Trip selector
                 tripSection
+
+                // When
+                dateSection
             }
             .padding(SonderSpacing.md)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(SonderColors.cream)
         .scrollContentBackground(.hidden)
         .overlay(alignment: .bottom) {
@@ -114,6 +132,7 @@ struct AddDetailsView: View {
                         if let url = await photoService.uploadPhoto(image, for: userId) {
                             trip.coverPhotoURL = url
                             trip.updatedAt = Date()
+                            trip.syncStatus = .pending
                             try? modelContext.save()
                         }
                     }
@@ -131,11 +150,24 @@ struct AddDetailsView: View {
             if selectedTrip == nil, let initialTrip {
                 selectedTrip = initialTrip
             }
+            visitedAt = initialVisitedAt
+        }
+        .task {
+            await photoSuggestionService.requestAuthorizationIfNeeded()
+            await fetchPhotoSuggestions()
+        }
+        .onChange(of: selectedTrip?.id) { _, _ in
+            Task { await fetchPhotoSuggestions() }
+        }
+        .onDisappear {
+            photoSuggestionService.clearSuggestions()
         }
         .sheet(isPresented: $showImagePicker) {
             EditableImagePicker { image in
                 if selectedImages.count < maxPhotos {
-                    selectedImages.append(image)
+                    withAnimation(.spring(duration: 0.35, bounce: 0.2)) {
+                        selectedImages.append(IdentifiedImage(image: image))
+                    }
                 }
                 showImagePicker = false
             } onCancel: {
@@ -190,6 +222,8 @@ struct AddDetailsView: View {
                     .foregroundColor(SonderColors.inkLight)
             }
 
+            photoSuggestionsRow
+
             if selectedImages.isEmpty {
                 Button { showImagePicker = true } label: {
                     HStack {
@@ -207,16 +241,19 @@ struct AddDetailsView: View {
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: SonderSpacing.xs) {
-                        ForEach(Array(selectedImages.enumerated()), id: \.offset) { index, image in
+                        ForEach(selectedImages) { item in
                             ZStack(alignment: .topTrailing) {
-                                Image(uiImage: image)
+                                Image(uiImage: item.image)
                                     .resizable()
                                     .scaledToFill()
                                     .frame(width: 80, height: 80)
                                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
 
                                 Button {
-                                    selectedImages.remove(at: index)
+                                    withAnimation(.spring(duration: 0.3, bounce: 0.15)) {
+                                        selectedImages.removeAll { $0.id == item.id }
+                                    }
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .font(.system(size: 18))
@@ -225,6 +262,10 @@ struct AddDetailsView: View {
                                 }
                                 .padding(2)
                             }
+                            .transition(.asymmetric(
+                                insertion: .scale(scale: 0.5).combined(with: .opacity),
+                                removal: .scale(scale: 0.3).combined(with: .opacity)
+                            ))
                         }
 
                         if selectedImages.count < maxPhotos {
@@ -242,6 +283,118 @@ struct AddDetailsView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Photo Suggestions
+
+    @ViewBuilder
+    private var photoSuggestionsRow: some View {
+        let suggestions = photoSuggestionService.suggestions
+        if !suggestions.isEmpty && selectedImages.count < maxPhotos {
+            VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11))
+                        .foregroundColor(SonderColors.terracotta)
+                    Text("Nearby photos")
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: SonderSpacing.xs) {
+                        ForEach(suggestions, id: \.localIdentifier) { asset in
+                            Button {
+                                addSuggestion(asset)
+                            } label: {
+                                ZStack(alignment: .bottomTrailing) {
+                                    Group {
+                                        if let thumb = suggestionThumbnails[asset.localIdentifier] {
+                                            Image(uiImage: thumb)
+                                                .resizable()
+                                                .scaledToFill()
+                                        } else {
+                                            Rectangle()
+                                                .fill(SonderColors.warmGray)
+                                        }
+                                    }
+                                    .frame(width: 100, height: 100)
+                                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+
+                                    if loadingSuggestion == asset.localIdentifier {
+                                        ProgressView()
+                                            .tint(.white)
+                                            .frame(width: 100, height: 100)
+                                            .background(.black.opacity(0.3))
+                                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                                    } else {
+                                        Image(systemName: "plus.circle.fill")
+                                            .font(.system(size: 20))
+                                            .foregroundStyle(.white, SonderColors.terracotta)
+                                            .shadow(radius: 2)
+                                            .padding(4)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(loadingSuggestion != nil)
+                            .transition(.scale(scale: 0.5).combined(with: .opacity))
+                            .task {
+                                guard suggestionThumbnails[asset.localIdentifier] == nil else { return }
+                                if let thumb = await photoSuggestionService.loadThumbnail(for: asset) {
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        suggestionThumbnails[asset.localIdentifier] = thumb
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func fetchPhotoSuggestions() async {
+        var tripContext: PhotoSuggestionService.TripContext?
+        if let trip = selectedTrip {
+            let tripID = trip.id
+            let tripLogs = allLogs.filter { $0.tripID == tripID }
+            let logPlaceIDs = tripLogs.map(\.placeID)
+            // Look up coordinates for places in this trip
+            let logCoords: [CLLocationCoordinate2D] = allPlaces
+                .filter { logPlaceIDs.contains($0.id) }
+                .map(\.coordinate)
+            tripContext = .init(
+                startDate: trip.startDate,
+                endDate: trip.endDate,
+                logCoordinates: logCoords
+            )
+        }
+        await photoSuggestionService.fetchSuggestions(
+            near: place.coordinate,
+            visitedAt: visitedAt,
+            tripContext: tripContext
+        )
+    }
+
+    private func addSuggestion(_ asset: PHAsset) {
+        guard selectedImages.count < maxPhotos, loadingSuggestion == nil else { return }
+        loadingSuggestion = asset.localIdentifier
+
+        Task {
+            if let image = await photoSuggestionService.loadFullImage(for: asset) {
+                withAnimation(.spring(duration: 0.35, bounce: 0.2)) {
+                    if selectedImages.count < maxPhotos {
+                        selectedImages.append(IdentifiedImage(image: image))
+                    }
+                    // Remove this asset from suggestions
+                    photoSuggestionService.suggestions.removeAll { $0.localIdentifier == asset.localIdentifier }
+                    suggestionThumbnails.removeValue(forKey: asset.localIdentifier)
+                }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+            loadingSuggestion = nil
         }
     }
 
@@ -291,6 +444,24 @@ struct AddDetailsView: View {
                 .tracking(0.5)
 
             TagInputView(selectedTags: $tags)
+        }
+    }
+
+    // MARK: - Date Section
+
+    private var dateSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            Text("When")
+                .font(SonderTypography.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            DatePicker("", selection: $visitedAt)
+                .datePickerStyle(.compact)
+                .labelsHidden()
+                .tint(SonderColors.terracotta)
         }
     }
 
@@ -385,25 +556,27 @@ struct AddDetailsView: View {
     private func tripChip(_ trip: Trip) -> some View {
         let isSelected = selectedTrip?.id == trip.id
 
-        return HStack(spacing: 4) {
-            Image(systemName: "suitcase.fill")
-                .font(.system(size: 10))
-            Text(trip.name)
-                .font(SonderTypography.caption)
-                .fontWeight(.medium)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, SonderSpacing.sm)
-        .padding(.vertical, SonderSpacing.xs)
-        .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
-        .foregroundColor(isSelected ? .white : SonderColors.inkDark)
-        .clipShape(Capsule())
-        .onTapGesture {
+        return Button {
             withAnimation(.easeInOut(duration: 0.15)) {
                 selectedTrip = isSelected ? nil : trip
             }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "suitcase.fill")
+                    .font(.system(size: 10))
+                Text(trip.name)
+                    .font(SonderTypography.caption)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, SonderSpacing.sm)
+            .padding(.vertical, SonderSpacing.xs)
+            .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
+            .foregroundColor(isSelected ? .white : SonderColors.inkDark)
+            .clipShape(Capsule())
         }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -433,31 +606,33 @@ struct AddDetailsView: View {
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: SonderSpacing.xs) {
-                                ForEach(Array(selectedImages.enumerated()), id: \.offset) { _, image in
-                                    let isSelected = newTripCoverImage === image
-                                    Image(uiImage: image)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 64, height: 64)
-                                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
-                                                .strokeBorder(SonderColors.terracotta, lineWidth: isSelected ? 3 : 0)
-                                        )
-                                        .overlay(alignment: .bottomTrailing) {
-                                            if isSelected {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .font(.system(size: 16))
-                                                    .foregroundColor(SonderColors.terracotta)
-                                                    .background(Circle().fill(.white).padding(2))
-                                                    .offset(x: 4, y: 4)
-                                            }
+                                ForEach(selectedImages) { item in
+                                    let isSelected = newTripCoverImage === item.image
+                                    Button {
+                                        withAnimation(.easeInOut(duration: 0.15)) {
+                                            newTripCoverImage = isSelected ? nil : item.image
                                         }
-                                        .onTapGesture {
-                                            withAnimation(.easeInOut(duration: 0.15)) {
-                                                newTripCoverImage = isSelected ? nil : image
+                                    } label: {
+                                        Image(uiImage: item.image)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 64, height: 64)
+                                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
+                                                    .strokeBorder(SonderColors.terracotta, lineWidth: isSelected ? 3 : 0)
+                                            )
+                                            .overlay(alignment: .bottomTrailing) {
+                                                if isSelected {
+                                                    Image(systemName: "checkmark.circle.fill")
+                                                        .font(.system(size: 16))
+                                                        .foregroundColor(SonderColors.terracotta)
+                                                        .background(Circle().fill(.white).padding(2))
+                                                        .offset(x: 4, y: 4)
+                                                }
                                             }
-                                        }
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -516,6 +691,7 @@ struct AddDetailsView: View {
                 if let url = await photoService.uploadPhoto(coverImage, for: userId) {
                     trip.coverPhotoURL = url
                     trip.updatedAt = Date()
+                    trip.syncStatus = .pending
                     try? modelContext.save()
                 }
             }
@@ -555,7 +731,7 @@ struct AddDetailsView: View {
             let context = modelContext
             let engine = syncEngine
             photoURLs = photoService.queueBatchUpload(
-                images: selectedImages,
+                images: selectedImages.map(\.image),
                 for: userId,
                 logID: logID
             ) { results in
@@ -590,6 +766,7 @@ struct AddDetailsView: View {
             note: note.isEmpty ? nil : note,
             tags: tags,
             tripID: selectedTrip?.id,
+            visitedAt: visitedAt,
             syncStatus: .pending
         )
 
@@ -600,13 +777,14 @@ struct AddDetailsView: View {
 
             // Auto-assign first photo as trip cover if trip has none
             if let trip = selectedTrip, trip.coverPhotoURL == nil || isGooglePhotoURL(trip.coverPhotoURL) {
-                if let firstImage = selectedImages.first {
+                if let firstImage = selectedImages.first?.image {
                     // Upload user photo as cover in background
                     let tripToUpdate = trip
                     Task {
                         if let url = await photoService.uploadPhoto(firstImage, for: userId) {
                             tripToUpdate.coverPhotoURL = url
                             tripToUpdate.updatedAt = Date()
+                            tripToUpdate.syncStatus = .pending
                             try? modelContext.save()
                         }
                     }
@@ -615,6 +793,7 @@ struct AddDetailsView: View {
                     // No photos selected — use Google Places photo as fallback
                     trip.coverPhotoURL = url.absoluteString
                     trip.updatedAt = Date()
+                    trip.syncStatus = .pending
                     try? modelContext.save()
                 }
             }

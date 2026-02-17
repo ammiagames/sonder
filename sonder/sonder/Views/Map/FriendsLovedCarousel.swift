@@ -28,10 +28,12 @@ struct FriendsLovedCarousel: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: SonderSpacing.sm) {
                     ForEach(places) { place in
-                        lovedPlaceCard(place)
-                            .onTapGesture {
-                                onSelectPlace(place)
-                            }
+                        Button {
+                            onSelectPlace(place)
+                        } label: {
+                            lovedPlaceCard(place)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, SonderSpacing.md)

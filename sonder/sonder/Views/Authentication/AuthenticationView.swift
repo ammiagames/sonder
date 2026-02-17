@@ -53,7 +53,6 @@ struct AuthenticationView: View {
                 }
                 #endif
 
-                // TODO: Test Sign in with Apple when we have paid Apple Developer account
                 SignInWithAppleButton(.signIn) { request in
                     request.requestedScopes = [.email, .fullName]
                 } onCompletion: { result in

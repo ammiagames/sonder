@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftData
+import CoreLocation
 
 /// Service for caching places and managing recent searches
 @Observable
@@ -16,6 +17,17 @@ final class PlacesCacheService {
 
     /// Triggers view updates when recent searches change
     private(set) var recentSearchesVersion = 0
+
+    // MARK: - In-Memory Nearby Cache
+
+    private var cachedNearbyResults: [NearbyPlace] = []
+    private var cachedNearbyLocation: CLLocationCoordinate2D?
+    private var cachedNearbyTimestamp: Date?
+
+    /// Max age for nearby cache (5 minutes)
+    private static let nearbyCacheMaxAge: TimeInterval = 5 * 60
+    /// Max distance drift before invalidating nearby cache (300 meters)
+    private static let nearbyCacheMaxDistance: CLLocationDistance = 300
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
@@ -91,6 +103,39 @@ final class PlacesCacheService {
                 modelContext.delete(search)
             }
         }
+    }
+
+    // MARK: - Nearby Cache
+
+    /// Returns cached nearby results if they are less than 5 minutes old and the user
+    /// hasn't moved more than 300 meters from where the results were fetched.
+    func getCachedNearby(for location: CLLocationCoordinate2D) -> [NearbyPlace]? {
+        guard let cachedLocation = cachedNearbyLocation,
+              let cachedTimestamp = cachedNearbyTimestamp,
+              !cachedNearbyResults.isEmpty else {
+            return nil
+        }
+
+        // Check age
+        guard Date().timeIntervalSince(cachedTimestamp) < Self.nearbyCacheMaxAge else {
+            return nil
+        }
+
+        // Check distance
+        let cached = CLLocation(latitude: cachedLocation.latitude, longitude: cachedLocation.longitude)
+        let current = CLLocation(latitude: location.latitude, longitude: location.longitude)
+        guard cached.distance(from: current) < Self.nearbyCacheMaxDistance else {
+            return nil
+        }
+
+        return cachedNearbyResults
+    }
+
+    /// Stores nearby search results for the given location.
+    func cacheNearbyResults(_ results: [NearbyPlace], location: CLLocationCoordinate2D) {
+        cachedNearbyResults = results
+        cachedNearbyLocation = location
+        cachedNearbyTimestamp = Date()
     }
 
     // MARK: - Place Cache

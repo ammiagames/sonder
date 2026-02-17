@@ -30,6 +30,10 @@ final class FeedService {
     // Realtime
     private var realtimeChannel: RealtimeChannelV2?
 
+    // Cached following IDs to avoid repeated network calls
+    private var cachedFollowingIDs: [String]?
+    private var followingIDsCacheTime: Date?
+
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
     }
@@ -145,6 +149,8 @@ final class FeedService {
 
     /// Refresh feed (pull-to-refresh)
     func refreshFeed(for currentUserID: String) async {
+        cachedFollowingIDs = nil
+        followingIDsCacheTime = nil
         await loadFeed(for: currentUserID)
     }
 
@@ -159,7 +165,7 @@ final class FeedService {
         created_at,
         trip_id,
         users!logs_user_id_fkey(id, username, avatar_url, is_public),
-        places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference)
+        places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference, types)
     """
 
     private func fetchFeedLogs(followingIDs: [String], before cursor: Date?) async throws -> [FeedLogResponse] {
@@ -211,7 +217,7 @@ final class FeedService {
             .from("logs")
             .select("""
                 id, rating, photo_urls, created_at, trip_id,
-                places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference)
+                places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference, types)
             """)
             .in("trip_id", values: tripIDs)
             .order("created_at", ascending: false)
@@ -321,8 +327,15 @@ final class FeedService {
             .map { $0.toFeedTripCreatedItem() }
     }
 
-    /// Get IDs of users the current user is following
+    /// Get IDs of users the current user is following (cached for 60s)
     private func getFollowingIDs(for userID: String) async throws -> [String] {
+        // Return cached value if fresh (< 60 seconds old)
+        if let cached = cachedFollowingIDs,
+           let cacheTime = followingIDsCacheTime,
+           Date().timeIntervalSince(cacheTime) < 60 {
+            return cached
+        }
+
         struct FollowingID: Codable {
             let following_id: String
         }
@@ -334,7 +347,10 @@ final class FeedService {
             .execute()
             .value
 
-        return response.map { $0.following_id }
+        let ids = response.map { $0.following_id }
+        cachedFollowingIDs = ids
+        followingIDsCacheTime = Date()
+        return ids
     }
 
     // MARK: - Realtime Updates
@@ -416,7 +432,7 @@ final class FeedService {
                 tags,
                 created_at,
                 users!logs_user_id_fkey(id, username, avatar_url, is_public),
-                places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference)
+                places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference, types)
             """)
             .eq("id", value: logID)
             .limit(1)
@@ -439,7 +455,7 @@ final class FeedService {
                 tags,
                 created_at,
                 users!logs_user_id_fkey(id, username, avatar_url, is_public),
-                places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference)
+                places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference, types)
             """)
             .eq("user_id", value: userID)
             .order("created_at", ascending: false)

@@ -16,10 +16,13 @@ struct FeedView: View {
     @Environment(WantToGoService.self) private var wantToGoService
     @Environment(SocialService.self) private var socialService
 
+    var popToRoot: UUID = UUID()
+
     @State private var showUserSearch = false
     @State private var selectedUserID: String?
     @State private var selectedFeedItem: FeedItem?
     @State private var selectedTripID: String?
+    @State private var emptyIconScale: CGFloat = 1.0
 
     var body: some View {
         NavigationStack {
@@ -42,8 +45,8 @@ struct FeedView: View {
                     feedContent
                 }
             }
-            .background(SonderColors.cream)
-            .navigationTitle("Feed")
+            .background(feedBackground)
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -59,6 +62,7 @@ struct FeedView: View {
                     } label: {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(SonderColors.inkMuted)
+                            .toolbarIcon()
                     }
                 }
             }
@@ -77,37 +81,90 @@ struct FeedView: View {
             .task {
                 await loadInitialData()
             }
+            .onChange(of: popToRoot) {
+                selectedUserID = nil
+                selectedFeedItem = nil
+                selectedTripID = nil
+            }
+        }
+    }
+
+    // MARK: - Greeting Header
+
+    private var greetingHeader: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
+            Text(greetingText)
+                .font(SonderTypography.largeTitle)
+                .foregroundColor(SonderColors.inkDark)
+            Text("See what your friends have been up to")
+                .font(SonderTypography.body)
+                .foregroundColor(SonderColors.inkMuted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, SonderSpacing.sm)
+    }
+
+    private var greetingText: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let firstName = authService.currentUser?.firstName
+        let name = (firstName != nil && !firstName!.isEmpty) ? firstName! : "traveler"
+        switch hour {
+        case 5..<12: return "Good morning, \(name)"
+        case 12..<17: return "Good afternoon, \(name)"
+        default: return "Good evening, \(name)"
         }
     }
 
     // MARK: - Empty State
 
     private var emptyState: some View {
-        VStack(spacing: SonderSpacing.md) {
-            Image(systemName: "person.2")
-                .font(.system(size: 48))
-                .foregroundColor(SonderColors.inkLight)
+        VStack(spacing: SonderSpacing.lg) {
+            // Globe illustration with breathing animation
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [SonderColors.terracotta.opacity(0.15), SonderColors.ochre.opacity(0.1)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 160, height: 160)
+                .overlay {
+                    Image(systemName: "globe.europe.africa")
+                        .font(.system(size: 56))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [SonderColors.terracotta, SonderColors.ochre],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                .scaleEffect(emptyIconScale)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
+                        emptyIconScale = 1.08
+                    }
+                }
 
-            Text("No Posts Yet")
-                .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
+            VStack(spacing: SonderSpacing.xs) {
+                Text("Your feed is waiting")
+                    .font(SonderTypography.title)
+                    .foregroundColor(SonderColors.inkDark)
 
-            Text("Follow friends to see their logs here")
-                .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
-                .multilineTextAlignment(.center)
+                Text("Follow friends to see their discoveries, favorite spots, and travel stories")
+                    .font(SonderTypography.body)
+                    .foregroundColor(SonderColors.inkMuted)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, SonderSpacing.xl)
+            }
 
             Button {
                 showUserSearch = true
             } label: {
                 Text("Find Friends")
-                    .font(SonderTypography.headline)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, SonderSpacing.lg)
-                    .padding(.vertical, SonderSpacing.sm)
-                    .background(SonderColors.terracotta)
-                    .clipShape(Capsule())
             }
+            .buttonStyle(WarmButtonStyle())
             .padding(.top, SonderSpacing.sm)
         }
         .frame(maxWidth: .infinity)
@@ -117,8 +174,12 @@ struct FeedView: View {
     // MARK: - Feed Content
 
     private var feedContent: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             LazyVStack(spacing: SonderSpacing.md) {
+                greetingHeader
+                    .id("feedTop")
+
                 if !syncEngine.isOnline {
                     offlineBanner
                 }
@@ -127,7 +188,16 @@ struct FeedView: View {
                     newPostsBanner
                 }
 
-                ForEach(feedService.feedEntries) { entry in
+                if let recap = weeklyRecap {
+                    WeeklyRecapCard(
+                        spotCount: recap.spotCount,
+                        cityNames: recap.cityNames,
+                        ratingBreakdown: recap.ratingBreakdown
+                    )
+                    .feedCardEntrance(index: 0)
+                }
+
+                ForEach(Array(feedService.feedEntries.enumerated()), id: \.element.id) { index, entry in
                     switch entry {
                     case .trip(let tripItem):
                         TripFeedCard(
@@ -139,6 +209,7 @@ struct FeedView: View {
                                 selectedTripID = tripItem.id
                             }
                         )
+                        .feedCardEntrance(index: index)
                     case .log(let feedItem):
                         FeedItemCard(
                             feedItem: feedItem,
@@ -153,10 +224,12 @@ struct FeedView: View {
                                 toggleWantToGo(for: feedItem)
                             }
                         )
+                        .feedCardEntrance(index: index)
                     case .tripCreated(let item):
                         TripCreatedCard(item: item) {
                             selectedUserID = item.user.id
                         }
+                        .feedCardEntrance(index: index)
                     }
                 }
 
@@ -168,12 +241,50 @@ struct FeedView: View {
             }
             .padding(SonderSpacing.md)
         }
-        .background(SonderColors.cream)
+        .background(feedBackground)
         .refreshable {
             if let userID = authService.currentUser?.id {
                 await feedService.refreshFeed(for: userID)
             }
         }
+        .onChange(of: popToRoot) {
+            withAnimation {
+                proxy.scrollTo("feedTop", anchor: .top)
+            }
+        }
+        } // ScrollViewReader
+    }
+
+    // MARK: - Warm Journal Background
+
+    /// Warm parchment-like gradient background for the travel journal feel
+    private var feedBackground: some View {
+        ZStack {
+            SonderColors.cream
+
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: SonderColors.ochre.opacity(0.04), location: 0.4),
+                    .init(color: SonderColors.terracotta.opacity(0.03), location: 1.0)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            GeometryReader { geo in
+                RadialGradient(
+                    colors: [
+                        .clear,
+                        SonderColors.warmGray.opacity(0.3)
+                    ],
+                    center: .center,
+                    startRadius: geo.size.height * 0.3,
+                    endRadius: geo.size.height * 0.7
+                )
+            }
+        }
+        .ignoresSafeArea()
     }
 
     private var offlineBanner: some View {
@@ -214,13 +325,56 @@ struct FeedView: View {
         }
     }
 
+    // MARK: - Weekly Recap
+
+    private struct WeeklyRecapData {
+        let spotCount: Int
+        let cityNames: [String]
+        let ratingBreakdown: [(Rating, Int)]
+    }
+
+    private var weeklyRecap: WeeklyRecapData? {
+        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+
+        let thisWeekLogs = feedService.feedEntries.compactMap { entry -> FeedItem? in
+            if case .log(let item) = entry, item.createdAt >= sevenDaysAgo {
+                return item
+            }
+            return nil
+        }
+
+        guard !thisWeekLogs.isEmpty else { return nil }
+
+        let uniquePlaceIDs = Set(thisWeekLogs.map { $0.place.id })
+        let uniqueCities = Array(Set(thisWeekLogs.map { $0.place.cityName })).sorted()
+
+        // Rating breakdown (only include ratings with count > 0)
+        var ratingCounts: [Rating: Int] = [:]
+        for log in thisWeekLogs {
+            ratingCounts[log.rating, default: 0] += 1
+        }
+        let breakdown = Rating.allCases
+            .compactMap { rating -> (Rating, Int)? in
+                guard let count = ratingCounts[rating], count > 0 else { return nil }
+                return (rating, count)
+            }
+
+        return WeeklyRecapData(
+            spotCount: uniquePlaceIDs.count,
+            cityNames: uniqueCities,
+            ratingBreakdown: breakdown
+        )
+    }
+
     // MARK: - Data Loading
 
     private func loadInitialData() async {
         guard let userID = authService.currentUser?.id else { return }
-        await feedService.loadFeed(for: userID)
-        await wantToGoService.syncWantToGo(for: userID)
-        await feedService.subscribeToRealtimeUpdates(for: userID)
+        // Run all three in parallel — each independently fetches what it needs
+        async let feedTask: () = feedService.loadFeed(for: userID)
+        async let wantToGoTask: () = wantToGoService.syncWantToGo(for: userID)
+        async let realtimeTask: () = feedService.subscribeToRealtimeUpdates(for: userID)
+        _ = await (feedTask, wantToGoTask, realtimeTask)
     }
 
     // MARK: - Want to Go
@@ -253,6 +407,102 @@ struct FeedView: View {
     }
 }
 
+// MARK: - Weekly Recap Card
+
+struct WeeklyRecapCard: View {
+    let spotCount: Int
+    let cityNames: [String]
+    let ratingBreakdown: [(Rating, Int)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            // Header
+            HStack(spacing: SonderSpacing.xs) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("This week")
+                    .font(.system(size: 14, weight: .semibold, design: .serif))
+            }
+            .foregroundColor(SonderColors.terracotta)
+
+            // Stats line
+            let cityCount = cityNames.count
+            let statsText = cityCount > 0
+                ? "\(spotCount) \(spotCount == 1 ? "spot" : "spots") \u{00B7} \(cityCount) \(cityCount == 1 ? "city" : "cities")"
+                : "\(spotCount) \(spotCount == 1 ? "spot" : "spots")"
+            Text(statsText)
+                .font(.system(size: 20, weight: .bold, design: .serif))
+                .foregroundColor(SonderColors.inkDark)
+
+            // Rating emoji breakdown
+            if !ratingBreakdown.isEmpty {
+                HStack(spacing: SonderSpacing.sm) {
+                    ForEach(ratingBreakdown, id: \.0) { rating, count in
+                        HStack(spacing: 3) {
+                            Text(rating.emoji)
+                                .font(.system(size: 14))
+                            Text("\(count)")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(SonderColors.inkMuted)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(SonderSpacing.lg)
+        .background(
+            LinearGradient(
+                colors: [
+                    SonderColors.terracotta.opacity(0.08),
+                    SonderColors.ochre.opacity(0.06)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: SonderSpacing.radiusLg)
+                .stroke(SonderColors.terracotta.opacity(0.15), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+    }
+}
+
+// MARK: - Card Entrance Animation
+
+struct FeedCardEntranceModifier: ViewModifier {
+    let index: Int
+    @State private var hasAppeared = false
+
+    private static let hapticGenerator = UIImpactFeedbackGenerator(style: .soft)
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(hasAppeared ? 1 : 0)
+            .scaleEffect(hasAppeared ? 1 : 0.95)
+            .offset(y: hasAppeared ? 0 : 30)
+            .onAppear {
+                guard !hasAppeared else { return }
+                let delay = Double(min(index, 6)) * 0.08
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(delay)) {
+                    hasAppeared = true
+                }
+                if index < 8 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                        Self.hapticGenerator.impactOccurred()
+                    }
+                }
+            }
+    }
+}
+
+extension View {
+    func feedCardEntrance(index: Int) -> some View {
+        modifier(FeedCardEntranceModifier(index: index))
+    }
+}
+
 // MARK: - Trip Navigation Destination
 
 /// Fetches a Trip by ID from SwiftData and shows TripDetailView
@@ -275,181 +525,6 @@ struct FeedTripDestination: View {
             let id = tripID
             let descriptor = FetchDescriptor<Trip>(predicate: #Predicate { $0.id == id })
             trip = try? modelContext.fetch(descriptor).first
-        }
-    }
-}
-
-// MARK: - FeedLogDetailView
-
-/// Detail view for a feed item (read-only for others' logs)
-struct FeedLogDetailView: View {
-    let feedItem: FeedItem
-
-    @Environment(AuthenticationService.self) private var authService
-    @Environment(WantToGoService.self) private var wantToGoService
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                photoSection
-
-                VStack(alignment: .leading, spacing: SonderSpacing.lg) {
-                    placeSection
-                    sectionDivider
-                    ratingSection
-
-                    if let note = feedItem.log.note, !note.isEmpty {
-                        sectionDivider
-                        noteSection(note)
-                    }
-
-                    if !feedItem.log.tags.isEmpty {
-                        sectionDivider
-                        tagsSection
-                    }
-
-                    sectionDivider
-                    metaSection
-                }
-                .padding(SonderSpacing.lg)
-            }
-        }
-        .background(SonderColors.cream)
-        .scrollContentBackground(.hidden)
-        .navigationTitle(feedItem.place.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                WantToGoButton(
-                    placeID: feedItem.place.id,
-                    sourceLogID: feedItem.log.id
-                )
-            }
-        }
-    }
-
-    private var sectionDivider: some View {
-        Rectangle()
-            .fill(SonderColors.warmGray)
-            .frame(height: 1)
-    }
-
-    private var photoSection: some View {
-        Group {
-            if let urlString = feedItem.log.photoURL,
-               let url = URL(string: urlString) {
-                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 250)) {
-                    placePhoto
-                }
-            } else {
-                placePhoto
-            }
-        }
-        .frame(height: 250)
-        .frame(maxWidth: .infinity)
-        .clipped()
-    }
-
-    @ViewBuilder
-    private var placePhoto: some View {
-        if let photoRef = feedItem.place.photoReference,
-           let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 800) {
-            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 250)) {
-                photoPlaceholder
-            }
-        } else {
-            photoPlaceholder
-        }
-    }
-
-    private var photoPlaceholder: some View {
-        Rectangle()
-            .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay {
-                Image(systemName: "photo")
-                    .font(.largeTitle)
-                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
-            }
-    }
-
-    private var placeSection: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-            HStack(spacing: SonderSpacing.xs) {
-                Image(systemName: "mappin")
-                    .font(.system(size: 12))
-                    .foregroundColor(SonderColors.inkMuted)
-                Text(feedItem.place.address)
-                    .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
-            }
-        }
-    }
-
-    private var ratingSection: some View {
-        HStack {
-            Text("Rating")
-                .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
-            Spacer()
-            HStack(spacing: SonderSpacing.xs) {
-                Text(feedItem.rating.emoji)
-                    .font(.title2)
-                Text(feedItem.rating.displayName)
-                    .font(SonderTypography.body)
-                    .foregroundColor(SonderColors.inkMuted)
-            }
-        }
-    }
-
-    private func noteSection(_ note: String) -> some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-            Text("Note")
-                .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
-            Text(note)
-                .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
-        }
-    }
-
-    private var tagsSection: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-            Text("Tags")
-                .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
-            FlowLayoutTags(tags: feedItem.log.tags)
-        }
-    }
-
-    private var metaSection: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-            HStack {
-                Text("Logged by")
-                    .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
-                Spacer()
-                NavigationLink(destination: OtherUserProfileView(userID: feedItem.user.id)) {
-                    Text("@\(feedItem.user.username)")
-                        .font(SonderTypography.body)
-                        .foregroundColor(SonderColors.terracotta)
-                }
-            }
-
-            HStack {
-                Text("Date")
-                    .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
-                Spacer()
-                Text(feedItem.createdAt.formatted(date: .long, time: .omitted))
-                    .font(SonderTypography.body)
-                    .foregroundColor(SonderColors.inkDark)
-            }
         }
     }
 }

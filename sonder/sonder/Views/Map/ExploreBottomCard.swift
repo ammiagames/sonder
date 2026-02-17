@@ -57,7 +57,7 @@ struct ExploreBottomCard: View {
 
                     Spacer()
 
-                    WantToGoButton(placeID: place.id)
+                    WantToGoButton(placeID: place.id, placeName: place.name, placeAddress: place.address, photoReference: place.photoReference)
                 }
 
                 // Mini-feed of friends' reviews

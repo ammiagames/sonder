@@ -26,6 +26,7 @@ struct LogDetailView: View {
     @State private var note: String
     @State private var tags: [String]
     @State private var selectedTripID: String?
+    @State private var visitedAt: Date
     @State private var selectedImages: [UIImage] = []
     @State private var currentPhotoURLs: [String]
 
@@ -47,6 +48,7 @@ struct LogDetailView: View {
     @State private var showNewTripAlert = false
     @State private var newTripName = ""
     @State private var showAllTrips = false
+    @State private var showShareLog = false
 
     private let maxNoteLength = 280
 
@@ -59,7 +61,9 @@ struct LogDetailView: View {
         }
         let latestLogByTrip: [String: Date] = allLogs.reduce(into: [:]) { map, log in
             guard let tripID = log.tripID else { return }
-            if map[tripID] == nil || log.createdAt > map[tripID]! {
+            if let existing = map[tripID] {
+                if log.createdAt > existing { map[tripID] = log.createdAt }
+            } else {
                 map[tripID] = log.createdAt
             }
         }
@@ -81,6 +85,11 @@ struct LogDetailView: View {
         return result
     }
 
+    /// Snapshot of all editable fields for consolidated change detection.
+    private var editableFieldsSnapshot: [String] {
+        [rating.rawValue, note, tags.joined(separator: "\0"), selectedTripID ?? "", visitedAt.description]
+    }
+
     private var selectedTripBinding: Binding<Trip?> {
         Binding(
             get: { allTrips.first(where: { $0.id == selectedTripID }) },
@@ -96,6 +105,7 @@ struct LogDetailView: View {
         _note = State(initialValue: log.note ?? "")
         _tags = State(initialValue: log.tags)
         _selectedTripID = State(initialValue: log.tripID)
+        _visitedAt = State(initialValue: log.visitedAt)
         _currentPhotoURLs = State(initialValue: log.userPhotoURLs)
     }
 
@@ -141,6 +151,7 @@ struct LogDetailView: View {
                     deleteSection
                 }
                 .padding(SonderSpacing.lg)
+                .padding(.bottom, 80)
             }
         }
         .background(SonderColors.cream)
@@ -160,6 +171,18 @@ struct LogDetailView: View {
                                 .fontWeight(.semibold)
                                 .imageScale(.medium)
                         }
+                    }
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                if !hasChanges {
+                    Button {
+                        showShareLog = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(SonderColors.inkMuted)
+                            .toolbarIcon()
                     }
                 }
             }
@@ -219,10 +242,7 @@ struct LogDetailView: View {
             }
             .ignoresSafeArea()
         }
-        .onChange(of: rating) { _, _ in hasChanges = true }
-        .onChange(of: note) { _, _ in hasChanges = true }
-        .onChange(of: tags) { _, _ in hasChanges = true }
-        .onChange(of: selectedTripID) { _, _ in hasChanges = true }
+        .onChange(of: editableFieldsSnapshot) { _, _ in hasChanges = true }
         .onChange(of: log.isDeleted ? [] as [String] : log.photoURLs) { _, newURLs in
             // Guard against accessing a deleted/detached model (delete dismisses
             // the view but onChange can still fire during the navigation pop).
@@ -273,6 +293,9 @@ struct LogDetailView: View {
                 selectedTrip: selectedTripBinding,
                 isPresented: $showAllTrips
             )
+        }
+        .sheet(isPresented: $showShareLog) {
+            ShareLogView(log: log, place: place)
         }
         .alert("New Trip", isPresented: $showNewTripAlert) {
             TextField("Trip name", text: $newTripName)
@@ -585,38 +608,41 @@ struct LogDetailView: View {
     private func tripChip(_ trip: Trip) -> some View {
         let isSelected = selectedTripID == trip.id
 
-        return HStack(spacing: 4) {
-            Image(systemName: "suitcase.fill")
-                .font(.system(size: 10))
-            Text(trip.name)
-                .font(SonderTypography.caption)
-                .fontWeight(.medium)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, SonderSpacing.sm)
-        .padding(.vertical, SonderSpacing.xs)
-        .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
-        .foregroundColor(isSelected ? .white : SonderColors.inkDark)
-        .clipShape(Capsule())
-        .onTapGesture {
+        return Button {
             withAnimation(.easeInOut(duration: 0.15)) {
                 selectedTripID = isSelected ? nil : trip.id
             }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "suitcase.fill")
+                    .font(.system(size: 10))
+                Text(trip.name)
+                    .font(SonderTypography.caption)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, SonderSpacing.sm)
+            .padding(.vertical, SonderSpacing.xs)
+            .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
+            .foregroundColor(isSelected ? .white : SonderColors.inkDark)
+            .clipShape(Capsule())
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Meta Section
 
     private var metaSection: some View {
         HStack {
-            Text("Logged")
-                .font(SonderTypography.caption)
+            Image(systemName: "clock")
+                .font(.system(size: 14))
                 .foregroundColor(SonderColors.inkMuted)
-            Spacer()
-            Text(log.createdAt.formatted(date: .long, time: .shortened))
-                .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkDark)
+
+            DatePicker("", selection: $visitedAt)
+                .datePickerStyle(.compact)
+                .labelsHidden()
+                .tint(SonderColors.terracotta)
         }
     }
 
@@ -704,6 +730,7 @@ struct LogDetailView: View {
         log.note = note.isEmpty ? nil : note
         log.tags = tags
         log.tripID = selectedTripID
+        log.visitedAt = visitedAt
         log.updatedAt = Date()
         log.syncStatus = .pending
 

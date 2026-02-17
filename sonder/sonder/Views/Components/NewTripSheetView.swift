@@ -74,6 +74,10 @@ struct NewTripSheetView: View {
             }
             .padding(SonderSpacing.md)
             .background(SonderColors.cream)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
             .navigationTitle("New Trip")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

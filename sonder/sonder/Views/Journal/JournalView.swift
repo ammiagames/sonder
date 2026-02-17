@@ -155,9 +155,6 @@ struct JournalView: View {
     }
 
     var body: some View {
-        // Observe sync state so @Query re-evaluates after pull sync
-        let _ = syncEngine.lastSyncDate
-
         NavigationStack {
             Group {
                 if userLogs.isEmpty {
@@ -184,6 +181,7 @@ struct JournalView: View {
                     } label: {
                         Image(systemName: viewMode.icon)
                             .foregroundColor(SonderColors.inkMuted)
+                            .toolbarIcon()
                     }
                 }
 
@@ -204,6 +202,7 @@ struct JournalView: View {
                                         .offset(x: 2, y: -2)
                                 }
                             }
+                            .toolbarIcon()
                         }
                     }
                 }
@@ -417,6 +416,7 @@ struct JournalView: View {
             }
         }
         .listStyle(.plain)
+        .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
     }
 
@@ -459,6 +459,7 @@ struct JournalView: View {
             }
             .padding(.top, SonderSpacing.sm)
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Context Menu
@@ -613,7 +614,7 @@ struct JournalView: View {
         let activityVC = UIActivityViewController(activityItems: [text], applicationActivities: nil)
 
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
+           let rootVC = windowScene.keyWindow?.rootViewController {
             rootVC.present(activityVC, animated: true)
         }
     }

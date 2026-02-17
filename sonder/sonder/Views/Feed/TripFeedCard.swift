@@ -14,19 +14,21 @@ struct TripFeedCard: View {
     let onTripTap: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            userHeader
-            heroImage
-            if tripItem.logs.count > 1 {
-                thumbnailGrid
+        Button(action: onTripTap) {
+            VStack(alignment: .leading, spacing: 0) {
+                userHeader
+                heroImage
+                if tripItem.logs.count > 1 {
+                    thumbnailGrid
+                }
+                contentSection
+                footerSection
             }
-            contentSection
-            footerSection
+            .background(SonderColors.warmGray)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+            .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
         }
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
-        .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
-        .onTapGesture(perform: onTripTap)
+        .buttonStyle(.plain)
     }
 
     // MARK: - User Header
@@ -168,14 +170,8 @@ struct TripFeedCard: View {
 
     @ViewBuilder
     private func thumbnailPlaceholder(for log: FeedTripItem.LogSummary) -> some View {
-        if let ref = log.placePhotoReference,
-           let url = GooglePlacesService.photoURL(for: ref, maxWidth: 200) {
-            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 100, height: 72)) {
-                smallGradientPlaceholder
-            }
-        } else {
-            smallGradientPlaceholder
-        }
+        // Skip the Google Places API fallback for thumbnails to reduce network requests
+        smallGradientPlaceholder
     }
 
     private var smallGradientPlaceholder: some View {

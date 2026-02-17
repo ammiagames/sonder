@@ -20,6 +20,8 @@ final class Trip {
     var createdBy: String
     var createdAt: Date
     var updatedAt: Date
+    /// Local-only dirty flag for sync optimization. Excluded from CodingKeys so Supabase ignores it.
+    var syncStatus: SyncStatus = SyncStatus.synced
 
     init(
         id: String = UUID().uuidString.lowercased(),
@@ -31,7 +33,8 @@ final class Trip {
         collaboratorIDs: [String] = [],
         createdBy: String,
         createdAt: Date = Date(),
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        syncStatus: SyncStatus = .pending
     ) {
         self.id = id
         self.name = name
@@ -43,6 +46,7 @@ final class Trip {
         self.createdBy = createdBy
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.syncStatus = syncStatus
     }
 }
 

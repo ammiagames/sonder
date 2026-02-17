@@ -9,20 +9,24 @@ enum TestData {
     static func user(
         id: String = "user-1",
         username: String = "testuser",
+        firstName: String? = nil,
         email: String? = "test@example.com",
         avatarURL: String? = nil,
         bio: String? = nil,
         isPublic: Bool = true,
+        pinnedPlaceIDs: [String] = [],
         createdAt: Date = fixedDate(),
         updatedAt: Date = fixedDate()
     ) -> User {
         User(
             id: id,
             username: username,
+            firstName: firstName,
             email: email,
             avatarURL: avatarURL,
             bio: bio,
             isPublic: isPublic,
+            pinnedPlaceIDs: pinnedPlaceIDs,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
@@ -63,6 +67,8 @@ enum TestData {
         note: String? = nil,
         tags: [String] = [],
         tripID: String? = nil,
+        tripSortOrder: Int? = nil,
+        visitedAt: Date = fixedDate(),
         syncStatus: SyncStatus = .pending,
         createdAt: Date = fixedDate(),
         updatedAt: Date = fixedDate()
@@ -76,6 +82,8 @@ enum TestData {
             note: note,
             tags: tags,
             tripID: tripID,
+            tripSortOrder: tripSortOrder,
+            visitedAt: visitedAt,
             syncStatus: syncStatus,
             createdAt: createdAt,
             updatedAt: updatedAt
@@ -106,7 +114,8 @@ enum TestData {
             collaboratorIDs: collaboratorIDs,
             createdBy: createdBy,
             createdAt: createdAt,
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            syncStatus: .synced
         )
     }
 
@@ -238,7 +247,8 @@ enum TestData {
         address: String = "123 Test St",
         latitude: Double = 40.7128,
         longitude: Double = -74.0060,
-        photoReference: String? = nil
+        photoReference: String? = nil,
+        types: [String] = []
     ) -> FeedItem.FeedPlace {
         FeedItem.FeedPlace(
             id: id,
@@ -246,7 +256,8 @@ enum TestData {
             address: address,
             latitude: latitude,
             longitude: longitude,
-            photoReference: photoReference
+            photoReference: photoReference,
+            types: types
         )
     }
 

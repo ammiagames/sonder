@@ -57,6 +57,17 @@ struct FeedItem: Identifiable, Codable {
         let latitude: Double
         let longitude: Double
         let photoReference: String?
+        let types: [String]
+
+        init(id: String, name: String, address: String, latitude: Double, longitude: Double, photoReference: String?, types: [String] = []) {
+            self.id = id
+            self.name = name
+            self.address = address
+            self.latitude = latitude
+            self.longitude = longitude
+            self.photoReference = photoReference
+            self.types = types
+        }
 
         enum CodingKeys: String, CodingKey {
             case id
@@ -65,6 +76,34 @@ struct FeedItem: Identifiable, Codable {
             case latitude = "lat"
             case longitude = "lng"
             case photoReference = "photo_reference"
+            case types
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            name = try container.decode(String.self, forKey: .name)
+            address = try container.decode(String.self, forKey: .address)
+            latitude = try container.decode(Double.self, forKey: .latitude)
+            longitude = try container.decode(Double.self, forKey: .longitude)
+            photoReference = try container.decodeIfPresent(String.self, forKey: .photoReference)
+            types = (try? container.decode([String].self, forKey: .types)) ?? []
+        }
+
+        /// Maps place types to a CategoryFilter using the existing placeTypes sets
+        var primaryCategory: ExploreMapFilter.CategoryFilter? {
+            let typeSet = Set(types)
+            for category in ExploreMapFilter.CategoryFilter.allCases {
+                if !typeSet.isDisjoint(with: category.placeTypes) {
+                    return category
+                }
+            }
+            return nil
+        }
+
+        /// SF Symbol icon for the primary category
+        var categoryIcon: String {
+            primaryCategory?.icon ?? "mappin"
         }
     }
 }

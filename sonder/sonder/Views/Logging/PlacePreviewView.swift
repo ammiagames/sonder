@@ -6,11 +6,13 @@
 //
 
 import SwiftUI
+import UIKit
 import CoreLocation
 
 /// Preview screen showing place details before logging
 struct PlacePreviewView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(GooglePlacesService.self) private var placesService
     @Environment(LocationService.self) private var locationService
     @Environment(AuthenticationService.self) private var authService
     @Environment(WantToGoService.self) private var wantToGoService
@@ -20,6 +22,9 @@ struct PlacePreviewView: View {
 
     @State private var isBookmarked = false
     @State private var isTogglingBookmark = false
+    @State private var heroImage: UIImage?
+    @State private var photoLoadFailed = false
+    @State private var shimmerPhase: CGFloat = -1
 
     var body: some View {
         ScrollView {
@@ -75,6 +80,9 @@ struct PlacePreviewView: View {
         .onAppear {
             checkBookmarkStatus()
         }
+        .task {
+            await loadHeroPhoto()
+        }
     }
 
     private func checkBookmarkStatus() {
@@ -110,38 +118,88 @@ struct PlacePreviewView: View {
 
     // MARK: - Hero Photo
 
+    @ViewBuilder
     private var heroPhoto: some View {
-        Group {
-            if let photoRef = details.photoReference,
-               let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 800) {
-                Color.clear.overlay {
-                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 250)) {
-                        photoPlaceholder
+        if !photoLoadFailed {
+            Color.clear
+                .frame(height: 250)
+                .overlay {
+                    ZStack {
+                        // Shimmer placeholder (visible until image loads)
+                        if heroImage == nil {
+                            Rectangle()
+                                .fill(SonderColors.warmGray)
+                                .overlay { shimmerOverlay }
+                                .transition(.opacity)
+                        }
+
+                        // Loaded image — placed in overlay so .fill doesn't widen the layout
+                        if let heroImage {
+                            Image(uiImage: heroImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .transition(.opacity)
+                        }
                     }
                 }
                 .clipped()
-            } else {
-                photoPlaceholder
-            }
+                .animation(.easeInOut(duration: 0.3), value: heroImage != nil)
         }
-        .frame(height: 250)
-        .frame(maxWidth: .infinity)
     }
 
-    private var photoPlaceholder: some View {
-        Rectangle()
-            .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+    private var shimmerOverlay: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: Color.white.opacity(0.25), location: 0.4),
+                    .init(color: Color.white.opacity(0.35), location: 0.5),
+                    .init(color: Color.white.opacity(0.25), location: 0.6),
+                    .init(color: .clear, location: 1),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
             )
-            .overlay {
-                Image(systemName: "photo")
-                    .font(.system(size: 48))
-                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
+            .frame(width: width * 1.5)
+            .offset(x: shimmerPhase * width * 1.5)
+            .onAppear {
+                withAnimation(
+                    .easeInOut(duration: 1.2)
+                    .repeatForever(autoreverses: false)
+                ) {
+                    shimmerPhase = 1
+                }
             }
+        }
+        .clipped()
+    }
+
+    private func loadHeroPhoto() async {
+        // Try REST URL first if we have a photo reference (fast, uses cache)
+        if let photoRef = details.photoReference,
+           let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 800) {
+            let image = await ImageDownsampler.downloadImage(from: url, targetSize: CGSize(width: 400, height: 250))
+            if let image {
+                heroImage = image
+                return
+            }
+        }
+
+        // Fallback: load photo directly via SDK
+        let image = await placesService.loadPlacePhoto(
+            placeId: details.placeId,
+            maxSize: CGSize(width: 800, height: 600)
+        )
+
+        if let image {
+            heroImage = image
+        } else {
+            // No photo available — smoothly collapse the placeholder
+            withAnimation(.easeInOut(duration: 0.3)) {
+                photoLoadFailed = true
+            }
+        }
     }
 
     // MARK: - Name Section

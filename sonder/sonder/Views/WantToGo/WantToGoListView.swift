@@ -86,6 +86,9 @@ struct WantToGoListView: View {
         .task {
             await loadItems()
         }
+        .onChange(of: wantToGoService.items.count) { _, _ in
+            refreshItemsFromLocal()
+        }
     }
 
     // MARK: - Grouping Picker
@@ -238,13 +241,14 @@ struct WantToGoListView: View {
     // MARK: - Item Row
 
     private func itemRow(_ item: WantToGoWithPlace) -> some View {
-        WantToGoRow(item: item) {
-            removeItem(item)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
+        Button {
             selectPlace(item)
+        } label: {
+            WantToGoRow(item: item) {
+                removeItem(item)
+            }
         }
+        .buttonStyle(.plain)
         .listRowBackground(SonderColors.cream)
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) {
@@ -317,6 +321,34 @@ struct WantToGoListView: View {
             print("Error loading want to go: \(error)")
         }
         isLoading = false
+    }
+
+    /// Rebuild the list from local SwiftData when the service's items change
+    /// (e.g. bookmark added/removed from another tab). Preserves existing
+    /// source-user info for items already loaded from Supabase.
+    private func refreshItemsFromLocal() {
+        guard let userID = authService.currentUser?.id else { return }
+        let localItems = wantToGoService.getWantToGoList(for: userID)
+        let existingByPlaceID = Dictionary(uniqueKeysWithValues: items.map { ($0.place.id, $0) })
+
+        withAnimation(.easeOut(duration: 0.25)) {
+            items = localItems.map { wtg in
+                if let existing = existingByPlaceID[wtg.placeID] {
+                    return existing
+                }
+                return WantToGoWithPlace(
+                    wantToGo: wtg,
+                    place: FeedItem.FeedPlace(
+                        id: wtg.placeID,
+                        name: wtg.placeName ?? "Unknown Place",
+                        address: wtg.placeAddress ?? "",
+                        latitude: 0,
+                        longitude: 0,
+                        photoReference: wtg.photoReference
+                    )
+                )
+            }
+        }
     }
 
     private func removeItem(_ item: WantToGoWithPlace) {

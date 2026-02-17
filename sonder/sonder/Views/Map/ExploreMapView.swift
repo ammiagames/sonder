@@ -52,6 +52,10 @@ struct ExploreMapView: View {
     @State private var pinDropSettled = true
     @State private var showPulseRings = false
     @State private var pinDropToast: PinDropToastInfo?
+    @State private var cardIsExpanded = false
+    @State private var sheetPin: UnifiedMapPin?
+    @State private var sheetDetent: PresentationDetent = UnifiedBottomCard.compactDetent
+    @State private var pendingSheetPin: UnifiedMapPin?
 
     // Memoized pin data — recomputed only when inputs change
     @State private var cachedUnifiedPins: [UnifiedMapPin] = []
@@ -127,6 +131,50 @@ struct ExploreMapView: View {
                     }
                 }
         }
+        .overlay(alignment: .bottom) {
+            wantToGoBottomContent
+                .animation(.easeOut(duration: 0.2), value: mapSelection != nil)
+        }
+        .sheet(item: $sheetPin, onDismiss: handleUnifiedSheetDismiss) { pin in
+            UnifiedBottomCard(
+                pin: pin,
+                onDismiss: { clearSelection() },
+                onNavigateToLog: { logID, place in
+                    detailLogID = logID
+                    detailPlace = place
+                    sheetPin = nil
+                    mapSelection = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        showDetail = true
+                    }
+                },
+                onNavigateToFeedItem: { feedItem in
+                    sheetPin = nil
+                    mapSelection = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        selectedFeedItem = feedItem
+                    }
+                },
+                onFocusFriend: { friendID, _ in
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        filter.selectedFriendIDs = [friendID]
+                        filter.showFriendsPlaces = true
+                        sheetPin = nil
+                        clearSelection()
+                    }
+                },
+                onExpandedChanged: { expanded in
+                    cardIsExpanded = expanded
+                    recenterForCardState(coordinate: pin.coordinate, expanded: expanded)
+                }
+            )
+            .id(pin.id)
+            .presentationDetents([UnifiedBottomCard.compactDetent, UnifiedBottomCard.expandedDetent], selection: $sheetDetent)
+            .presentationBackgroundInteraction(.enabled(upThrough: UnifiedBottomCard.compactDetent))
+            .presentationBackground(SonderColors.cream)
+            .presentationCornerRadius(SonderSpacing.radiusLg)
+            .presentationDragIndicator(.visible)
+        }
     }
 
     // MARK: - Core Map View (split to help type-checker)
@@ -162,6 +210,23 @@ struct ExploreMapView: View {
             }
             .onChange(of: mapSelection) { _, newTag in
                 hasSelection?.wrappedValue = newTag != nil
+                // Manage unified sheet presentation
+                if case .unified(let id) = newTag,
+                   let pin = filteredPins.first(where: { $0.id == id }) {
+                    if sheetPin != nil {
+                        // Queue new pin and dismiss fast — onDismiss will re-present
+                        pendingSheetPin = pin
+                        withAnimation(.easeIn(duration: 0.08)) { sheetPin = nil }
+                    } else {
+                        sheetDetent = UnifiedBottomCard.compactDetent
+                        sheetPin = pin
+                    }
+                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                } else {
+                    // Not a unified pin — dismiss if showing
+                    sheetPin = nil
+                }
+                // Zoom to selected pin
                 guard let newTag else { return }
                 let coordinate: CLLocationCoordinate2D?
                 switch newTag {
@@ -177,6 +242,9 @@ struct ExploreMapView: View {
             .onChange(of: allLogs.count) { _, _ in
                 scheduleRecomputePins()
                 if !selectionIsValid { clearSelection() }
+            }
+            .onChange(of: personalLogPhotoFingerprint) { _, _ in
+                scheduleRecomputePins()
             }
             .onChange(of: places.count) { _, _ in scheduleRecomputePins() }
             .onChange(of: exploreMapService.hasLoaded) { _, _ in scheduleRecomputePins() }
@@ -195,10 +263,6 @@ struct ExploreMapView: View {
                 ToolbarItem(placement: .topBarTrailing) { mapStyleMenu }
             }
             .overlay(alignment: .top) { topOverlay }
-            .overlay(alignment: .bottom) {
-                bottomContent
-                    .animation(.easeOut(duration: 0.15), value: mapSelection)
-            }
             .overlay(alignment: .top) {
                 if let toast = pinDropToast {
                     PinDropToastView(info: toast)
@@ -240,6 +304,7 @@ struct ExploreMapView: View {
                         .offset(x: 6, y: -6)
                 }
             }
+            .toolbarIcon()
         }
     }
 
@@ -419,45 +484,52 @@ struct ExploreMapView: View {
     // MARK: - Bottom Content
 
     @ViewBuilder
-    private var bottomContent: some View {
-        if let tag = mapSelection {
-            switch tag {
-            case .unified(let id):
-                if let pin = filteredPins.first(where: { $0.id == id }) {
-                    UnifiedBottomCard(
-                        pin: pin,
-                        onDismiss: { clearSelection() },
-                        onNavigateToLog: { logID, place in
-                            detailLogID = logID
-                            detailPlace = place
-                            showDetail = true
-                        },
-                        onNavigateToFeedItem: { feedItem in
-                            selectedFeedItem = feedItem
-                        },
-                        onFocusFriend: { friendID, _ in
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                filter.selectedFriendIDs = [friendID]
-                                filter.showFriendsPlaces = true
-                                clearSelection()
-                            }
-                        }
-                    )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            case .wantToGo(let id):
-                if let item = standaloneWantToGoItems.first(where: { $0.id == id }) {
-                    WantToGoBottomCard(item: item, onDismiss: { clearSelection() }) {
-                        fetchPlaceDetails(placeID: item.placeID)
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
+    private var wantToGoBottomContent: some View {
+        if case .wantToGo(let id) = mapSelection,
+           let item = standaloneWantToGoItems.first(where: { $0.id == id }) {
+            WantToGoSheetContent(item: item) {
+                fetchPlaceDetails(placeID: item.placeID)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    private func handleUnifiedSheetDismiss() {
+        if let pending = pendingSheetPin {
+            // Pin swap — re-present at compact immediately
+            pendingSheetPin = nil
+            sheetDetent = UnifiedBottomCard.compactDetent
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            sheetPin = pending
+        } else {
+            // User dismissed — clear everything
+            UISelectionFeedbackGenerator().selectionChanged()
+            if mapSelection != nil {
+                clearSelection()
             }
         }
     }
 
     private func clearSelection() {
+        // Recenter camera on the pin before dismissing
+        if let tag = mapSelection {
+            let coordinate: CLLocationCoordinate2D?
+            switch tag {
+            case .unified(let id):
+                coordinate = filteredPins.first(where: { $0.id == id })?.coordinate
+            case .wantToGo(let id):
+                coordinate = standaloneWantToGoItems.first(where: { $0.id == id })?.coordinate
+            }
+            if let coordinate {
+                let currentSpan = visibleRegion?.span ?? cameraPosition.region?.span
+                    ?? MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                withAnimation(.smooth(duration: 0.4)) {
+                    cameraPosition = .region(MKCoordinateRegion(center: coordinate, span: currentSpan))
+                }
+            }
+        }
         withAnimation(.easeInOut(duration: 0.2)) { mapSelection = nil }
+        cardIsExpanded = false
     }
 
     /// Returns true when the currently-selected pin still exists in the data.
@@ -489,6 +561,7 @@ struct ExploreMapView: View {
             }
         } label: {
             Image(systemName: "ellipsis.circle")
+                .toolbarIcon()
         }
     }
 
@@ -509,6 +582,12 @@ struct ExploreMapView: View {
     private var personalLogs: [Log] {
         guard let userID = authService.currentUser?.id else { return [] }
         return allLogs.filter { $0.userID == userID }
+    }
+
+    /// Changes when a personal log's photo becomes available (e.g. background upload completes).
+    /// Triggers pin recomputation so the map icon updates from emoji to photo.
+    private var personalLogPhotoFingerprint: Int {
+        personalLogs.reduce(0) { $0 + ($1.photoURL != nil ? 1 : 0) }
     }
 
     /// Place IDs in the user's Want to Go list.
@@ -764,33 +843,48 @@ struct ExploreMapView: View {
         }
     }
 
-    /// Pans/zooms the camera so a selected pin sits in the visible area above the bottom card.
+    /// Pans/zooms the camera so a selected pin is centered on screen.
+    /// The compact sheet (90pt) is small enough that no offset is needed.
     private func zoomToSelected(coordinate: CLLocationCoordinate2D) {
         let currentSpan = visibleRegion?.span ?? cameraPosition.region?.span
 
-        // Determine the target span based on current zoom level
         let targetSpan: MKCoordinateSpan
 
         if let span = currentSpan, span.latitudeDelta > 0.15 {
-            // Far out (city-level+) → zoom in to neighborhood
             let meters = 3000.0 / 111_000.0
             targetSpan = MKCoordinateSpan(latitudeDelta: meters, longitudeDelta: meters)
         } else {
-            // Already at a reasonable zoom → keep current zoom, just pan
             targetSpan = currentSpan ?? MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
         }
 
-        let latOffset = targetSpan.latitudeDelta * 0.18
-        let offsetCenter = CLLocationCoordinate2D(
-            latitude: coordinate.latitude - latOffset,
-            longitude: coordinate.longitude
-        )
-
         withAnimation(.smooth(duration: 0.5)) {
             cameraPosition = .region(MKCoordinateRegion(
-                center: offsetCenter,
+                center: coordinate,
                 span: targetSpan
             ))
+        }
+    }
+
+    /// Recenter pin when the sheet detent changes.
+    /// Expanded sheet covers ~half the screen — offset pin upward so it stays visible.
+    /// Compact sheet — center pin on screen, no offset needed.
+    private func recenterForCardState(coordinate: CLLocationCoordinate2D, expanded: Bool) {
+        let currentSpan = visibleRegion?.span ?? cameraPosition.region?.span
+            ?? MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+
+        if expanded {
+            let latOffset = currentSpan.latitudeDelta * 0.25
+            let offsetCenter = CLLocationCoordinate2D(
+                latitude: coordinate.latitude - latOffset,
+                longitude: coordinate.longitude
+            )
+            withAnimation(.smooth(duration: 0.4)) {
+                cameraPosition = .region(MKCoordinateRegion(center: offsetCenter, span: currentSpan))
+            }
+        } else {
+            withAnimation(.smooth(duration: 0.4)) {
+                cameraPosition = .region(MKCoordinateRegion(center: coordinate, span: currentSpan))
+            }
         }
     }
 
@@ -929,27 +1023,21 @@ struct WantToGoMapItem: Identifiable {
     let coordinate: CLLocationCoordinate2D
 }
 
-// MARK: - Want to Go Bottom Card
+// MARK: - Want to Go Sheet Content
 
-/// Bottom card for a tapped Want to Go pin — shows place preview with unbookmark option.
-struct WantToGoBottomCard: View {
+/// Bottom card for a tapped Want to Go pin.
+struct WantToGoSheetContent: View {
     let item: WantToGoMapItem
-    let onDismiss: () -> Void
     let onTap: () -> Void
-
-    @State private var dragOffset: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
-            // Drag indicator
             Capsule()
                 .fill(SonderColors.inkLight.opacity(0.4))
                 .frame(width: 36, height: 4)
-                .padding(.top, SonderSpacing.sm)
-                .padding(.bottom, SonderSpacing.xs)
+                .padding(.vertical, 6)
 
             HStack(spacing: SonderSpacing.sm) {
-                // Place photo
                 PlacePhotoView(photoReference: item.photoReference, size: 56, cornerRadius: SonderSpacing.radiusSm)
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -965,7 +1053,6 @@ struct WantToGoBottomCard: View {
                             .lineLimit(1)
                     }
 
-                    // "On your list" label
                     HStack(spacing: 4) {
                         Image(systemName: "bookmark.fill")
                             .font(.system(size: 11))
@@ -978,39 +1065,21 @@ struct WantToGoBottomCard: View {
 
                 Spacer()
 
-                // Remove bookmark button
-                WantToGoButton(placeID: item.placeID)
+                WantToGoButton(placeID: item.placeID, placeName: item.placeName, placeAddress: item.placeAddress, photoReference: item.photoReference)
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(SonderColors.inkLight)
             }
             .contentShape(Rectangle())
-            .onTapGesture {
-                onTap()
-            }
+            .onTapGesture { onTap() }
             .padding(.horizontal, SonderSpacing.md)
             .padding(.bottom, SonderSpacing.md)
         }
-        .background(SonderColors.cream.opacity(0.95))
+        .background(SonderColors.cream)
         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
         .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
         .padding(.horizontal, SonderSpacing.md)
-        .padding(.bottom, SonderSpacing.md)
-        .offset(y: max(0, dragOffset))
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    dragOffset = value.translation.height
-                }
-                .onEnded { value in
-                    if value.translation.height > 80 || value.predictedEndTranslation.height > 150 {
-                        onDismiss()
-                    }
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        dragOffset = 0
-                    }
-                }
-        )
+        .padding(.bottom, SonderSpacing.sm)
     }
 }

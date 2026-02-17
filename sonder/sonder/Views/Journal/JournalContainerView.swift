@@ -8,6 +8,46 @@
 import SwiftUI
 import SwiftData
 
+// MARK: - Journal Display Style
+
+enum JournalDisplayStyle: String, CaseIterable {
+    case polaroid = "Polaroid"
+    case boardingPass = "Boarding Pass"
+    case masonry = "Grid"
+
+    var icon: String {
+        switch self {
+        case .polaroid: return "photo.on.rectangle"
+        case .boardingPass: return "airplane.departure"
+        case .masonry: return "square.grid.2x2"
+        }
+    }
+}
+
+// MARK: - Polaroid Background Style
+
+enum PolaroidBackgroundStyle: String, CaseIterable {
+    case tripPhotos = "Trip Photos"
+    case starryNight = "Starry Night"
+    case neonCity = "Neon City"
+    case clothesline = "Clothesline"
+    case underwater = "Underwater"
+    case confetti = "Confetti"
+    case botanical = "Botanical"
+
+    var icon: String {
+        switch self {
+        case .tripPhotos: return "photo.fill"
+        case .starryNight: return "moon.stars"
+        case .neonCity: return "building.2"
+        case .clothesline: return "sun.horizon"
+        case .underwater: return "water.waves"
+        case .confetti: return "party.popper"
+        case .botanical: return "leaf"
+        }
+    }
+}
+
 /// Main journal view showing trips in a masonry grid.
 struct JournalContainerView: View {
     @Environment(AuthenticationService.self) private var authService
@@ -17,6 +57,8 @@ struct JournalContainerView: View {
     @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
     @Query private var places: [Place]
 
+    var popToRoot: UUID = UUID()
+
     // MARK: - State
 
     @State private var searchText = ""
@@ -25,6 +67,10 @@ struct JournalContainerView: View {
     @State private var showCreateTrip = false
     @State private var selectedLog: Log?
     @State private var selectedTrip: Trip?
+    @State private var newlyCreatedTrip: Trip?
+    @State private var showAssignLogs = false
+    @State private var displayStyle: JournalDisplayStyle = .polaroid
+    @State private var polaroidBackground: PolaroidBackgroundStyle = .tripPhotos
 
     // MARK: - Computed Data
 
@@ -53,6 +99,11 @@ struct JournalContainerView: View {
         }
     }
 
+    private var orphanedLogs: [Log] {
+        let tripIDs = Set(userTrips.map(\.id))
+        return userLogs.filter { $0.hasNoTrip || (!tripIDs.contains($0.tripID!)) }
+    }
+
     private var filteredLogs: [Log] {
         var logs = userLogs
         if !debouncedSearchText.isEmpty {
@@ -76,18 +127,18 @@ struct JournalContainerView: View {
     // MARK: - Body
 
     var body: some View {
-        let _ = syncEngine.lastSyncDate
-
         NavigationStack {
             Group {
                 if userLogs.isEmpty && userTrips.isEmpty {
                     emptyState
                 } else {
                     VStack(spacing: 0) {
-                        searchBar
-                            .padding(.horizontal, SonderSpacing.md)
-                            .padding(.top, SonderSpacing.xs)
-                            .padding(.bottom, SonderSpacing.sm)
+                        if displayStyle != .polaroid {
+                            searchBar
+                                .padding(.horizontal, SonderSpacing.md)
+                                .padding(.top, SonderSpacing.xs)
+                                .padding(.bottom, SonderSpacing.sm)
+                        }
 
                         tripsContent
                     }
@@ -96,18 +147,69 @@ struct JournalContainerView: View {
             .background(SonderColors.cream)
             .navigationTitle("Journal")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(SonderColors.cream, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        ForEach(JournalDisplayStyle.allCases, id: \.self) { style in
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    displayStyle = style
+                                }
+                            } label: {
+                                Label {
+                                    Text(style.rawValue)
+                                } icon: {
+                                    Image(systemName: style.icon)
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: displayStyle.icon)
+                            .foregroundColor(SonderColors.inkMuted)
+                            .toolbarIcon()
+                    }
+                }
+
+                if displayStyle == .polaroid {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            ForEach(PolaroidBackgroundStyle.allCases, id: \.self) { bg in
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        polaroidBackground = bg
+                                    }
+                                } label: {
+                                    Label {
+                                        Text(bg.rawValue)
+                                    } icon: {
+                                        Image(systemName: bg.icon)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "paintpalette")
+                                .foregroundColor(SonderColors.inkMuted)
+                                .toolbarIcon()
+                        }
+                    }
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showCreateTrip = true
                     } label: {
                         Image(systemName: "plus")
                             .foregroundColor(SonderColors.terracotta)
+                            .toolbarIcon()
                     }
                 }
             }
             .sheet(isPresented: $showCreateTrip) {
-                CreateEditTripView(mode: .create)
+                CreateEditTripView(mode: .create, onTripCreated: { trip in
+                    newlyCreatedTrip = trip
+                })
             }
             .navigationDestination(item: $selectedLog) { log in
                 if let place = placesByID[log.placeID] {
@@ -133,22 +235,68 @@ struct JournalContainerView: View {
                     }
                 }
             }
+            .onChange(of: popToRoot) {
+                selectedLog = nil
+                selectedTrip = nil
+            }
+            .onChange(of: showCreateTrip) { _, isShowing in
+                if !isShowing, newlyCreatedTrip != nil, !orphanedLogs.isEmpty {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(300))
+                        showAssignLogs = true
+                    }
+                }
+            }
+            .sheet(isPresented: $showAssignLogs, onDismiss: {
+                newlyCreatedTrip = nil
+            }) {
+                if let trip = newlyCreatedTrip {
+                    AssignLogsToTripSheet(
+                        trip: trip,
+                        orphanedLogs: orphanedLogs,
+                        placesByID: placesByID
+                    )
+                }
+            }
         }
     }
 
     // MARK: - Trips Content
 
+    @ViewBuilder
     private var tripsContent: some View {
-        MasonryTripsGrid(
-            trips: filteredTrips,
-            allLogs: allLogs,
-            places: places,
-            filteredLogs: filteredLogs,
-            selectedTrip: $selectedTrip,
-            selectedLog: $selectedLog,
-            deleteLog: deleteLog,
-            searchText: searchText
-        )
+        switch displayStyle {
+        case .masonry:
+            MasonryTripsGrid(
+                trips: filteredTrips,
+                allLogs: allLogs,
+                places: places,
+                filteredLogs: filteredLogs,
+                selectedTrip: $selectedTrip,
+                selectedLog: $selectedLog,
+                deleteLog: deleteLog,
+                searchText: searchText
+            )
+        case .polaroid:
+            JournalPolaroidView(
+                trips: filteredTrips,
+                allLogs: allLogs,
+                places: Array(places),
+                orphanedLogs: orphanedLogs,
+                selectedTrip: $selectedTrip,
+                selectedLog: $selectedLog,
+                backgroundStyle: polaroidBackground
+            )
+        case .boardingPass:
+            JournalBoardingPassView(
+                trips: filteredTrips,
+                allLogs: allLogs,
+                places: Array(places),
+                orphanedLogs: orphanedLogs,
+                selectedTrip: $selectedTrip,
+                selectedLog: $selectedLog
+            )
+        }
     }
 
     // MARK: - Search

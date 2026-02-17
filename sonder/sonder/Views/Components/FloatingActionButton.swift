@@ -11,8 +11,6 @@ import SwiftUI
 struct FloatingActionButton: View {
     let action: () -> Void
 
-    @State private var isPressed = false
-
     var body: some View {
         Button(action: {
             let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
@@ -29,13 +27,7 @@ struct FloatingActionButton: View {
                         .shadow(color: SonderColors.terracotta.opacity(0.4), radius: 8, x: 0, y: 4)
                 )
         }
-        .scaleEffect(isPressed ? 0.9 : 1.0)
-        .animation(.spring(response: 0.3), value: isPressed)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded { _ in isPressed = false }
-        )
+        .buttonStyle(ScaleButtonStyle(scale: 0.9))
     }
 }
 

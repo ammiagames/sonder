@@ -14,6 +14,7 @@ struct TripDetailView: View {
     @Environment(AuthenticationService.self) private var authService
     @Environment(TripService.self) private var tripService
     @Environment(PhotoService.self) private var photoService
+    @Environment(SyncEngine.self) private var syncEngine
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query private var allLogs: [Log]
@@ -48,19 +49,46 @@ struct TripDetailView: View {
     @State private var showRouteLogDetail = false
     @State private var routeDetailLog: Log?
     @State private var routeDetailPlace: Place?
+    @State private var showReorder = false
+    @State private var coverAnimating = false
 
-    /// Logs belonging to this trip, sorted chronologically (oldest first)
+    // View mode states
+    @State private var showPostcards = false
+    @State private var showCinematic = false
+    @State private var showPhotoWall = false
+    @State private var showWrapped = false
+    @State private var showBook = false
+    @State private var showHighlights = false
+
+    // MARK: - Capsule Spacing Constants
+    private let sectionGap: CGFloat = 56
+    private let entryGap: CGFloat = 48
+    private let contentPadding: CGFloat = 24
+    private let narrowColumn: CGFloat = 40
+    private let breathingRoom: CGFloat = 80
+
+    /// Logs belonging to this trip, sorted by user-defined order (tripSortOrder) then visitedAt
     private var tripLogs: [Log] {
         allLogs
             .filter { $0.tripID == trip.id }
-            .sorted { $0.createdAt < $1.createdAt }
+            .sorted {
+                if let a = $0.tripSortOrder, let b = $1.tripSortOrder {
+                    return a < b
+                }
+                return $0.visitedAt < $1.visitedAt
+            }
     }
 
-    /// Logs grouped by calendar day, sorted ascending
+    /// Whether any log in this trip has a custom sort order (user reordered)
+    private var isCustomOrdered: Bool {
+        tripLogs.contains { $0.tripSortOrder != nil }
+    }
+
+    /// Logs grouped by calendar day (visitedAt), sorted ascending. Only used in chronological mode.
     private var logsByDay: [(date: Date, logs: [Log])] {
         let calendar = Calendar.current
         let grouped = Dictionary(grouping: tripLogs) { log in
-            calendar.startOfDay(for: log.createdAt)
+            calendar.startOfDay(for: log.visitedAt)
         }
         return grouped.sorted { $0.key < $1.key }
             .map { (date: $0.key, logs: $0.value) }
@@ -99,23 +127,47 @@ struct TripDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                storyHeroHeader
+                capsuleCover
 
                 if !tripLogs.isEmpty {
-                    tripStatsBar
+                    capsuleOverview
+                }
+
+                // Trip personality — witty auto-generated insight
+                if tripLogs.count >= 3 {
+                    tripPersonality
+                }
+
+                // Mood arc — emotional shape of the trip
+                if tripLogs.count >= 3 {
+                    moodArc
                 }
 
                 if !tripPlaces.isEmpty {
                     mapSection
                 }
 
+                // Pull quote — the most evocative note, blown up
+                pullQuote
+
+                // "Your trip began at..." bookend
+                firstStopBookend
+
                 timelineSection
+
+                // "Your last stop was..." bookend
+                lastStopBookend
+
+                if !tripLogs.isEmpty {
+                    capsuleClosing
+                }
             }
         }
         .background(SonderColors.cream)
         .scrollContentBackground(.hidden)
         .navigationTitle(trip.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -124,6 +176,22 @@ struct TripDetailView: View {
                             showEditTrip = true
                         } label: {
                             Label("Edit Trip", systemImage: "pencil")
+                        }
+                    }
+
+                    if isOwner && tripLogs.count >= 2 {
+                        Button {
+                            showReorder = true
+                        } label: {
+                            Label("Reorder", systemImage: "arrow.up.arrow.down")
+                        }
+
+                        if isCustomOrdered {
+                            Button {
+                                resetToDateOrder()
+                            } label: {
+                                Label("Reset to Date Order", systemImage: "calendar.badge.clock")
+                            }
                         }
                     }
 
@@ -140,6 +208,7 @@ struct TripDetailView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
+                        .toolbarIcon()
                 }
             }
         }
@@ -191,125 +260,130 @@ struct TripDetailView: View {
             }
             .ignoresSafeArea()
         }
+        .sheet(isPresented: $showReorder) {
+            ReorderTripLogsSheet(
+                tripLogs: tripLogs,
+                placesByID: placesByID,
+                modelContext: modelContext,
+                syncEngine: syncEngine
+            )
+        }
         .fullScreenCover(isPresented: $showExpandedMap) {
             expandedMapView
         }
-    }
-
-    // MARK: - Story Hero Header
-
-    private var storyHeroHeader: some View {
-        VStack(spacing: 0) {
-            // Cover photo with overlaid title
-            ZStack(alignment: .bottomLeading) {
-                // Photo or gradient placeholder
-                if let urlString = trip.coverPhotoURL,
-                   let url = URL(string: urlString) {
-                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 280)) {
-                        heroGradientPlaceholder
-                    }
-                    .id(urlString)
-                } else {
-                    heroGradientPlaceholder
-                }
-
-                // Gradient overlay for text readability
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.6)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-
-                // Overlaid text
-                VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
-                    Text(trip.name)
-                        .font(SonderTypography.largeTitle)
-                        .foregroundColor(.white)
-
-                    HStack(spacing: SonderSpacing.sm) {
-                        if let dateText = dateRangeText {
-                            HStack(spacing: 4) {
-                                Image(systemName: "calendar")
-                                Text(dateText)
-                            }
-                            .font(SonderTypography.caption)
-                            .foregroundColor(.white.opacity(0.85))
-                        }
-
-                        if !trip.collaboratorIDs.isEmpty {
-                            HStack(spacing: 4) {
-                                Image(systemName: "person.2")
-                                Text("\(trip.collaboratorIDs.count + 1)")
-                            }
-                            .font(SonderTypography.caption)
-                            .foregroundColor(.white.opacity(0.85))
-                        }
-                    }
-                }
-                .padding(SonderSpacing.lg)
-            }
-            .frame(height: 280)
-            .frame(maxWidth: .infinity)
-            .clipped()
-            .overlay(alignment: .bottomTrailing) {
-                if isOwner {
-                    Button {
-                        showImagePicker = true
-                    } label: {
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.white)
-                            .frame(width: 28, height: 28)
-                            .background(SonderColors.terracotta)
-                            .clipShape(Circle())
-                            .overlay {
-                                Circle().stroke(SonderColors.cream, lineWidth: 2)
-                            }
-                    }
-                    .padding(SonderSpacing.md)
-                }
-            }
-            .overlay {
-                if isUploadingCoverPhoto {
-                    Color.black.opacity(0.4)
-                    ProgressView()
-                        .tint(.white)
-                }
-            }
-
-            // Description + View Story button
-            VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-                if let description = trip.tripDescription, !description.isEmpty {
-                    Text(description)
-                        .font(SonderTypography.body)
-                        .foregroundColor(SonderColors.inkMuted)
-                }
-
-                if !tripLogs.isEmpty {
-                    Button {
-                        storyStartIndex = 0
-                        showStoryPage = true
-                    } label: {
-                        HStack(spacing: SonderSpacing.xs) {
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 12))
-                            Text("View Story")
-                                .font(SonderTypography.headline)
-                        }
-                        .padding(.horizontal, SonderSpacing.lg)
-                        .padding(.vertical, SonderSpacing.sm)
-                        .background(SonderColors.terracotta)
-                        .foregroundColor(.white)
-                        .clipShape(Capsule())
-                    }
-                }
-            }
-            .padding(SonderSpacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        .fullScreenCover(isPresented: $showPostcards) {
+            TripPostcardStack(tripName: trip.name, logs: tripLogs, places: tripPlaces)
+        }
+        .fullScreenCover(isPresented: $showCinematic) {
+            TripCinematicView(tripName: trip.name, logs: tripLogs, places: tripPlaces, coverPhotoURL: trip.coverPhotoURL)
+        }
+        .fullScreenCover(isPresented: $showPhotoWall) {
+            TripPhotoWall(tripName: trip.name, logs: tripLogs, places: tripPlaces)
+        }
+        .fullScreenCover(isPresented: $showWrapped) {
+            TripWrappedView(tripName: trip.name, logs: tripLogs, places: tripPlaces, coverPhotoURL: trip.coverPhotoURL)
+        }
+        .fullScreenCover(isPresented: $showBook) {
+            TripBookView(tripName: trip.name, logs: tripLogs, places: tripPlaces, coverPhotoURL: trip.coverPhotoURL)
+        }
+        .fullScreenCover(isPresented: $showHighlights) {
+            TripHighlightReel(tripName: trip.name, logs: tripLogs, places: tripPlaces)
         }
     }
 
-    private var heroGradientPlaceholder: some View {
+    // MARK: - Act 1: The Cover
+
+    private var capsuleCover: some View {
+        ZStack(alignment: .bottom) {
+            // Full-bleed hero photo with Ken Burns + scroll parallax
+            GeometryReader { geo in
+                let scrollOffset = geo.frame(in: .global).minY
+                let parallaxOffset = scrollOffset > 0 ? -scrollOffset * 0.4 : -scrollOffset * 0.15
+
+                if let urlString = trip.coverPhotoURL,
+                   let url = URL(string: urlString) {
+                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: geo.size.width * 2, height: geo.size.height * 2)) {
+                        coverGradientPlaceholder
+                    }
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: geo.size.width, height: geo.size.height + 60)
+                    .offset(y: parallaxOffset)
+                    .scaleEffect(coverAnimating ? 1.03 : 1.0)
+                    .animation(.easeInOut(duration: 8).repeatForever(autoreverses: true), value: coverAnimating)
+                    .clipped()
+                    .id(urlString)
+                } else {
+                    coverGradientPlaceholder
+                        .frame(width: geo.size.width, height: geo.size.height)
+                }
+            }
+
+            // Gradient scrim
+            LinearGradient(
+                colors: [.clear, .clear, .black.opacity(0.3), .black.opacity(0.6)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            // Title stack
+            VStack(spacing: 8) {
+                // Location subtitle
+                if let location = tripLocationText {
+                    Text(location.uppercased())
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .tracking(3.0)
+                        .foregroundColor(.white.opacity(0.8))
+                }
+
+                // Trip name
+                Text(trip.name)
+                    .font(.system(size: 36, weight: .light, design: .serif))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+
+                // Date stamp
+                if let dateText = coverDateStamp {
+                    Text(dateText.uppercased())
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .tracking(3.0)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+            }
+            .padding(.horizontal, contentPadding)
+            .padding(.bottom, 48)
+        }
+        .frame(height: 480)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .overlay(alignment: .bottomTrailing) {
+            if isOwner {
+                Button {
+                    showImagePicker = true
+                } label: {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white)
+                        .frame(width: 32, height: 32)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                }
+                .padding(contentPadding)
+            }
+        }
+        .overlay {
+            if isUploadingCoverPhoto {
+                Color.black.opacity(0.4)
+                ProgressView()
+                    .tint(.white)
+            }
+        }
+        .onAppear {
+            coverAnimating = true
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        }
+    }
+
+    private var coverGradientPlaceholder: some View {
         Rectangle()
             .fill(
                 LinearGradient(
@@ -322,53 +396,158 @@ struct TripDetailView: View {
                     endPoint: .bottomTrailing
                 )
             )
+            .overlay {
+                VStack(spacing: SonderSpacing.sm) {
+                    Image(systemName: "suitcase.fill")
+                        .font(.system(size: 40))
+                        .foregroundColor(.white.opacity(0.4))
+                    if isOwner {
+                        Text("Tap camera to add a cover photo")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                }
+            }
     }
 
-    // MARK: - Stats Bar
-
-    private var tripStatsBar: some View {
-        HStack(spacing: SonderSpacing.sm) {
-            statItem("\(tripLogs.count)", label: tripLogs.count == 1 ? "place" : "places")
-
-            Text("·")
-                .foregroundColor(SonderColors.inkLight)
-
-            statItem("\(tripDayCount)", label: tripDayCount == 1 ? "day" : "days")
-
-            Spacer()
-
-            if ratingCounts.mustSee > 0 {
-                Text("\(Rating.mustSee.emoji)\(ratingCounts.mustSee)")
-                    .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+    /// Simplified location text for the cover
+    private var tripLocationText: String? {
+        // Use first place's simplified address as location
+        if let firstPlace = tripPlaces.first {
+            let parts = firstPlace.address.components(separatedBy: ", ")
+            if parts.count >= 2 {
+                return parts.suffix(2).joined(separator: ", ")
             }
-            if ratingCounts.solid > 0 {
-                Text("\(Rating.solid.emoji)\(ratingCounts.solid)")
-                    .font(SonderTypography.caption)
+            return firstPlace.address
+        }
+        return nil
+    }
+
+    /// Date stamp for cover in a compact format
+    private var coverDateStamp: String? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        if let start = trip.startDate {
+            return formatter.string(from: start)
+        }
+        if let firstLog = tripLogs.first {
+            return formatter.string(from: firstLog.visitedAt)
+        }
+        return nil
+    }
+
+    // MARK: - Act 2: Overview
+
+    private var capsuleOverview: some View {
+        VStack(spacing: sectionGap) {
+            // Description
+            if let description = trip.tripDescription, !description.isEmpty {
+                Text(description)
+                    .font(.system(size: 16))
                     .foregroundColor(SonderColors.inkMuted)
+                    .lineSpacing(7)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, narrowColumn)
             }
-            if ratingCounts.skip > 0 {
-                Text("\(Rating.skip.emoji)\(ratingCounts.skip)")
-                    .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+
+            // Stats row — Wrapped style
+            HStack(spacing: SonderSpacing.xxl) {
+                overviewStat(value: "\(tripLogs.count)", label: tripLogs.count == 1 ? "place" : "places")
+                overviewStat(value: "\(tripDayCount)", label: tripDayCount == 1 ? "day" : "days")
+                if Set(tripPlaces.map { simplifiedCity(from: $0.address) }).count > 1 {
+                    overviewStat(value: "\(Set(tripPlaces.map { simplifiedCity(from: $0.address) }).count)", label: "cities")
+                }
+            }
+
+            // Top-rated highlight pill
+            if let topPlace = tripLogs.first(where: { $0.rating == .mustSee }),
+               let place = placesByID[topPlace.placeID] {
+                Text("Top-rated: \(place.name)")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(SonderColors.terracotta)
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.vertical, SonderSpacing.xs)
+                    .background(SonderColors.terracotta.opacity(0.1))
+                    .clipShape(Capsule())
+            }
+
+            // Experience modes
+            VStack(spacing: SonderSpacing.sm) {
+                Text("EXPERIENCE YOUR TRIP")
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(2.0)
+                    .foregroundColor(SonderColors.inkLight)
+
+                // Primary row
+                HStack(spacing: SonderSpacing.xs) {
+                    experienceButton(icon: "play.fill", label: "Story", isPrimary: true) {
+                        storyStartIndex = 0
+                        showStoryPage = true
+                    }
+                    experienceButton(icon: "film", label: "Cinematic") {
+                        showCinematic = true
+                    }
+                    experienceButton(icon: "gift", label: "Wrapped") {
+                        showWrapped = true
+                    }
+                }
+
+                // Secondary row
+                HStack(spacing: SonderSpacing.xs) {
+                    experienceButton(icon: "square.grid.2x2", label: "Photos") {
+                        showPhotoWall = true
+                    }
+                    experienceButton(icon: "greetingcard", label: "Postcards") {
+                        showPostcards = true
+                    }
+                    experienceButton(icon: "book", label: "Book") {
+                        showBook = true
+                    }
+                    experienceButton(icon: "star.fill", label: "Highlights") {
+                        showHighlights = true
+                    }
+                }
             }
         }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-        .padding(.horizontal, SonderSpacing.md)
-        .padding(.top, SonderSpacing.xs)
+        .padding(.vertical, sectionGap)
+        .padding(.horizontal, contentPadding)
+        .frame(maxWidth: .infinity)
     }
 
-    private func statItem(_ value: String, label: String) -> some View {
-        HStack(spacing: 4) {
+    private func experienceButton(icon: String, label: String, isPrimary: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: isPrimary ? 14 : 12))
+                Text(label)
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, isPrimary ? 12 : 10)
+            .foregroundColor(isPrimary ? .white : SonderColors.inkDark)
+            .background(isPrimary ? SonderColors.terracotta : SonderColors.warmGray)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+        }
+    }
+
+    private func overviewStat(value: String, label: String) -> some View {
+        VStack(spacing: 4) {
             Text(value)
-                .font(SonderTypography.headline)
+                .font(.system(size: 42, weight: .bold, design: .serif))
                 .foregroundColor(SonderColors.inkDark)
-            Text(label)
-                .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+            Text(label.uppercased())
+                .font(.system(size: 11, weight: .medium))
+                .tracking(2.0)
+                .foregroundColor(SonderColors.inkLight)
         }
+    }
+
+    private func simplifiedCity(from address: String) -> String {
+        let parts = address.components(separatedBy: ", ")
+        if parts.count >= 2 {
+            return parts[parts.count - 2]
+        }
+        return address
     }
 
     // MARK: - Map Section
@@ -427,21 +606,23 @@ struct TripDetailView: View {
                 .foregroundColor(SonderColors.inkDark)
                 .padding(.horizontal, SonderSpacing.md)
 
-            tripMapContent
-                .frame(height: 240)
-                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
-                .padding(.horizontal, SonderSpacing.md)
-                .onTapGesture { showExpandedMap = true }
-                .overlay(alignment: .topTrailing) {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(SonderColors.inkDark)
-                        .frame(width: 28, height: 28)
-                        .background(.ultraThinMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .padding(SonderSpacing.md + SonderSpacing.xs)
-                }
+            Button { showExpandedMap = true } label: {
+                tripMapContent
+                    .frame(height: 240)
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                    .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
+                    .overlay(alignment: .topTrailing) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(SonderColors.inkDark)
+                            .frame(width: 28, height: 28)
+                            .background(.ultraThinMaterial)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .padding(SonderSpacing.md + SonderSpacing.xs)
+                    }
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, SonderSpacing.md)
         }
         .padding(.top, SonderSpacing.lg)
     }
@@ -514,6 +695,7 @@ struct TripDetailView: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(SonderColors.inkDark)
+                            .toolbarIcon()
                     }
                 }
             }
@@ -578,7 +760,7 @@ struct TripDetailView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 120)
+            .frame(height: 320)
             .offset(y: max(0, cardDragOffset))
             .gesture(
                 DragGesture(minimumDistance: 10)
@@ -641,40 +823,54 @@ struct TripDetailView: View {
         let totalStops = chronologicalMapStops.count
         let showChevrons = totalStops > 1
 
-        return HStack(spacing: SonderSpacing.sm) {
-            // Left chevron (always shown with 2+ stops for wrap-around)
-            if showChevrons {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(SonderColors.inkLight)
+        let hasPhoto = log.photoURL != nil
+
+        return VStack(alignment: .leading, spacing: 0) {
+            // Hero photo — only when a real photo exists
+            if hasPhoto {
+                cachedCardPhoto(log: log, place: place)
+                    .frame(height: 140)
+                    .frame(maxWidth: .infinity)
+                    .clipped()
             }
 
-            // Photo
-            cachedCardPhoto(log: log, place: place)
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-                .overlay {
-                    RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
-                        .stroke(SonderColors.pinColor(for: log.rating), lineWidth: 2)
+            // Content
+            VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+                // Navigation header
+                HStack {
+                    if showChevrons {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(SonderColors.inkLight)
+                    }
+
+                    Text("Stop \(stop.index + 1) of \(totalStops)")
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkLight)
+
+                    Spacer()
+
+                    Text(log.createdAt.formatted(.dateTime.month(.abbreviated).day()))
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkLight)
+
+                    if showChevrons {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(SonderColors.inkLight)
+                    }
                 }
 
-            // Text column
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Stop \(stop.index + 1) of \(totalStops)")
-                    .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkLight)
+                // Place name + rating pill
+                HStack(alignment: .top) {
+                    Text(place.name)
+                        .font(SonderTypography.headline)
+                        .foregroundColor(SonderColors.inkDark)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
 
-                Text(place.name)
-                    .font(SonderTypography.headline)
-                    .foregroundColor(SonderColors.inkDark)
-                    .lineLimit(1)
+                    Spacer()
 
-                Text(place.address)
-                    .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
-                    .lineLimit(1)
-
-                HStack(spacing: SonderSpacing.xs) {
                     HStack(spacing: 4) {
                         Text(log.rating.emoji)
                             .font(.system(size: 14))
@@ -686,32 +882,57 @@ struct TripDetailView: View {
                     .background(SonderColors.pinColor(for: log.rating).opacity(0.15))
                     .foregroundColor(SonderColors.pinColor(for: log.rating))
                     .clipShape(Capsule())
+                }
 
-                    if let note = log.note, !note.isEmpty {
+                // Address
+                HStack(spacing: 4) {
+                    Image(systemName: "mappin")
+                        .font(.system(size: 11))
+                    Text(place.address)
+                        .lineLimit(1)
+                }
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkMuted)
+
+                // Note with terracotta accent bar
+                if let note = log.note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
+                    HStack(alignment: .top, spacing: SonderSpacing.xs) {
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(SonderColors.terracotta.opacity(0.4))
+                            .frame(width: 3)
+
                         Text(note)
-                            .font(SonderTypography.caption)
+                            .font(SonderTypography.body)
                             .foregroundColor(SonderColors.inkMuted)
-                            .lineLimit(1)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // Tags
+                if !log.tags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: SonderSpacing.xxs) {
+                            ForEach(log.tags, id: \.self) { tag in
+                                Text(tag)
+                                    .font(SonderTypography.caption)
+                                    .foregroundColor(SonderColors.terracotta)
+                                    .padding(.horizontal, SonderSpacing.xs)
+                                    .padding(.vertical, 4)
+                                    .background(SonderColors.terracotta.opacity(0.1))
+                                    .clipShape(Capsule())
+                            }
+                        }
                     }
                 }
             }
-
-            Spacer(minLength: 0)
-
-            // Right chevron (always shown with 2+ stops for wrap-around)
-            if showChevrons {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(SonderColors.inkLight)
-            }
+            .padding(SonderSpacing.md)
         }
-        .padding(.horizontal, SonderSpacing.md)
-        .padding(.vertical, SonderSpacing.sm)
         .background(SonderColors.cream.opacity(0.95))
         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
         .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
         .padding(.horizontal, SonderSpacing.md)
-        .contentShape(Rectangle())
         .onTapGesture {
             routeDetailLog = stop.log
             routeDetailPlace = stop.place
@@ -730,12 +951,36 @@ struct TripDetailView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fill)
         } else {
-            // Not cached yet — fall back to async loading
-            photoPin(log: log, place: place)
+            // Not cached yet — fall back to async loading at hero size
+            heroAsyncPhoto(log: log, place: place)
         }
     }
 
-    private static let cardPhotoPointSize = CGSize(width: 56, height: 56)
+    /// Async photo loader sized for the hero card (not the tiny 36×36 map pins).
+    @ViewBuilder
+    private func heroAsyncPhoto(log: Log, place: Place) -> some View {
+        let heroSize = Self.cardPhotoPointSize
+        if let urlString = log.photoURL, let url = URL(string: urlString) {
+            DownsampledAsyncImage(url: url, targetSize: heroSize) {
+                Rectangle().fill(SonderColors.warmGray)
+            }
+        } else {
+            heroPlacePhoto(place: place)
+        }
+    }
+
+    @ViewBuilder
+    private func heroPlacePhoto(place: Place) -> some View {
+        let heroSize = Self.cardPhotoPointSize
+        if let photoRef = place.photoReference,
+           let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 600) {
+            DownsampledAsyncImage(url: url, targetSize: heroSize) {
+                Rectangle().fill(SonderColors.warmGray)
+            }
+        }
+    }
+
+    private static let cardPhotoPointSize = CGSize(width: 400, height: 140)
 
     private func cachedImage(for log: Log, place: Place) -> UIImage? {
         let pointSize = Self.cardPhotoPointSize
@@ -781,7 +1026,7 @@ struct TripDetailView: View {
     private func panToStop(at index: Int) {
         guard let stop = chronologicalMapStops.first(where: { $0.index == index }) else { return }
         let currentSpan = expandedMapCamera.region?.span ?? MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-        let latOffset = currentSpan.latitudeDelta * 0.18
+        let latOffset = currentSpan.latitudeDelta * 0.30
         let offsetCenter = CLLocationCoordinate2D(
             latitude: stop.place.coordinate.latitude - latOffset,
             longitude: stop.place.coordinate.longitude
@@ -894,51 +1139,103 @@ struct TripDetailView: View {
         ))
     }
 
-    // MARK: - Timeline Section
+    // MARK: - Act 3: The Days
 
     private var timelineSection: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.md) {
-            Text("The Story")
-                .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
-                .padding(.horizontal, SonderSpacing.md)
-
+        VStack(spacing: 0) {
             if tripLogs.isEmpty {
                 emptyLogsState
-            } else {
-                LazyVStack(spacing: SonderSpacing.lg) {
-                    ForEach(Array(logsByDay.enumerated()), id: \.element.date) { _, dayGroup in
-                        daySection(date: dayGroup.date, logs: dayGroup.logs)
+            } else if isCustomOrdered {
+                // Custom order: numbered stops
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(tripLogs.enumerated()), id: \.element.id) { index, log in
+                        if let place = placesByID[log.placeID] {
+                            NavigationLink {
+                                LogDetailView(log: log, place: place)
+                            } label: {
+                                EditorialRailEntry(log: log, place: place, stopNumber: index + 1)
+                            }
+                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
+                            .scrollTransition(.animated(.easeOut(duration: 0.4))) { content, phase in
+                                content
+                                    .opacity(phase.isIdentity ? 1 : 0)
+                                    .offset(y: phase.isIdentity ? 0 : 24)
+                                    .scaleEffect(phase.isIdentity ? 1 : 0.97)
+                            }
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    logToRemoveFromTrip = log
+                                } label: {
+                                    Label("Remove from Trip", systemImage: "minus.circle")
+                                }
+                            }
+                        }
                     }
                 }
-                .padding(.horizontal, SonderSpacing.md)
+            } else {
+                // Chronological: day-grouped chapters
+                LazyVStack(spacing: sectionGap) {
+                    ForEach(Array(logsByDay.enumerated()), id: \.element.date) { dayIndex, dayGroup in
+                        capsuleDaySection(
+                            dayNumber: dayIndex + 1,
+                            date: dayGroup.date,
+                            logs: dayGroup.logs
+                        )
+                    }
+                }
             }
         }
-        .padding(.top, SonderSpacing.lg)
-        .padding(.bottom, SonderSpacing.xxl)
+        .padding(.bottom, sectionGap)
     }
 
-    private func daySection(date: Date, logs: [Log]) -> some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            // Day header
-            HStack(spacing: SonderSpacing.xs) {
-                Text(date.formatted(.dateTime.weekday(.wide)))
-                    .font(SonderTypography.headline)
-                    .foregroundColor(SonderColors.terracotta)
-                Text(date.formatted(.dateTime.month(.abbreviated).day()))
-                    .font(SonderTypography.subheadline)
-                    .foregroundColor(SonderColors.inkMuted)
-            }
-            .padding(.leading, SonderSpacing.xxs)
+    private func capsuleDaySection(dayNumber: Int, date: Date, logs: [Log]) -> some View {
+        VStack(spacing: 0) {
+            // Day header — editorial chapter divider
+            VStack(spacing: 8) {
+                Text(date.formatted(.dateTime.month(.wide).day().year()).uppercased())
+                    .font(.system(size: 11, weight: .medium))
+                    .tracking(4.0)
+                    .foregroundColor(SonderColors.inkLight)
 
-            ForEach(logs, id: \.id) { log in
+                Text(dayTitle(for: dayNumber))
+                    .font(.system(size: 28, weight: .light, design: .serif))
+                    .foregroundColor(SonderColors.inkDark)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, sectionGap)
+            .padding(.bottom, SonderSpacing.xxl)
+            .scrollTransition(.animated(.easeOut(duration: 0.5))) { content, phase in
+                content
+                    .opacity(phase.isIdentity ? 1 : 0)
+                    .offset(y: phase.isIdentity ? 0 : 20)
+            }
+            .onAppear {
+                UISelectionFeedbackGenerator().selectionChanged()
+            }
+
+            // Place entries with connective tissue
+            let sortedDayLogs = logs.sorted { $0.visitedAt < $1.visitedAt }
+            ForEach(Array(sortedDayLogs.enumerated()), id: \.element.id) { index, log in
+                // Connective tissue — elapsed time between entries
+                if index > 0 {
+                    railConnector(from: sortedDayLogs[index - 1].visitedAt, to: log.visitedAt)
+                }
+
                 if let place = placesByID[log.placeID] {
                     NavigationLink {
                         LogDetailView(log: log, place: place)
                     } label: {
-                        MomentCard(log: log, place: place)
+                        EditorialRailEntry(log: log, place: place)
                     }
+                    .contentShape(Rectangle())
                     .buttonStyle(.plain)
+                    .scrollTransition(.animated(.easeOut(duration: 0.4))) { content, phase in
+                        content
+                            .opacity(phase.isIdentity ? 1 : 0)
+                            .offset(y: phase.isIdentity ? 0 : 24)
+                            .scaleEffect(phase.isIdentity ? 1 : 0.97)
+                    }
                     .contextMenu {
                         Button(role: .destructive) {
                             logToRemoveFromTrip = log
@@ -948,7 +1245,453 @@ struct TripDetailView: View {
                     }
                 }
             }
+
+            // Photo filmstrip — visual breather at end of each day
+            dayPhotoStrip(logs: logs)
+
+            // Day-end summary
+            dayEndSummary(logs: logs)
         }
+    }
+
+    // MARK: - Day Photo Filmstrip
+
+    /// Collects all photos for a day's logs (user photos + Google Places fallbacks) into a
+    /// horizontal filmstrip. Each frame shows the photo with a time-of-day label underneath.
+    @ViewBuilder
+    private func dayPhotoStrip(logs: [Log]) -> some View {
+        let frames = filmstripFrames(for: logs)
+
+        if frames.count >= 2 {
+            VStack(spacing: 10) {
+                // Thin rule above
+                Rectangle()
+                    .fill(SonderColors.warmGrayDark.opacity(0.15))
+                    .frame(width: 24, height: 1)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(frames) { frame in
+                            filmstripFrame(frame)
+                        }
+                    }
+                    .padding(.horizontal, contentPadding)
+                }
+                .scrollClipDisabled()
+
+                // Caption
+                Text("\(frames.count) moments".uppercased())
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(2.0)
+                    .foregroundColor(SonderColors.inkLight)
+            }
+            .padding(.top, SonderSpacing.md)
+            .scrollTransition(.animated(.easeOut(duration: 0.4))) { content, phase in
+                content
+                    .opacity(phase.isIdentity ? 1 : 0)
+            }
+        }
+    }
+
+    private func filmstripFrame(_ frame: FilmstripFrame) -> some View {
+        VStack(spacing: 4) {
+            DownsampledAsyncImage(url: frame.url, targetSize: CGSize(width: 200, height: 260)) {
+                Rectangle().fill(SonderColors.warmGray)
+            }
+            .aspectRatio(3/4, contentMode: .fill)
+            .frame(width: 100, height: 133)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            Text(frame.timeLabel)
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundColor(SonderColors.inkLight)
+        }
+    }
+
+    /// Build the ordered list of photo frames for a given day's logs.
+    private func filmstripFrames(for logs: [Log]) -> [FilmstripFrame] {
+        var frames: [FilmstripFrame] = []
+
+        for log in logs.sorted(by: { $0.visitedAt < $1.visitedAt }) {
+            let timeLabel = log.visitedAt.formatted(.dateTime.hour().minute())
+            let place = placesByID[log.placeID]
+
+            // User photos first
+            for urlString in log.userPhotoURLs {
+                if let url = URL(string: urlString) {
+                    frames.append(FilmstripFrame(url: url, timeLabel: timeLabel))
+                }
+            }
+
+            // Google Places fallback if user has no photos
+            if log.userPhotoURLs.isEmpty,
+               let photoRef = place?.photoReference,
+               let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 400) {
+                frames.append(FilmstripFrame(url: url, timeLabel: timeLabel))
+            }
+        }
+
+        return frames
+    }
+
+    // MARK: - Connective Tissue (Time Gaps)
+
+    private func timeGapText(minutes: Int) -> String {
+        if minutes < 60 {
+            return "\(minutes) min later"
+        } else {
+            let hours = minutes / 60
+            let remaining = minutes % 60
+            if remaining == 0 {
+                return "\(hours)h later"
+            }
+            return "\(hours)h \(remaining)m later"
+        }
+    }
+
+    // MARK: - Rail Connector
+
+    private let railWidth: CGFloat = 48
+
+    @ViewBuilder
+    private func railConnector(from previous: Date, to current: Date) -> some View {
+        let minutes = Int(current.timeIntervalSince(previous) / 60)
+
+        HStack(alignment: .center, spacing: 0) {
+            // Rail continuation line
+            Rectangle()
+                .fill(SonderColors.terracotta.opacity(0.25))
+                .frame(width: 2, height: 20)
+                .frame(width: railWidth)
+
+            // Elapsed time label
+            if minutes >= 10 {
+                Text(timeGapText(minutes: minutes))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(SonderColors.inkLight)
+                    .padding(.leading, 4)
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Day-End Summary
+
+    @ViewBuilder
+    private func dayEndSummary(logs: [Log]) -> some View {
+        let summary = dayEndSummaryText(logs: logs)
+
+        if logs.count >= 2, !summary.isEmpty {
+            Text(summary)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(SonderColors.inkLight)
+                .frame(maxWidth: .infinity)
+                .padding(.top, SonderSpacing.sm)
+        }
+    }
+
+    private func dayEndSummaryText(logs: [Log]) -> String {
+        let mustSees = logs.filter { $0.rating == .mustSee }.count
+        let solids = logs.filter { $0.rating == .solid }.count
+        let skips = logs.filter { $0.rating == .skip }.count
+
+        var parts: [String] = []
+        if mustSees > 0 { parts.append("\(mustSees) must-\(mustSees == 1 ? "see" : "sees")") }
+        if solids > 0 { parts.append("\(solids) solid") }
+        if skips > 0 { parts.append("\(skips) \(skips == 1 ? "skip" : "skips")") }
+
+        guard !parts.isEmpty else { return "" }
+        return "\(logs.count) places \u{2014} \(parts.joined(separator: ", "))"
+    }
+
+    // MARK: - Pull Quote
+
+    /// The most evocative note from the trip, displayed as a large editorial quote.
+    @ViewBuilder
+    private var pullQuote: some View {
+        if let quote = bestPullQuote {
+            VStack(spacing: 12) {
+                Rectangle()
+                    .fill(SonderColors.terracotta.opacity(0.3))
+                    .frame(width: 24, height: 2)
+
+                Text("\u{201C}\(quote.note)\u{201D}")
+                    .font(.system(size: 22, weight: .light, design: .serif))
+                    .italic()
+                    .foregroundColor(SonderColors.inkDark)
+                    .lineSpacing(8)
+                    .multilineTextAlignment(.center)
+
+                Text("— \(quote.placeName)")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(SonderColors.inkMuted)
+            }
+            .padding(.horizontal, narrowColumn)
+            .padding(.vertical, sectionGap)
+            .frame(maxWidth: .infinity)
+            .scrollTransition(.animated(.easeOut(duration: 0.5))) { content, phase in
+                content
+                    .opacity(phase.isIdentity ? 1 : 0)
+                    .offset(y: phase.isIdentity ? 0 : 16)
+            }
+        }
+    }
+
+    /// Finds the best note to use as a pull quote — prefers must-see rated, then longest note.
+    private var bestPullQuote: (note: String, placeName: String)? {
+        let candidates = tripLogs.compactMap { log -> (note: String, placeName: String, rating: Rating)? in
+            guard let note = log.note?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  note.count >= 20 else { return nil }
+            let name = placesByID[log.placeID]?.name ?? "Unknown"
+            return (note: note, placeName: name, rating: log.rating)
+        }
+
+        // Prefer must-see notes, then pick the longest
+        let mustSeeNotes = candidates.filter { $0.rating == .mustSee }
+        let pool = mustSeeNotes.isEmpty ? candidates : mustSeeNotes
+        return pool.max(by: { $0.note.count < $1.note.count }).map { (note: $0.note, placeName: $0.placeName) }
+    }
+
+    // MARK: - Trip Personality
+
+    /// Auto-generated witty insight about the trip's character.
+    @ViewBuilder
+    private var tripPersonality: some View {
+        let insight = generateTripPersonality()
+        if !insight.isEmpty {
+            VStack(spacing: 8) {
+                Rectangle()
+                    .fill(SonderColors.warmGrayDark.opacity(0.15))
+                    .frame(width: 24, height: 1)
+
+                Text(insight)
+                    .font(.system(size: 15, weight: .regular, design: .serif))
+                    .italic()
+                    .foregroundColor(SonderColors.inkMuted)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(5)
+            }
+            .padding(.horizontal, narrowColumn)
+            .padding(.vertical, SonderSpacing.xxl)
+            .frame(maxWidth: .infinity)
+            .scrollTransition(.animated(.easeOut(duration: 0.4))) { content, phase in
+                content
+                    .opacity(phase.isIdentity ? 1 : 0)
+            }
+        }
+    }
+
+    private func generateTripPersonality() -> String {
+        guard tripLogs.count >= 3 else { return "" }
+
+        let sorted = tripLogs.sorted { $0.visitedAt < $1.visitedAt }
+        let mustSees = tripLogs.filter { $0.rating == .mustSee }.count
+        let skips = tripLogs.filter { $0.rating == .skip }.count
+        let total = tripLogs.count
+
+        // Tag frequency
+        let allTags = tripLogs.flatMap { $0.tags }
+        let tagCounts = Dictionary(grouping: allTags, by: { $0.lowercased() }).mapValues { $0.count }
+        let topTag = tagCounts.max(by: { $0.value < $1.value })
+
+        // Time patterns
+        let hours = sorted.map { Calendar.current.component(.hour, from: $0.visitedAt) }
+        let morningCount = hours.filter { $0 >= 6 && $0 < 12 }.count
+        let eveningCount = hours.filter { $0 >= 18 }.count
+        let nightCount = hours.filter { $0 >= 21 || $0 < 5 }.count
+
+        // Notes analysis
+        let notesCount = tripLogs.filter {
+            ($0.note?.trimmingCharacters(in: .whitespacesAndNewlines).count ?? 0) > 10
+        }.count
+
+        // Build personality string from the most interesting pattern
+        var insights: [String] = []
+
+        // Must-see ratio personality
+        let mustSeeRatio = Double(mustSees) / Double(total)
+        if mustSeeRatio >= 0.6 {
+            insights.append("A trip where almost everything hit. You have great taste — or great luck.")
+        } else if mustSeeRatio == 0 && total >= 4 {
+            insights.append("Not a single must-see, but the journey was the point, wasn't it?")
+        } else if skips > mustSees && skips >= 2 {
+            insights.append("More skips than must-sees. An honest trip — not everything needs to be perfect.")
+        }
+
+        // Tag-based personality
+        if let tag = topTag, tag.value >= 3 {
+            insights.append("You visited \(tag.value) \(tag.key) spots. Committed to the theme.")
+        } else if let tag = topTag, tag.value >= 2 {
+            insights.append("A \(tag.key)-forward trip, with range.")
+        }
+
+        // Time-based personality
+        if nightCount >= 3 {
+            insights.append("A late-night trip. The best things happen after dark.")
+        } else if morningCount > eveningCount && morningCount >= 3 {
+            insights.append("An early riser's trip. First in line, best light.")
+        } else if eveningCount >= total / 2 && eveningCount >= 3 {
+            insights.append("An evening person's trip. Golden hour and beyond.")
+        }
+
+        // Note-writing personality
+        if notesCount >= total / 2 && notesCount >= 3 {
+            insights.append("You wrote notes at most stops. A trip worth remembering in detail.")
+        }
+
+        // Pick the most interesting one (prefer tag-based or time-based over generic ratio)
+        if insights.count > 1 {
+            // Prefer the middle entries (tag/time) over the first (ratio)
+            return insights.count > 2 ? insights[1] : insights.last ?? ""
+        }
+        return insights.first ?? ""
+    }
+
+    // MARK: - Mood Arc
+
+    /// A minimal dot-graph showing the emotional shape of the trip — ratings plotted over time.
+    private var moodArc: some View {
+        VStack(spacing: 12) {
+            Text("YOUR TRIP'S MOOD")
+                .font(.system(size: 10, weight: .medium))
+                .tracking(2.0)
+                .foregroundColor(SonderColors.inkLight)
+
+            GeometryReader { geo in
+                let points = moodArcPoints(in: geo.size)
+                let linePoints = points.map { $0.point }
+
+                ZStack {
+                    // Connecting line
+                    if linePoints.count >= 2 {
+                        Path { path in
+                            path.move(to: linePoints[0])
+                            for i in 1..<linePoints.count {
+                                // Smooth curve between points
+                                let prev = linePoints[i - 1]
+                                let curr = linePoints[i]
+                                let midX = (prev.x + curr.x) / 2
+                                path.addCurve(
+                                    to: curr,
+                                    control1: CGPoint(x: midX, y: prev.y),
+                                    control2: CGPoint(x: midX, y: curr.y)
+                                )
+                            }
+                        }
+                        .stroke(
+                            SonderColors.terracotta.opacity(0.3),
+                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
+                        )
+                    }
+
+                    // Dots
+                    ForEach(points) { point in
+                        Circle()
+                            .fill(point.color)
+                            .frame(width: 8, height: 8)
+                            .position(point.point)
+                    }
+                }
+            }
+            .frame(height: 60)
+            .padding(.horizontal, contentPadding)
+        }
+        .padding(.vertical, sectionGap / 2)
+        .frame(maxWidth: .infinity)
+        .scrollTransition(.animated(.easeOut(duration: 0.4))) { content, phase in
+            content
+                .opacity(phase.isIdentity ? 1 : 0)
+        }
+    }
+
+    private func moodArcPoints(in size: CGSize) -> [MoodArcPoint] {
+        guard !tripLogs.isEmpty else { return [] }
+
+        let sorted = tripLogs.sorted { $0.visitedAt < $1.visitedAt }
+        let count = sorted.count
+        let insetX: CGFloat = 16
+        let usableWidth = size.width - insetX * 2
+        let topPad: CGFloat = 8
+        let bottomPad: CGFloat = 8
+        let usableHeight = size.height - topPad - bottomPad
+
+        return sorted.enumerated().map { index, log in
+            let x = count == 1 ? size.width / 2 : insetX + usableWidth * CGFloat(index) / CGFloat(count - 1)
+
+            // Map rating to y position: mustSee = top, solid = middle, skip = bottom
+            let yNormalized: CGFloat = switch log.rating {
+            case .mustSee: 0.0
+            case .solid: 0.5
+            case .skip: 1.0
+            }
+
+            let y = topPad + usableHeight * yNormalized
+            let color = SonderColors.pinColor(for: log.rating)
+
+            return MoodArcPoint(
+                id: log.id,
+                point: CGPoint(x: x, y: y),
+                color: color
+            )
+        }
+    }
+
+    // MARK: - First & Last Bookends
+
+    @ViewBuilder
+    private var firstStopBookend: some View {
+        if let firstLog = tripLogs.sorted(by: { $0.visitedAt < $1.visitedAt }).first,
+           let place = placesByID[firstLog.placeID] {
+            VStack(spacing: 6) {
+                Text("Your trip began at")
+                    .font(.system(size: 14, weight: .light, design: .serif))
+                    .foregroundColor(SonderColors.inkMuted)
+
+                Text(place.name)
+                    .font(.system(size: 20, weight: .medium, design: .serif))
+                    .foregroundColor(SonderColors.inkDark)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, SonderSpacing.xxl)
+            .scrollTransition(.animated(.easeOut(duration: 0.4))) { content, phase in
+                content
+                    .opacity(phase.isIdentity ? 1 : 0)
+                    .offset(y: phase.isIdentity ? 0 : 12)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var lastStopBookend: some View {
+        let sorted = tripLogs.sorted { $0.visitedAt < $1.visitedAt }
+        if sorted.count >= 2,
+           let lastLog = sorted.last,
+           let place = placesByID[lastLog.placeID] {
+            VStack(spacing: 6) {
+                Text("Your last stop was")
+                    .font(.system(size: 14, weight: .light, design: .serif))
+                    .foregroundColor(SonderColors.inkMuted)
+
+                Text(place.name)
+                    .font(.system(size: 20, weight: .medium, design: .serif))
+                    .foregroundColor(SonderColors.inkDark)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, SonderSpacing.xxl)
+            .scrollTransition(.animated(.easeOut(duration: 0.4))) { content, phase in
+                content
+                    .opacity(phase.isIdentity ? 1 : 0)
+                    .offset(y: phase.isIdentity ? 0 : 12)
+            }
+        }
+    }
+
+    private func dayTitle(for dayNumber: Int) -> String {
+        let words = ["One", "Two", "Three", "Four", "Five", "Six", "Seven",
+                     "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen"]
+        let number = dayNumber <= words.count ? words[dayNumber - 1] : "\(dayNumber)"
+        return "Day \(number)"
     }
 
     private var emptyLogsState: some View {
@@ -957,7 +1700,7 @@ struct TripDetailView: View {
                 .font(.system(size: 40))
                 .foregroundColor(SonderColors.inkLight)
             Text("No moments yet")
-                .font(SonderTypography.headline)
+                .font(.system(size: 20, weight: .light, design: .serif))
                 .foregroundColor(SonderColors.inkMuted)
             Text("Log places and add them to this trip to build your story")
                 .font(SonderTypography.caption)
@@ -965,8 +1708,91 @@ struct TripDetailView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-        .padding(.horizontal, SonderSpacing.lg)
+        .padding(.vertical, breathingRoom)
+        .padding(.horizontal, contentPadding)
+    }
+
+    // MARK: - Act 5: The Closing
+
+    private var capsuleClosing: some View {
+        VStack(spacing: SonderSpacing.xxl) {
+            // Thin divider
+            Rectangle()
+                .fill(SonderColors.warmGrayDark.opacity(0.3))
+                .frame(width: 40, height: 1)
+
+            // Date + location
+            VStack(spacing: 6) {
+                if let dateText = coverDateStamp {
+                    Text(dateText.uppercased())
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .tracking(3.0)
+                        .foregroundColor(SonderColors.inkLight)
+                }
+                if let location = tripLocationText {
+                    Text(location)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(SonderColors.inkMuted)
+                }
+            }
+
+            // Stats
+            VStack(spacing: SonderSpacing.lg) {
+                Text("\(tripLogs.count)")
+                    .font(.system(size: 42, weight: .bold, design: .serif))
+                    .foregroundColor(SonderColors.inkDark)
+                Text("places explored".uppercased())
+                    .font(.system(size: 11, weight: .medium))
+                    .tracking(2.0)
+                    .foregroundColor(SonderColors.inkLight)
+            }
+
+            // Rating breakdown
+            VStack(spacing: SonderSpacing.xs) {
+                if ratingCounts.mustSee > 0 {
+                    closingRatingRow(emoji: Rating.mustSee.emoji, count: ratingCounts.mustSee, label: "must-sees")
+                }
+                if ratingCounts.solid > 0 {
+                    closingRatingRow(emoji: Rating.solid.emoji, count: ratingCounts.solid, label: "solid finds")
+                }
+                if ratingCounts.skip > 0 {
+                    closingRatingRow(emoji: Rating.skip.emoji, count: ratingCounts.skip, label: ratingCounts.skip == 1 ? "skip" : "skips")
+                }
+            }
+
+            // Closing text
+            Text("Until next time.")
+                .font(.system(size: 18, weight: .light, design: .serif))
+                .italic()
+                .foregroundColor(SonderColors.inkMuted)
+                .padding(.top, SonderSpacing.md)
+
+            // Sonder wordmark
+            Text("sonder")
+                .font(.system(size: 13, weight: .light, design: .serif))
+                .tracking(4.0)
+                .foregroundColor(SonderColors.inkLight)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, breathingRoom)
+        .scrollTransition(.animated(.easeOut(duration: 0.6))) { content, phase in
+            content
+                .opacity(phase.isIdentity ? 1 : 0)
+                .offset(y: phase.isIdentity ? 0 : 30)
+        }
+        .onAppear {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
+    }
+
+    private func closingRatingRow(emoji: String, count: Int, label: String) -> some View {
+        HStack(spacing: 6) {
+            Text(emoji)
+                .font(.system(size: 14))
+            Text("\(count) \(label)")
+                .font(.system(size: 15))
+                .foregroundColor(SonderColors.inkDark)
+        }
     }
 
     // MARK: - Cover Photo Upload
@@ -978,6 +1804,8 @@ struct TripDetailView: View {
 
         if let url = await photoService.uploadPhoto(image, for: userID) {
             trip.coverPhotoURL = url
+            trip.updatedAt = Date()
+            trip.syncStatus = .pending
             try? modelContext.save()
         }
     }
@@ -989,8 +1817,19 @@ struct TripDetailView: View {
             try? modelContext.save()
         }
 
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.success)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    private func resetToDateOrder() {
+        let now = Date()
+        for log in tripLogs {
+            log.tripSortOrder = nil
+            log.syncStatus = .pending
+            log.updatedAt = now
+        }
+        try? modelContext.save()
+        Task { await syncEngine.syncNow() }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
     // MARK: - Helpers
@@ -1007,97 +1846,190 @@ struct TripDetailView: View {
     }
 }
 
-// MARK: - Moment Card
+// MARK: - Capsule Place Entry (Editorial Style)
 
-private struct MomentCard: View {
+// MARK: - Editorial Rail Entry
+
+private struct EditorialRailEntry: View {
     let log: Log
     let place: Place
+    var stopNumber: Int? = nil
+
+    private let railColumnWidth: CGFloat = 48
+    private let nodeSize: CGFloat = 12
+
+    private var hasPhoto: Bool {
+        log.photoURL != nil || place.photoReference != nil
+    }
+
+    private var shortAddress: String {
+        let parts = place.address.components(separatedBy: ", ")
+        if parts.count >= 2 {
+            return parts.prefix(2).joined(separator: ", ")
+        }
+        return place.address
+    }
+
+    private var timeOfDayText: String {
+        log.visitedAt.formatted(.dateTime.hour().minute())
+    }
+
+    /// Time-of-day atmosphere tint (from editorial style)
+    private var atmosphereTint: (color: Color, opacity: Double) {
+        let hour = Calendar.current.component(.hour, from: log.visitedAt)
+        switch hour {
+        case 5..<8:   return (Color(red: 1.0, green: 0.85, blue: 0.5), 0.12)
+        case 8..<12:  return (Color(red: 1.0, green: 0.92, blue: 0.7), 0.08)
+        case 12..<15: return (Color(red: 1.0, green: 0.95, blue: 0.85), 0.05)
+        case 15..<18: return (Color(red: 1.0, green: 0.78, blue: 0.45), 0.10)
+        case 18..<21: return (Color(red: 0.95, green: 0.6, blue: 0.3), 0.15)
+        case 21..<24, 0..<5: return (Color(red: 0.2, green: 0.25, blue: 0.45), 0.18)
+        default:      return (Color.clear, 0)
+        }
+    }
+
+    private var nodeColor: Color {
+        switch log.rating {
+        case .mustSee: return SonderColors.terracotta
+        case .solid: return SonderColors.ratingSolid
+        case .skip: return SonderColors.ratingSkip
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Photo
-            photoView
-                .frame(height: 200)
-                .frame(maxWidth: .infinity)
-                .clipped()
+        HStack(alignment: .top, spacing: 0) {
+            // Left rail column
+            ZStack(alignment: .top) {
+                // Vertical line — full height
+                Rectangle()
+                    .fill(SonderColors.terracotta.opacity(0.25))
+                    .frame(width: 2)
+                    .frame(maxHeight: .infinity)
 
-            // Content
-            VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-                // Place name + rating pill
-                HStack(alignment: .top) {
-                    Text(place.name)
-                        .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
+                // Node circle
+                ZStack {
+                    if log.rating == .mustSee {
+                        Circle()
+                            .fill(nodeColor)
+                            .frame(width: nodeSize, height: nodeSize)
+                    } else {
+                        Circle()
+                            .strokeBorder(nodeColor, lineWidth: 1.5)
+                            .frame(width: nodeSize, height: nodeSize)
+                            .background(Circle().fill(SonderColors.cream))
+                    }
 
-                    Spacer()
+                    if let num = stopNumber {
+                        Text("\(num)")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundColor(log.rating == .mustSee ? .white : nodeColor)
+                    }
+                }
+                .padding(.top, SonderSpacing.md)
+            }
+            .frame(width: railColumnWidth)
 
-                    ratingPill
+            // Right content — editorial style
+            VStack(alignment: .leading, spacing: 0) {
+                // Photo with atmospheric tint
+                if hasPhoto {
+                    ZStack(alignment: .bottomLeading) {
+                        ZStack {
+                            photoView
+                                .frame(maxWidth: .infinity)
+
+                            // Time-of-day atmospheric tint
+                            LinearGradient(
+                                colors: [
+                                    atmosphereTint.color.opacity(atmosphereTint.opacity),
+                                    atmosphereTint.color.opacity(atmosphereTint.opacity * 0.3),
+                                    .clear
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .allowsHitTesting(false)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+
+                        // Frosted place name overlay — always visible
+                        HStack(spacing: SonderSpacing.xxs) {
+                            Text(place.name)
+                                .font(.system(size: 14, weight: .semibold))
+                                .lineLimit(1)
+                            Text(log.rating.emoji)
+                                .font(.system(size: 13))
+                        }
+                        .padding(.horizontal, SonderSpacing.sm)
+                        .padding(.vertical, 5)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                        .padding(SonderSpacing.xs)
+                    }
+                } else {
+                    // No photo — terracotta rule + text
+                    Rectangle()
+                        .fill(SonderColors.terracotta.opacity(0.4))
+                        .frame(width: 32, height: 1)
+                        .padding(.bottom, SonderSpacing.xxs)
                 }
 
-                // Address
-                HStack(spacing: 4) {
-                    Image(systemName: "mappin")
-                        .font(.system(size: 11))
-                    Text(place.address)
-                        .lineLimit(1)
-                }
-                .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                // Text content
+                VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
+                    // Place name + rating (shown when no photo, since overlay handles the photo case)
+                    if !hasPhoto {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(place.name)
+                                .font(.system(.title3, design: .serif).weight(.semibold))
+                                .foregroundColor(SonderColors.inkDark)
+                                .lineLimit(2)
 
-                // Note
-                if let note = log.note, !note.isEmpty {
-                    Text(note)
-                        .font(SonderTypography.body)
-                        .foregroundColor(SonderColors.inkMuted)
-                        .lineLimit(3)
-                        .multilineTextAlignment(.leading)
-                }
+                            Spacer()
 
-                // Tags
-                if !log.tags.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
+                            Text(log.rating.emoji)
+                                .font(.system(size: 16))
+                        }
+                    }
+
+                    // Address + time
+                    HStack(spacing: 6) {
+                        Text(shortAddress)
+                        Text("\u{00B7}")
+                        Text(timeOfDayText)
+                    }
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
+                    .padding(.top, hasPhoto ? SonderSpacing.xxs : 0)
+
+                    // Note
+                    if let note = log.note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
+                        Text(note)
+                            .font(.system(size: 14))
+                            .foregroundColor(SonderColors.inkDark)
+                            .lineSpacing(4)
+                    }
+
+                    // Tags
+                    if !log.tags.isEmpty {
                         HStack(spacing: SonderSpacing.xxs) {
                             ForEach(log.tags, id: \.self) { tag in
                                 Text(tag)
-                                    .font(SonderTypography.caption)
+                                    .font(.system(size: 11))
                                     .foregroundColor(SonderColors.terracotta)
                                     .padding(.horizontal, SonderSpacing.xs)
-                                    .padding(.vertical, 4)
+                                    .padding(.vertical, 3)
                                     .background(SonderColors.terracotta.opacity(0.1))
                                     .clipShape(Capsule())
                             }
                         }
                     }
                 }
-
-                // Time
-                Text(log.createdAt.formatted(date: .omitted, time: .shortened))
-                    .font(.system(size: 11))
-                    .foregroundColor(SonderColors.inkLight)
+                .padding(.top, SonderSpacing.xxs)
             }
-            .padding(SonderSpacing.md)
+            .padding(.trailing, SonderSpacing.md)
+            .padding(.top, SonderSpacing.xxs)
+            .padding(.bottom, SonderSpacing.xs)
         }
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
-        .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
-    }
-
-    // MARK: - Rating Pill
-
-    private var ratingPill: some View {
-        HStack(spacing: 4) {
-            Text(log.rating.emoji)
-                .font(.system(size: 14))
-            Text(log.rating.displayName)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-        }
-        .padding(.horizontal, SonderSpacing.xs)
-        .padding(.vertical, 4)
-        .background(SonderColors.pinColor(for: log.rating).opacity(0.15))
-        .foregroundColor(SonderColors.pinColor(for: log.rating))
-        .clipShape(Capsule())
     }
 
     // MARK: - Photo Chain
@@ -1105,7 +2037,7 @@ private struct MomentCard: View {
     @ViewBuilder
     private var photoView: some View {
         if let urlString = log.photoURL, let url = URL(string: urlString) {
-            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 200)) {
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 300), contentMode: .fit) {
                 placePhotoView
             }
         } else {
@@ -1117,7 +2049,7 @@ private struct MomentCard: View {
     private var placePhotoView: some View {
         if let photoRef = place.photoReference,
            let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 600) {
-            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 200)) {
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 300), contentMode: .fit) {
                 photoPlaceholder
             }
         } else {
@@ -1126,19 +2058,154 @@ private struct MomentCard: View {
     }
 
     private var photoPlaceholder: some View {
-        Rectangle()
-            .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+        RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
+            .fill(SonderColors.warmGray)
+            .frame(height: 100)
+            .overlay {
+                VStack(spacing: 4) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 18))
+                    Text(place.name)
+                        .font(.system(size: 10, weight: .medium))
+                        .lineLimit(1)
+                }
+                .foregroundColor(SonderColors.inkLight)
+            }
+    }
+}
+
+// MARK: - Filmstrip Frame
+
+private struct FilmstripFrame: Identifiable {
+    let id = UUID()
+    let url: URL
+    let timeLabel: String
+}
+
+// MARK: - Mood Arc Point
+
+private struct MoodArcPoint: Identifiable {
+    let id: String
+    let point: CGPoint
+    let color: Color
+}
+
+// MARK: - Reorder Trip Logs Sheet
+
+private struct ReorderTripLogsSheet: View {
+    let tripLogs: [Log]
+    let placesByID: [String: Place]
+    let modelContext: ModelContext
+    let syncEngine: SyncEngine
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var orderedLogs: [Log] = []
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(orderedLogs, id: \.id) { log in
+                    HStack(spacing: SonderSpacing.sm) {
+                        logThumbnail(log: log)
+                            .frame(width: 40, height: 40)
+                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(placesByID[log.placeID]?.name ?? "Unknown Place")
+                                .font(SonderTypography.headline)
+                                .foregroundColor(SonderColors.inkDark)
+                                .lineLimit(1)
+
+                            HStack(spacing: SonderSpacing.xs) {
+                                Text(log.rating.emoji)
+                                    .font(.system(size: 12))
+                                Text(log.visitedAt.formatted(date: .abbreviated, time: .shortened))
+                                    .font(SonderTypography.caption)
+                                    .foregroundColor(SonderColors.inkMuted)
+                            }
+                        }
+
+                        Spacer()
+                    }
+                }
+                .onMove { source, destination in
+                    orderedLogs.move(fromOffsets: source, toOffset: destination)
+                }
+            }
+            .listStyle(.plain)
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Reorder Logs")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .principal) {
+                    Button {
+                        withAnimation {
+                            orderedLogs.sort { $0.visitedAt < $1.visitedAt }
+                        }
+                    } label: {
+                        Label("Sort by Date", systemImage: "calendar")
+                            .font(.system(size: 14))
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { saveNewOrder() }
+                        .fontWeight(.semibold)
+                }
+            }
+            .onAppear {
+                orderedLogs = tripLogs
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func logThumbnail(log: Log) -> some View {
+        if let urlString = log.photoURL, let url = URL(string: urlString) {
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 40, height: 40)) {
+                thumbnailPlaceholder(log: log)
+            }
+        } else {
+            thumbnailPlaceholder(log: log)
+        }
+    }
+
+    @ViewBuilder
+    private func thumbnailPlaceholder(log: Log) -> some View {
+        if let place = placesByID[log.placeID],
+           let photoRef = place.photoReference,
+           let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 100) {
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 40, height: 40)) {
+                defaultPlaceholder
+            }
+        } else {
+            defaultPlaceholder
+        }
+    }
+
+    private var defaultPlaceholder: some View {
+        RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
+            .fill(SonderColors.terracotta.opacity(0.2))
             .overlay {
                 Image(systemName: "photo")
-                    .font(.title2)
+                    .font(.system(size: 14))
                     .foregroundColor(SonderColors.terracotta.opacity(0.5))
             }
+    }
+
+    private func saveNewOrder() {
+        let now = Date()
+        for (i, log) in orderedLogs.enumerated() {
+            log.tripSortOrder = i
+            log.syncStatus = .pending
+            log.updatedAt = now
+        }
+        try? modelContext.save()
+        Task { await syncEngine.syncNow() }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        dismiss()
     }
 }
 

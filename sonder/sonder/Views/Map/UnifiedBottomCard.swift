@@ -3,7 +3,7 @@
 //  sonder
 //
 //  Context-aware bottom card for the unified map.
-//  Shows different content based on pin type.
+//  Uses native sheet presentation with detent-based state transitions.
 //
 
 import SwiftUI
@@ -11,177 +11,250 @@ import SwiftUI
 struct UnifiedBottomCard: View {
     let pin: UnifiedMapPin
     let onDismiss: () -> Void
-    let onNavigateToLog: (String, Place) -> Void  // (logID, place)
+    let onNavigateToLog: (String, Place) -> Void
     var onNavigateToFeedItem: ((FeedItem) -> Void)? = nil
-    var onFocusFriend: ((String, String) -> Void)? = nil // (friendID, username)
+    var onFocusFriend: ((String, String) -> Void)? = nil
+    var onExpandedChanged: ((Bool) -> Void)? = nil
 
-    @State private var dragOffset: CGFloat = 0
+    static let compactDetent: PresentationDetent = .height(100)
+    static let expandedDetent: PresentationDetent = .fraction(0.65)
+
+    @State private var isExpandedState = false
+
+    private var isExpanded: Bool { isExpandedState }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Drag indicator
-            Capsule()
-                .fill(SonderColors.inkLight.opacity(0.4))
-                .frame(width: 36, height: 4)
+        ScrollView {
+            cardContent
                 .padding(.top, SonderSpacing.sm)
-                .padding(.bottom, SonderSpacing.xs)
-
-            Group {
-                switch pin {
-                case .personal(let logs, let place):
-                    personalCard(logs: logs, place: place)
-                case .friends(let friendPlace):
-                    friendsCard(place: friendPlace)
-                case .combined(let logs, let place, let friendPlace):
-                    combinedCard(logs: logs, place: place, friendPlace: friendPlace)
-                }
-            }
-            .padding(.horizontal, SonderSpacing.md)
-            .padding(.bottom, SonderSpacing.md)
+                .padding(.horizontal, SonderSpacing.md)
+                .padding(.bottom, SonderSpacing.md)
         }
-        .background(SonderColors.cream.opacity(0.95))
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
-        .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
-        .padding(.horizontal, SonderSpacing.md)
-        .padding(.bottom, SonderSpacing.md)
-        .offset(y: max(0, dragOffset))
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    dragOffset = value.translation.height
-                }
-                .onEnded { value in
-                    if value.translation.height > 80 || value.predictedEndTranslation.height > 150 {
-                        onDismiss()
-                    }
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        dragOffset = 0
-                    }
-                }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollDisabled(!isExpanded)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: SheetHeightKey.self, value: proxy.size.height)
+            }
         )
-    }
-
-    // MARK: - Personal Card
-
-    private func personalCard(logs: [LogSnapshot], place: Place) -> some View {
-        Group {
-            if logs.count <= 1, let log = logs.first {
-                // Single log: keep original compact layout
-                Button {
-                    onNavigateToLog(log.id, place)
-                } label: {
-                    HStack(spacing: SonderSpacing.sm) {
-                        pinPhoto(userLogs: logs, photoReference: place.photoReference)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(place.name)
-                                .font(SonderTypography.headline)
-                                .foregroundColor(SonderColors.inkDark)
-                                .lineLimit(2)
-
-                            Text(place.address)
-                                .font(SonderTypography.caption)
-                                .foregroundColor(SonderColors.inkMuted)
-                                .lineLimit(1)
-
-                            if let note = log.note, !note.isEmpty {
-                                Text(note)
-                                    .font(SonderTypography.caption)
-                                    .foregroundColor(SonderColors.inkLight)
-                                    .lineLimit(1)
-                            }
-                        }
-
-                        Spacer()
-
-                        Text(log.rating.emoji)
-                            .font(.system(size: 24))
-
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(SonderColors.inkLight)
-                    }
-                }
-                .buttonStyle(.plain)
-            } else {
-                // Multiple logs: place header + scrollable log rows
-                VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-                    // Place header
-                    HStack(spacing: SonderSpacing.sm) {
-                        pinPhoto(userLogs: logs, photoReference: place.photoReference)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(place.name)
-                                .font(SonderTypography.headline)
-                                .foregroundColor(SonderColors.inkDark)
-                                .lineLimit(2)
-
-                            Text(place.address)
-                                .font(SonderTypography.caption)
-                                .foregroundColor(SonderColors.inkMuted)
-                                .lineLimit(1)
-                        }
-
-                        Spacer()
-                    }
-
-                    personalLogsSection(logs: logs, place: place)
-                }
+        .onPreferenceChange(SheetHeightKey.self) { height in
+            let expanded = height > 150
+            if expanded != isExpandedState {
+                isExpandedState = expanded
+                onExpandedChanged?(expanded)
             }
         }
     }
 
-    // MARK: - Friends Card
+    private struct SheetHeightKey: PreferenceKey {
+        static var defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = max(value, nextValue())
+        }
+    }
 
-    private func friendsCard(place: ExploreMapPlace) -> some View {
+    // MARK: - Card Content
+
+    @ViewBuilder
+    private var cardContent: some View {
+        switch pin {
+        case .personal(let logs, let place):
+            personalContent(logs: logs, place: place)
+        case .friends(let friendPlace):
+            friendsContent(place: friendPlace)
+        case .combined(let logs, let place, let friendPlace):
+            combinedContent(logs: logs, place: place, friendPlace: friendPlace)
+        }
+    }
+
+    // MARK: - Personal Content
+
+    private func personalContent(logs: [LogSnapshot], place: Place) -> some View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            // Header: place info + bookmark
-            HStack(alignment: .top) {
+            if logs.count <= 1, let log = logs.first {
+                compactHeader(log: log, logs: logs, place: place)
+
+                if isExpanded {
+                    heroImage(logs: logs, place: place)
+
+                    if let note = log.note, !note.isEmpty {
+                        Text(note)
+                            .font(SonderTypography.body)
+                            .foregroundColor(SonderColors.inkLight)
+                            .lineLimit(6)
+                    }
+
+                    if !log.tags.isEmpty { tagCapsules(log.tags) }
+
+                    Divider()
+
+                    ratingDetailRow(log: log)
+                    placeCategoryPills(types: place.types)
+
+                    Text(log.createdAt.formatted(date: .long, time: .omitted))
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkLight)
+
+                    viewFullDetailButton { onNavigateToLog(log.id, place) }
+                }
+            } else {
+                multiLogHeader(logs: logs, place: place)
+                if isExpanded {
+                    Divider()
+                    VStack(spacing: SonderSpacing.xs) {
+                        ForEach(logs, id: \.id) { log in
+                            personalLogRow(log: log, place: place)
+                        }
+                    }
+                }
+            }
+        }
+        // No .animation() here — layout animations conflict with the sheet controller
+    }
+
+    // MARK: - Compact Header
+
+    private func compactHeader(log: LogSnapshot, logs: [LogSnapshot], place: Place) -> some View {
+        let url = pinPhotoURL(userLogs: logs, photoReference: place.photoReference)
+        return HStack(spacing: SonderSpacing.sm) {
+            if let url {
+                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 112, height: 112)) {
+                    Rectangle().fill(SonderColors.warmGray)
+                }
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                .opacity(isExpanded ? 0 : 1)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(place.name)
+                    .font(SonderTypography.headline)
+                    .foregroundColor(SonderColors.inkDark)
+                    .lineLimit(1)
+                Text(place.address)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            VStack(spacing: 2) {
+                Text(log.rating.emoji).font(.system(size: 22))
+                Text(log.rating.displayName)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(SonderColors.pinColor(for: log.rating))
+            }
+        }
+    }
+
+    // MARK: - Hero Image
+
+    @ViewBuilder
+    private func heroImage(logs: [LogSnapshot] = [], place: Place? = nil,
+                           photoReference: String? = nil, friendLogs: [FeedItem] = []) -> some View {
+        let ref = photoReference ?? place?.photoReference
+        let url = pinPhotoURL(userLogs: logs, photoReference: ref, friendLogs: friendLogs)
+        if let url {
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 200)) {
+                Rectangle().fill(SonderColors.warmGray)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 180)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+        }
+    }
+
+    private func multiLogHeader(logs: [LogSnapshot], place: Place) -> some View {
+        HStack(spacing: SonderSpacing.sm) {
+            pinPhoto(userLogs: logs, photoReference: place.photoReference)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(place.name)
+                    .font(SonderTypography.headline)
+                    .foregroundColor(SonderColors.inkDark)
+                    .lineLimit(2)
+                Text(place.address)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+    }
+
+    // MARK: - Friends Content
+
+    private func friendsContent(place: ExploreMapPlace) -> some View {
+        let topLog = place.logs.first
+        return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            HStack(spacing: SonderSpacing.sm) {
                 pinPhoto(photoReference: place.photoReference, friendLogs: place.logs)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(place.name)
                         .font(SonderTypography.headline)
                         .foregroundColor(SonderColors.inkDark)
                         .lineLimit(1)
-
                     Text(place.address)
                         .font(SonderTypography.caption)
                         .foregroundColor(SonderColors.inkMuted)
                         .lineLimit(1)
-
-                    if place.isFriendsLoved {
-                        HStack(spacing: 4) {
-                            Text("\u{1F525}")
-                                .font(.system(size: 12))
-                            Text("Friends Loved")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(SonderColors.ratingMustSee)
-                        }
-                    }
                 }
 
-                Spacer()
+                Spacer(minLength: 0)
 
-                WantToGoButton(placeID: place.id)
+                if let log = topLog {
+                    VStack(spacing: 2) {
+                        Text(log.rating.emoji).font(.system(size: 22))
+                        Text(log.rating.displayName)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(SonderColors.pinColor(for: log.rating))
+                    }
+                }
             }
 
-            // Friends' reviews
-            if !place.logs.isEmpty {
-                friendReviewsSection(
-                    logs: Array(place.logs.prefix(5)),
-                    count: place.friendCount
-                )
+            if isExpanded {
+                if place.isFriendsLoved { friendsLovedBadge }
+
+                HStack {
+                    Spacer()
+                    WantToGoButton(placeID: place.id, placeName: place.name, placeAddress: place.address, photoReference: place.photoReference)
+                }
+
+                if !place.logs.isEmpty {
+                    Divider()
+                    friendsSectionHeader(count: place.friendCount)
+                    VStack(spacing: SonderSpacing.xs) {
+                        ForEach(place.logs, id: \.id) { friendReviewCard($0) }
+                    }
+                }
             }
         }
+        // No .animation() here — layout animations conflict with the sheet controller
     }
 
-    // MARK: - Combined Card
+    // MARK: - Combined Content
 
-    private func combinedCard(logs: [LogSnapshot], place: Place, friendPlace: ExploreMapPlace) -> some View {
+    private func combinedContent(logs: [LogSnapshot], place: Place, friendPlace: ExploreMapPlace) -> some View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            // Your logs section
-            VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            HStack(spacing: SonderSpacing.sm) {
+                pinPhoto(userLogs: logs, photoReference: place.photoReference, friendLogs: friendPlace.logs, size: 48)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(place.name)
+                        .font(SonderTypography.headline)
+                        .foregroundColor(SonderColors.inkDark)
+                        .lineLimit(2)
+                    Text(place.address)
+                        .font(SonderTypography.caption)
+                        .foregroundColor(SonderColors.inkMuted)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+
+            if isExpanded {
+                Divider()
+
                 HStack {
                     Label(
                         logs.count > 1 ? "Your logs (\(logs.count))" : "Your log",
@@ -189,37 +262,20 @@ struct UnifiedBottomCard: View {
                     )
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(SonderColors.terracotta)
-
                     Spacer()
                 }
 
                 if logs.count <= 1, let log = logs.first {
-                    // Single log: inline row
-                    Button {
-                        onNavigateToLog(log.id, place)
-                    } label: {
+                    Button { onNavigateToLog(log.id, place) } label: {
                         HStack(spacing: SonderSpacing.sm) {
-                            pinPhoto(userLogs: logs, photoReference: place.photoReference, friendLogs: friendPlace.logs, size: 48)
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(place.name)
-                                    .font(SonderTypography.headline)
-                                    .foregroundColor(SonderColors.inkDark)
+                            if let note = log.note, !note.isEmpty {
+                                Text(note)
+                                    .font(SonderTypography.caption)
+                                    .foregroundColor(SonderColors.inkLight)
                                     .lineLimit(2)
-
-                                if let note = log.note, !note.isEmpty {
-                                    Text(note)
-                                        .font(SonderTypography.caption)
-                                        .foregroundColor(SonderColors.inkLight)
-                                        .lineLimit(1)
-                                }
                             }
-
                             Spacer(minLength: 0)
-
-                            Text(log.rating.emoji)
-                                .font(.system(size: 22))
-
+                            Text(log.rating.emoji).font(.system(size: 22))
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundColor(SonderColors.inkLight)
@@ -227,156 +283,145 @@ struct UnifiedBottomCard: View {
                     }
                     .buttonStyle(.plain)
                 } else {
-                    // Multiple logs: scrollable list
-                    personalLogsSection(logs: logs, place: place)
-                }
-            }
-
-            // Friends section
-            if !friendPlace.logs.isEmpty {
-                friendReviewsSection(
-                    logs: Array(friendPlace.logs.prefix(5)),
-                    count: friendPlace.friendCount,
-                    trailingContent: AnyView(WantToGoButton(placeID: friendPlace.id))
-                )
-            }
-        }
-    }
-
-    // MARK: - Personal Logs Section (multi-log)
-
-    private func personalLogsSection(logs: [LogSnapshot], place: Place) -> some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-            Divider()
-
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: SonderSpacing.xs) {
-                    ForEach(logs, id: \.id) { log in
-                        Button {
-                            onNavigateToLog(log.id, place)
-                        } label: {
-                            HStack(spacing: SonderSpacing.sm) {
-                                // Date
-                                Text(log.createdAt.formatted(date: .abbreviated, time: .omitted))
-                                    .font(.system(size: 12))
-                                    .foregroundColor(SonderColors.inkLight)
-                                    .frame(width: 70, alignment: .leading)
-
-                                // Note snippet
-                                if let note = log.note, !note.isEmpty {
-                                    Text(note)
-                                        .font(SonderTypography.caption)
-                                        .foregroundColor(SonderColors.inkMuted)
-                                        .lineLimit(1)
-                                }
-
-                                Spacer(minLength: 0)
-
-                                // Rating emoji
-                                Text(log.rating.emoji)
-                                    .font(.system(size: 16))
-                                    .frame(width: 32, height: 32)
-                                    .background(SonderColors.pinColor(for: log.rating).opacity(0.2))
-                                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(SonderColors.inkLight)
-                            }
-                            .padding(SonderSpacing.xs)
-                            .background(SonderColors.warmGray.opacity(0.6))
-                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                        }
-                        .buttonStyle(.plain)
+                    VStack(spacing: SonderSpacing.xs) {
+                        ForEach(logs, id: \.id) { personalLogRow(log: $0, place: place) }
                     }
                 }
-            }
-            .frame(maxHeight: 160)
-        }
-    }
 
-    // MARK: - Friends Reviews Section (shared)
-
-    private func friendReviewsSection(logs: [FeedItem], count: Int, trailingContent: AnyView? = nil) -> some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-            Divider()
-
-            // Section header
-            HStack(spacing: 6) {
-                Image(systemName: "person.2.fill")
-                    .font(.system(size: 11))
-                    .foregroundColor(SonderColors.inkMuted)
-                Text("\(count) friend\(count == 1 ? "" : "s") logged this")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(SonderColors.inkDark)
-
-                Spacer()
-
-                if let trailing = trailingContent {
-                    trailing
-                }
-            }
-
-            // Review cards
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: SonderSpacing.xs) {
-                    ForEach(logs, id: \.id) { item in
-                        friendReviewCard(item)
-                    }
-                }
-            }
-            .frame(maxHeight: 160)
-        }
-    }
-
-    // MARK: - Friend Review Card
-
-    private func friendReviewCard(_ item: FeedItem) -> some View {
-        Button {
-            onNavigateToFeedItem?(item)
-        } label: {
-            HStack(spacing: SonderSpacing.sm) {
-                // Avatar
-                if let urlString = item.user.avatarURL, let url = URL(string: urlString) {
-                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 32, height: 32)) {
-                        avatarPlaceholder(for: item.user)
-                    }
-                    .frame(width: 32, height: 32)
-                    .clipShape(Circle())
-                } else {
-                    avatarPlaceholder(for: item.user)
-                        .frame(width: 32, height: 32)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    // Username + date
-                    HStack(spacing: 4) {
-                        Text(item.user.username)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(SonderColors.inkDark)
-
+                if !friendPlace.logs.isEmpty {
+                    Divider()
+                    HStack(spacing: 6) {
+                        friendsSectionHeader(count: friendPlace.friendCount)
                         Spacer()
-
-                        Text(item.createdAt.formatted(date: .abbreviated, time: .omitted))
-                            .font(.system(size: 11))
-                            .foregroundColor(SonderColors.inkLight)
+                        WantToGoButton(placeID: friendPlace.id, placeName: friendPlace.name, placeAddress: friendPlace.address, photoReference: friendPlace.photoReference)
                     }
+                    VStack(spacing: SonderSpacing.xs) {
+                        ForEach(friendPlace.logs, id: \.id) { friendReviewCard($0) }
+                    }
+                }
+            }
+        }
+        // No .animation() here — layout animations conflict with the sheet controller
+    }
 
-                    // Note (if any)
-                    if let note = item.log.note, !note.isEmpty {
+    // MARK: - Shared Components
+
+    private func friendsSectionHeader(count: Int) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "person.2.fill")
+                .font(.system(size: 11))
+                .foregroundColor(SonderColors.inkMuted)
+            Text("\(count) friend\(count == 1 ? "" : "s") logged this")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(SonderColors.inkDark)
+        }
+    }
+
+    private func personalLogRow(log: LogSnapshot, place: Place) -> some View {
+        Button { onNavigateToLog(log.id, place) } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: SonderSpacing.sm) {
+                    Text(log.createdAt.formatted(date: .abbreviated, time: .omitted))
+                        .font(.system(size: 12))
+                        .foregroundColor(SonderColors.inkLight)
+                        .frame(width: 70, alignment: .leading)
+                    if let note = log.note, !note.isEmpty {
                         Text(note)
                             .font(SonderTypography.caption)
                             .foregroundColor(SonderColors.inkMuted)
                             .lineLimit(2)
                     }
+                    Spacer(minLength: 0)
+                    Text(log.rating.emoji)
+                        .font(.system(size: 16))
+                        .frame(width: 32, height: 32)
+                        .background(SonderColors.pinColor(for: log.rating).opacity(0.2))
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(SonderColors.inkLight)
                 }
+                if !log.tags.isEmpty { tagCapsules(log.tags) }
+            }
+            .padding(SonderSpacing.xs)
+            .background(SonderColors.warmGray.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+        }
+        .buttonStyle(.plain)
+    }
 
-                // Rating pill
-                Text(item.rating.emoji)
-                    .font(.system(size: 16))
-                    .frame(width: 32, height: 32)
-                    .background(SonderColors.pinColor(for: item.rating).opacity(0.2))
-                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+    private func ratingDetailRow(log: LogSnapshot) -> some View {
+        HStack(spacing: SonderSpacing.sm) {
+            Text(log.rating.emoji).font(.system(size: 28))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(log.rating.displayName)
+                    .font(SonderTypography.headline)
+                    .foregroundColor(SonderColors.inkDark)
+                Text(log.rating.subtitle)
+                    .font(SonderTypography.caption)
+                    .foregroundColor(SonderColors.inkMuted)
+            }
+            Spacer()
+        }
+        .padding(SonderSpacing.sm)
+        .background(SonderColors.pinColor(for: log.rating).opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+    }
+
+    private func tagCapsules(_ tags: [String]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                ForEach(tags.prefix(5), id: \.self) { tag in
+                    Text(tag)
+                        .font(.system(size: 11))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(SonderColors.terracotta.opacity(0.1))
+                        .foregroundColor(SonderColors.terracotta)
+                        .clipShape(Capsule())
+                }
+            }
+        }
+    }
+
+    private func friendReviewCard(_ item: FeedItem) -> some View {
+        Button { onNavigateToFeedItem?(item) } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: SonderSpacing.sm) {
+                    if let urlString = item.user.avatarURL, let url = URL(string: urlString) {
+                        DownsampledAsyncImage(url: url, targetSize: CGSize(width: 32, height: 32)) {
+                            avatarPlaceholder(for: item.user)
+                        }
+                        .frame(width: 32, height: 32)
+                        .clipShape(Circle())
+                    } else {
+                        avatarPlaceholder(for: item.user)
+                            .frame(width: 32, height: 32)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 4) {
+                            Text(item.user.username)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(SonderColors.inkDark)
+                            Spacer()
+                            Text(item.createdAt.formatted(date: .abbreviated, time: .omitted))
+                                .font(.system(size: 11))
+                                .foregroundColor(SonderColors.inkLight)
+                        }
+                        if let note = item.log.note, !note.isEmpty {
+                            Text(note)
+                                .font(SonderTypography.caption)
+                                .foregroundColor(SonderColors.inkMuted)
+                                .lineLimit(3)
+                        }
+                    }
+                    Text(item.rating.emoji)
+                        .font(.system(size: 16))
+                        .frame(width: 32, height: 32)
+                        .background(SonderColors.pinColor(for: item.rating).opacity(0.2))
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                }
+                if !item.log.tags.isEmpty { tagCapsules(item.log.tags) }
             }
             .padding(SonderSpacing.xs)
             .background(SonderColors.warmGray.opacity(0.6))
@@ -384,84 +429,82 @@ struct UnifiedBottomCard: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button {
-                onFocusFriend?(item.user.id, item.user.username)
-            } label: {
+            Button { onFocusFriend?(item.user.id, item.user.username) } label: {
                 Label("Show only \(item.user.username)", systemImage: "person.crop.circle")
             }
         }
     }
 
-    // MARK: - Pin Photo (priority: user photo > Google Places > friend photo)
+    @ViewBuilder
+    private func placeCategoryPills(types: [String]) -> some View {
+        let displayTypes = types
+            .filter { !$0.starts(with: "point_of_interest") && !$0.starts(with: "establishment") }
+            .prefix(5)
+            .map { $0.replacingOccurrences(of: "_", with: " ").capitalized }
+        if !displayTypes.isEmpty {
+            TagFlowLayout(spacing: SonderSpacing.xs) {
+                ForEach(displayTypes, id: \.self) { type in
+                    Text(type)
+                        .font(SonderTypography.caption)
+                        .padding(.horizontal, SonderSpacing.sm)
+                        .padding(.vertical, SonderSpacing.xs)
+                        .background(SonderColors.warmGray)
+                        .foregroundColor(SonderColors.inkDark)
+                        .clipShape(Capsule())
+                }
+            }
+        }
+    }
 
-    /// Resolves the best photo URL for a pin based on priority:
-    /// 1. First user log with a photo
-    /// 2. Google Places API photo (via photoReference)
-    /// 3. First friend log with a photo
+    private var friendsLovedBadge: some View {
+        HStack(spacing: 4) {
+            Text("\u{1F525}").font(.system(size: 12))
+            Text("Friends Loved")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(SonderColors.ratingMustSee)
+        }
+    }
+
+    private func viewFullDetailButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text("View Full Detail").font(SonderTypography.headline)
+                Image(systemName: "arrow.right").font(.system(size: 14, weight: .semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(SonderSpacing.sm)
+            .background(SonderColors.terracotta)
+            .foregroundColor(.white)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+        }
+    }
+
+    // MARK: - Pin Photo helpers
+
     private func pinPhotoURL(
-        userLogs: [LogSnapshot] = [],
-        photoReference: String? = nil,
-        friendLogs: [FeedItem] = [],
-        size: CGFloat = 56
+        userLogs: [LogSnapshot] = [], photoReference: String? = nil,
+        friendLogs: [FeedItem] = [], size: CGFloat = 56
     ) -> URL? {
-        // 1. User's own log photo
-        if let userPhoto = userLogs.first(where: { $0.photoURL != nil })?.photoURL,
-           let url = URL(string: userPhoto) {
-            return url
-        }
-
-        // 2. Google Places photo
-        if let ref = photoReference,
-           let url = GooglePlacesService.photoURL(for: ref, maxWidth: Int(size * 2)) {
-            return url
-        }
-
-        // 3. Friend's log photo
-        if let friendPhoto = friendLogs.first(where: { $0.log.photoURL != nil })?.log.photoURL,
-           let url = URL(string: friendPhoto) {
-            return url
-        }
-
+        if let p = userLogs.first(where: { $0.photoURL != nil })?.photoURL, let u = URL(string: p) { return u }
+        if let r = photoReference, let u = GooglePlacesService.photoURL(for: r, maxWidth: Int(size * 2)) { return u }
+        if let p = friendLogs.first(where: { $0.log.photoURL != nil })?.log.photoURL, let u = URL(string: p) { return u }
         return nil
     }
 
     @ViewBuilder
     private func pinPhoto(
-        userLogs: [LogSnapshot] = [],
-        photoReference: String? = nil,
-        friendLogs: [FeedItem] = [],
-        size: CGFloat = 56,
+        userLogs: [LogSnapshot] = [], photoReference: String? = nil,
+        friendLogs: [FeedItem] = [], size: CGFloat = 56,
         cornerRadius: CGFloat = SonderSpacing.radiusSm
     ) -> some View {
         if let url = pinPhotoURL(userLogs: userLogs, photoReference: photoReference, friendLogs: friendLogs, size: size) {
             DownsampledAsyncImage(url: url, targetSize: CGSize(width: size, height: size)) {
-                photoPlaceholder
+                Rectangle().fill(SonderColors.warmGray)
             }
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-        } else {
-            photoPlaceholder
-                .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         }
     }
-
-    private var photoPlaceholder: some View {
-        Rectangle()
-            .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay {
-                Image(systemName: "photo")
-                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
-            }
-    }
-
-    // MARK: - Helpers
 
     private func avatarPlaceholder(for user: FeedItem.FeedUser) -> some View {
         Circle()

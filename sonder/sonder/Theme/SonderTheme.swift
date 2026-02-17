@@ -170,4 +170,12 @@ extension View {
     func warmCard(padding: CGFloat = SonderSpacing.md) -> some View {
         modifier(WarmCardStyle(padding: padding))
     }
+
+    /// Expands the tap target of a toolbar icon to 56×56pt
+    /// while keeping the visual icon size unchanged.
+    func toolbarIcon() -> some View {
+        self
+            .frame(width: 56, height: 56)
+            .contentShape(Rectangle())
+    }
 }

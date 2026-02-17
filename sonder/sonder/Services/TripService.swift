@@ -37,18 +37,25 @@ final class TripService {
             startDate: startDate,
             endDate: endDate,
             collaboratorIDs: [],
-            createdBy: createdBy
+            createdBy: createdBy,
+            syncStatus: .pending
         )
 
-        // Sync to Supabase first
-        try await supabase
-            .from("trips")
-            .upsert(trip)
-            .execute()
-
-        // Save locally after Supabase succeeds
+        // Save locally first so the trip is never lost
         modelContext.insert(trip)
         try modelContext.save()
+
+        // Then sync to Supabase (SyncEngine will retry if this fails)
+        do {
+            try await supabase
+                .from("trips")
+                .upsert(trip)
+                .execute()
+            trip.syncStatus = .synced
+            try? modelContext.save()
+        } catch {
+            print("Trip created locally, Supabase sync will retry: \(error)")
+        }
 
         return trip
     }
@@ -56,15 +63,22 @@ final class TripService {
     /// Update an existing trip
     func updateTrip(_ trip: Trip) async throws {
         trip.updatedAt = Date()
+        trip.syncStatus = .pending
 
-        // Sync to Supabase
-        try await supabase
-            .from("trips")
-            .upsert(trip)
-            .execute()
-
-        // Save locally
+        // Save locally first
         try modelContext.save()
+
+        // Then sync to Supabase (SyncEngine will retry if this fails)
+        do {
+            try await supabase
+                .from("trips")
+                .upsert(trip)
+                .execute()
+            trip.syncStatus = .synced
+            try? modelContext.save()
+        } catch {
+            print("Trip updated locally, Supabase sync will retry: \(error)")
+        }
     }
 
     /// Delete a trip
@@ -329,6 +343,7 @@ final class TripService {
 
         trip.collaboratorIDs.append(userID)
         trip.updatedAt = Date()
+        trip.syncStatus = .pending
 
         // Sync to Supabase
         struct CollaboratorUpdate: Codable {
@@ -362,6 +377,7 @@ final class TripService {
     func removeCollaborator(userID: String, from trip: Trip) async throws {
         trip.collaboratorIDs.removeAll { $0 == userID }
         trip.updatedAt = Date()
+        trip.syncStatus = .pending
 
         try modelContext.save()
 
@@ -403,6 +419,42 @@ final class TripService {
             .update(LogTripUpdate(trip_id: trip?.id, updated_at: log.updatedAt))
             .eq("id", value: log.id)
             .execute()
+    }
+
+    /// Associate multiple orphaned logs with a trip in batch
+    func associateLogs(ids logIDs: Set<String>, with trip: Trip) async throws {
+        let allLogs = try modelContext.fetch(FetchDescriptor<Log>())
+        let allTripIDs = Set(try modelContext.fetch(FetchDescriptor<Trip>()).map(\.id))
+        let logsToAssign = allLogs.filter {
+            logIDs.contains($0.id) && ($0.hasNoTrip || !allTripIDs.contains($0.tripID!))
+        }
+
+        for log in logsToAssign {
+            log.tripID = trip.id
+            log.updatedAt = Date()
+        }
+        try modelContext.save()
+
+        // Sync each to Supabase
+        struct LogTripUpdate: Codable {
+            let trip_id: String?
+            let updated_at: Date
+        }
+
+        for log in logsToAssign {
+            do {
+                try await supabase
+                    .from("logs")
+                    .update(LogTripUpdate(trip_id: trip.id, updated_at: log.updatedAt))
+                    .eq("id", value: log.id)
+                    .execute()
+            } catch {
+                log.syncStatus = .pending
+                print("Log \(log.id) trip association will retry: \(error)")
+            }
+        }
+
+        try modelContext.save()
     }
 
     // MARK: - Helpers

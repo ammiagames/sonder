@@ -211,6 +211,7 @@ struct TripCollaboratorsView: View {
                         }
                     }
                     .listStyle(.plain)
+                    .scrollDismissesKeyboard(.interactively)
                 }
             }
             .navigationTitle("Invite Collaborator")

@@ -7,11 +7,9 @@
 
 import Foundation
 import AuthenticationServices
+import SwiftData
 import Supabase
 import GoogleSignIn
-
-// TODO: Test Sign in with Apple when we have a paid Apple Developer account ($99/year)
-// The capability is not available with Personal Team (free account)
 
 @MainActor
 @Observable
@@ -22,6 +20,9 @@ final class AuthenticationService {
     /// True while restoring session on launch. Show splash screen instead of auth screen.
     var isCheckingSession = true
     var error: Error?
+
+    /// Set by sonderApp after ModelContainer is ready. Used for local user caching.
+    var modelContext: ModelContext?
 
     private let supabase = SupabaseConfig.client
 
@@ -58,8 +59,18 @@ final class AuthenticationService {
     func checkSession() async {
         defer { isCheckingSession = false }
         do {
-            let session = try await supabase.auth.session
-            await loadUser(id: session.user.id.uuidString)
+            // Use local Keychain session (~ms) instead of network call (~2-5s).
+            // Supabase SDK auto-refreshes expired tokens on the next API call.
+            guard let session = try supabase.auth.currentSession else { return }
+            let userID = session.user.id.uuidString
+
+            // Try to load user from SwiftData cache first for instant UI
+            if let cached = loadCachedUser(id: userID) {
+                self.currentUser = cached
+            }
+
+            // Then refresh from Supabase in background
+            await loadUser(id: userID)
         } catch {
             // No active session, user needs to sign in
             self.currentUser = nil
@@ -78,6 +89,7 @@ final class AuthenticationService {
                     .value
 
                 self.currentUser = response
+                cacheUser(response)
                 return
             } catch {
                 if attempt < retries {
@@ -87,6 +99,50 @@ final class AuthenticationService {
                 }
             }
         }
+    }
+
+    // MARK: - SwiftData User Cache
+
+    /// Load user from local SwiftData cache (~5ms vs ~2s network).
+    func loadCachedUser(id: String) -> User? {
+        guard let ctx = modelContext else { return nil }
+        let userID = id
+        let descriptor = FetchDescriptor<User>(
+            predicate: #Predicate { $0.id == userID }
+        )
+        return try? ctx.fetch(descriptor).first
+    }
+
+    /// Save or update user in SwiftData for fast startup next time.
+    private func cacheUser(_ user: User) {
+        guard let ctx = modelContext else { return }
+        let userID = user.id
+        let descriptor = FetchDescriptor<User>(
+            predicate: #Predicate { $0.id == userID }
+        )
+        if let existing = try? ctx.fetch(descriptor).first {
+            existing.username = user.username
+            existing.firstName = user.firstName
+            existing.email = user.email
+            existing.avatarURL = user.avatarURL
+            existing.bio = user.bio
+            existing.isPublic = user.isPublic
+            existing.pinnedPlaceIDs = user.pinnedPlaceIDs
+            existing.updatedAt = user.updatedAt
+        } else {
+            ctx.insert(user)
+        }
+        try? ctx.save()
+    }
+
+    /// Remove cached user from SwiftData on sign-out.
+    private func clearCachedUser() {
+        guard let ctx = modelContext else { return }
+        let allUsers = (try? ctx.fetch(FetchDescriptor<User>())) ?? []
+        for user in allUsers {
+            ctx.delete(user)
+        }
+        try? ctx.save()
     }
     
     // MARK: - Sign in with Apple
@@ -112,10 +168,12 @@ final class AuthenticationService {
             let userID = session.user.id.uuidString
             let email = credential.email ?? session.user.email ?? ""
             let username = generateUsername(from: email)
-            
+            let firstName = credential.fullName?.givenName
+
             try await createOrUpdateUser(
                 id: userID,
                 username: username,
+                firstName: firstName,
                 email: email
             )
             
@@ -136,7 +194,7 @@ final class AuthenticationService {
         do {
             // Get the presenting view controller
             guard let windowScene = await UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                  let rootViewController = await windowScene.windows.first?.rootViewController else {
+                  let rootViewController = await windowScene.keyWindow?.rootViewController else {
                 throw AuthError.networkError
             }
 
@@ -163,10 +221,12 @@ final class AuthenticationService {
             let userID = session.user.id.uuidString
             let email = result.user.profile?.email ?? session.user.email ?? ""
             let username = generateUsername(from: email)
+            let firstName = result.user.profile?.givenName
 
             try await createOrUpdateUser(
                 id: userID,
                 username: username,
+                firstName: firstName,
                 email: email
             )
 
@@ -182,11 +242,12 @@ final class AuthenticationService {
     func signOut() async throws {
         try await supabase.auth.signOut()
         currentUser = nil
+        clearCachedUser()
     }
     
     // MARK: - Helpers
     
-    private func createOrUpdateUser(id: String, username: String, email: String) async throws {
+    private func createOrUpdateUser(id: String, username: String, firstName: String?, email: String) async throws {
         // First check if user already exists
         let existingUsers: [User] = try await supabase
             .from("users")
@@ -201,6 +262,7 @@ final class AuthenticationService {
             let user = User(
                 id: id,
                 username: username,
+                firstName: firstName,
                 email: email,
                 isPublic: false,
                 createdAt: Date(),
@@ -212,15 +274,16 @@ final class AuthenticationService {
                 .insert(user)
                 .execute()
         } else {
-            // Existing user - only update email if changed, preserve createdAt
+            // Existing user - update email and first_name if provided
             struct UserUpdate: Codable {
                 let email: String?
+                let first_name: String?
                 let updated_at: Date
             }
 
             try await supabase
                 .from("users")
-                .update(UserUpdate(email: email, updated_at: Date()))
+                .update(UserUpdate(email: email, first_name: firstName, updated_at: Date()))
                 .eq("id", value: id)
                 .execute()
         }

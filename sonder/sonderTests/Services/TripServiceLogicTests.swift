@@ -130,4 +130,107 @@ struct TripServiceLogicTests {
         let results = service.getLogsForTrip("nonexistent")
         #expect(results.isEmpty)
     }
+
+    // MARK: - associateLogs (batch)
+
+    @Test func associateLogs_assignsOrphanedLogs() async throws {
+        let (service, context, container) = try makeSUT()
+        _ = container
+
+        let trip = TestData.trip(id: "trip-1")
+        let log1 = TestData.log(id: "log-1", tripID: nil)
+        let log2 = TestData.log(id: "log-2", tripID: nil)
+        context.insert(trip)
+        context.insert(log1)
+        context.insert(log2)
+        try context.save()
+
+        try await service.associateLogs(ids: ["log-1", "log-2"], with: trip)
+
+        #expect(log1.tripID == "trip-1")
+        #expect(log2.tripID == "trip-1")
+    }
+
+    @Test func associateLogs_skipsAlreadyAssignedLogs() async throws {
+        let (service, context, container) = try makeSUT()
+        _ = container
+
+        let trip1 = TestData.trip(id: "trip-1")
+        let trip2 = TestData.trip(id: "trip-2")
+        let orphan = TestData.log(id: "log-orphan", tripID: nil)
+        let assigned = TestData.log(id: "log-assigned", tripID: "trip-2")
+        context.insert(trip1)
+        context.insert(trip2)
+        context.insert(orphan)
+        context.insert(assigned)
+        try context.save()
+
+        try await service.associateLogs(ids: ["log-orphan", "log-assigned"], with: trip1)
+
+        #expect(orphan.tripID == "trip-1")
+        #expect(assigned.tripID == "trip-2") // unchanged
+    }
+
+    @Test func associateLogs_ignoresUnknownIDs() async throws {
+        let (service, context, container) = try makeSUT()
+        _ = container
+
+        let trip = TestData.trip(id: "trip-1")
+        let log = TestData.log(id: "log-1", tripID: nil)
+        context.insert(trip)
+        context.insert(log)
+        try context.save()
+
+        try await service.associateLogs(ids: ["log-1", "nonexistent"], with: trip)
+
+        #expect(log.tripID == "trip-1")
+    }
+
+    @Test func associateLogs_emptyIDs() async throws {
+        let (service, context, container) = try makeSUT()
+        _ = container
+
+        let trip = TestData.trip(id: "trip-1")
+        let log = TestData.log(id: "log-1", tripID: nil)
+        context.insert(trip)
+        context.insert(log)
+        try context.save()
+
+        try await service.associateLogs(ids: [], with: trip)
+
+        #expect(log.tripID == nil) // untouched
+    }
+
+    @Test func associateLogs_updatesTimestamps() async throws {
+        let (service, context, container) = try makeSUT()
+        _ = container
+
+        let trip = TestData.trip(id: "trip-1")
+        let log = TestData.log(id: "log-1", tripID: nil)
+        let originalUpdatedAt = log.updatedAt
+        context.insert(trip)
+        context.insert(log)
+        try context.save()
+
+        Thread.sleep(forTimeInterval: 0.01)
+        try await service.associateLogs(ids: ["log-1"], with: trip)
+
+        #expect(log.updatedAt > originalUpdatedAt)
+    }
+
+    @Test func associateLogs_setsPendingSyncStatus() async throws {
+        let (service, context, container) = try makeSUT()
+        _ = container
+
+        let trip = TestData.trip(id: "trip-1")
+        let log = TestData.log(id: "log-1", tripID: nil, syncStatus: .synced)
+        context.insert(trip)
+        context.insert(log)
+        try context.save()
+
+        try await service.associateLogs(ids: ["log-1"], with: trip)
+
+        // Supabase unavailable in tests, so sync fails and status becomes .pending
+        #expect(log.syncStatus == .pending)
+    }
 }

@@ -30,10 +30,12 @@ struct TripCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Cover photo or gradient placeholder
-            coverPhotoSection
-                .frame(height: coverHeight)
-                .clipped()
+            // Cover photo (only when available)
+            if hasCoverPhoto {
+                coverPhotoSection
+                    .frame(height: coverHeight)
+                    .clipped()
+            }
 
             // Info section
             VStack(alignment: .leading, spacing: SonderSpacing.xs) {

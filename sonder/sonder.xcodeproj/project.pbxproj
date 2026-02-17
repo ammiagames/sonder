@@ -18,6 +18,7 @@
 		6B12FDBD2F3468AE008ED6BC /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 6B12FDBC2F3468AE008ED6BC /* GoogleSignInSwift */; };
 		6B12FEFD2F3D9157008ED6BC /* sonder_ui_ux.md in Resources */ = {isa = PBXBuildFile; fileRef = 6B12FEFC2F3D9157008ED6BC /* sonder_ui_ux.md */; };
 		6B12FEFF2F3D91BD008ED6BC /* FEATURE_ROADMAP.md in Resources */ = {isa = PBXBuildFile; fileRef = 6B12FEFE2F3D91BD008ED6BC /* FEATURE_ROADMAP.md */; };
+		6B78580F2F438AA000494DC9 /* GooglePlacesSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 6B78580E2F438AA000494DC9 /* GooglePlacesSwift */; };
 		6BCD27A92F344FA200A8C509 /* Wandr_Product_Spec_v3.md in Resources */ = {isa = PBXBuildFile; fileRef = 6BCD27A82F344FA200A8C509 /* Wandr_Product_Spec_v3.md */; };
 /* End PBXBuildFile section */
 
@@ -89,6 +90,7 @@
 				6B12FDB72F345FE6008ED6BC /* Supabase in Frameworks */,
 				6B12FDBD2F3468AE008ED6BC /* GoogleSignInSwift in Frameworks */,
 				6B12FDAD2F345FE6008ED6BC /* Auth in Frameworks */,
+				6B78580F2F438AA000494DC9 /* GooglePlacesSwift in Frameworks */,
 				6B12FDB52F345FE6008ED6BC /* Storage in Frameworks */,
 				6B12FDB32F345FE6008ED6BC /* Realtime in Frameworks */,
 				6B12FDBB2F3468AE008ED6BC /* GoogleSignIn in Frameworks */,
@@ -164,6 +166,7 @@
 				6B12FDB62F345FE6008ED6BC /* Supabase */,
 				6B12FDBA2F3468AE008ED6BC /* GoogleSignIn */,
 				6B12FDBC2F3468AE008ED6BC /* GoogleSignInSwift */,
+				6B78580E2F438AA000494DC9 /* GooglePlacesSwift */,
 			);
 			productName = sonder;
 			productReference = 6BCD27722F344CDD00A8C509 /* sonder.app */;
@@ -250,6 +253,7 @@
 			packageReferences = (
 				6B12FDAB2F345FE6008ED6BC /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				6B12FDB92F3468AE008ED6BC /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				6B78580D2F438AA000494DC9 /* XCRemoteSwiftPackageReference "ios-places-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6BCD27732F344CDD00A8C509 /* Products */;
@@ -652,6 +656,14 @@
 				minimumVersion = 9.1.0;
 			};
 		};
+		6B78580D2F438AA000494DC9 /* XCRemoteSwiftPackageReference "ios-places-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googlemaps/ios-places-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 10.8.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -694,6 +706,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6B12FDB92F3468AE008ED6BC /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignInSwift;
+		};
+		6B78580E2F438AA000494DC9 /* GooglePlacesSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6B78580D2F438AA000494DC9 /* XCRemoteSwiftPackageReference "ios-places-sdk" */;
+			productName = GooglePlacesSwift;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

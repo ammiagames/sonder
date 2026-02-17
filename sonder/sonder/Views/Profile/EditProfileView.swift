@@ -7,7 +7,6 @@
 
 import SwiftUI
 import SwiftData
-import PhotosUI
 import Supabase
 
 /// Edit profile sheet for updating username, bio, and avatar
@@ -18,10 +17,11 @@ struct EditProfileView: View {
     @Environment(PhotoService.self) private var photoService
     @Environment(SyncEngine.self) private var syncEngine
 
+    @State private var firstName: String = ""
     @State private var username: String = ""
     @State private var bio: String = ""
-    @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var selectedImage: UIImage?
+    @State private var showImagePicker = false
     @State private var isUploading = false
     @State private var isSaving = false
 
@@ -34,6 +34,9 @@ struct EditProfileView: View {
                     // Avatar section
                     avatarSection
 
+                    // First name section
+                    firstNameSection
+
                     // Username section
                     usernameSection
 
@@ -42,6 +45,7 @@ struct EditProfileView: View {
                 }
                 .padding(SonderSpacing.lg)
             }
+            .scrollDismissesKeyboard(.interactively)
             .background(SonderColors.cream)
             .scrollContentBackground(.hidden)
             .navigationTitle("Edit Profile")
@@ -66,10 +70,17 @@ struct EditProfileView: View {
             .onAppear {
                 loadCurrentValues()
             }
-            .onChange(of: selectedPhotoItem) { _, newValue in
-                Task {
-                    await loadImage(from: newValue)
-                }
+            .fullScreenCover(isPresented: $showImagePicker) {
+                EditableImagePicker(
+                    onImagePicked: { image in
+                        selectedImage = image
+                        showImagePicker = false
+                    },
+                    onCancel: {
+                        showImagePicker = false
+                    }
+                )
+                .ignoresSafeArea()
             }
         }
     }
@@ -78,7 +89,9 @@ struct EditProfileView: View {
 
     private var avatarSection: some View {
         VStack(spacing: SonderSpacing.sm) {
-            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+            Button {
+                showImagePicker = true
+            } label: {
                 ZStack {
                     if let image = selectedImage {
                         Image(uiImage: image)
@@ -106,6 +119,7 @@ struct EditProfileView: View {
                         .stroke(SonderColors.warmGray, lineWidth: 4)
                 }
             }
+            .buttonStyle(.plain)
             .disabled(isUploading)
 
             Text("Tap to change photo")
@@ -128,6 +142,30 @@ struct EditProfileView: View {
                     .font(.system(size: 40, weight: .bold, design: .rounded))
                     .foregroundColor(SonderColors.terracotta)
             }
+    }
+
+    // MARK: - First Name Section
+
+    private var firstNameSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            Text("First Name")
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            TextField("Your first name", text: $firstName)
+                .font(SonderTypography.body)
+                .padding(SonderSpacing.md)
+                .background(SonderColors.warmGray)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.words)
+
+            Text("Used in greetings around the app")
+                .font(SonderTypography.caption)
+                .foregroundColor(SonderColors.inkLight)
+        }
     }
 
     // MARK: - Username Section
@@ -190,23 +228,9 @@ struct EditProfileView: View {
 
     private func loadCurrentValues() {
         if let user = authService.currentUser {
+            firstName = user.firstName ?? ""
             username = user.username
             bio = user.bio ?? ""
-        }
-    }
-
-    private func loadImage(from item: PhotosPickerItem?) async {
-        guard let item = item else { return }
-
-        do {
-            if let data = try await item.loadTransferable(type: Data.self),
-               let image = UIImage(data: data) {
-                await MainActor.run {
-                    selectedImage = image
-                }
-            }
-        } catch {
-            print("Error loading image: \(error)")
         }
     }
 
@@ -227,6 +251,8 @@ struct EditProfileView: View {
             }
 
             // Update user locally
+            let trimmedFirstName = firstName.trimmingCharacters(in: .whitespaces)
+            user.firstName = trimmedFirstName.isEmpty ? nil : trimmedFirstName
             user.username = trimmedUsername
             user.bio = bio.isEmpty ? nil : bio
             user.avatarURL = newAvatarURL
@@ -256,6 +282,7 @@ struct EditProfileView: View {
 
     private func syncUserToSupabase(_ user: User) async {
         struct UserUpdate: Codable {
+            let first_name: String?
             let username: String
             let bio: String?
             let avatar_url: String?
@@ -263,6 +290,7 @@ struct EditProfileView: View {
         }
 
         let update = UserUpdate(
+            first_name: user.firstName,
             username: user.username,
             bio: user.bio,
             avatar_url: user.avatarURL,

@@ -28,6 +28,7 @@ struct RatePlaceView: View {
     @State private var showNewTripSheet = false
     @State private var newTripName = ""
     @State private var newTripCoverImage: UIImage?
+    @State private var visitedAt = Date()
     @State private var isSaving = false
     @State private var coverNudgeTrip: Trip?
     @State private var showCoverImagePicker = false
@@ -45,7 +46,9 @@ struct RatePlaceView: View {
         // Build a map of trip ID → latest log date
         let latestLogByTrip: [String: Date] = allLogs.reduce(into: [:]) { map, log in
             guard let tripID = log.tripID else { return }
-            if map[tripID] == nil || log.createdAt > map[tripID]! {
+            if let existing = map[tripID] {
+                if log.createdAt > existing { map[tripID] = log.createdAt }
+            } else {
                 map[tripID] = log.createdAt
             }
         }
@@ -84,6 +87,11 @@ struct RatePlaceView: View {
                 // Trip section
                 tripSection
                     .padding(.top, SonderSpacing.xl)
+
+                // When
+                dateSection
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.top, SonderSpacing.lg)
             }
         }
         .scrollContentBackground(.hidden)
@@ -141,6 +149,7 @@ struct RatePlaceView: View {
                     place: place,
                     rating: rating,
                     initialTrip: selectedTrip,
+                    initialVisitedAt: visitedAt,
                     onLogComplete: onLogComplete
                 )
             }
@@ -169,6 +178,7 @@ struct RatePlaceView: View {
                         if let url = await photoService.uploadPhoto(image, for: userId) {
                             trip.coverPhotoURL = url
                             trip.updatedAt = Date()
+                            trip.syncStatus = .pending
                             try? modelContext.save()
                         }
                     }
@@ -224,27 +234,46 @@ struct RatePlaceView: View {
         case .mustSee: SonderColors.ratingMustSee
         }
 
-        return VStack(spacing: SonderSpacing.xs) {
-            Text(rating.emoji)
-                .font(.system(size: 32))
-                .frame(width: 72, height: 72)
-                .background(isSelected ? color.opacity(0.2) : SonderColors.warmGray)
-                .clipShape(Circle())
-                .overlay(
-                    Circle()
-                        .stroke(isSelected ? color : .clear, lineWidth: 2)
-                )
-                .scaleEffect(isSelected ? 1.1 : 1.0)
-                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedRating)
-
-            Text(rating.displayName)
-                .font(SonderTypography.caption)
-                .fontWeight(.medium)
-                .foregroundColor(SonderColors.inkDark)
-        }
-        .onTapGesture {
+        return Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            selectedRating = rating
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                selectedRating = rating
+            }
+        } label: {
+            VStack(spacing: SonderSpacing.xs) {
+                Text(rating.emoji)
+                    .font(.system(size: 32))
+                    .frame(width: 72, height: 72)
+                    .background(isSelected ? color.opacity(0.2) : SonderColors.warmGray)
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(isSelected ? color : .clear, lineWidth: 2)
+                    )
+                    .scaleEffect(isSelected ? 1.1 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedRating)
+
+                Text(rating.displayName)
+                    .font(SonderTypography.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(SonderColors.inkDark)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Date Section
+
+    private var dateSection: some View {
+        HStack {
+            Image(systemName: "clock")
+                .font(.system(size: 14))
+                .foregroundColor(SonderColors.inkMuted)
+
+            DatePicker("", selection: $visitedAt)
+                .datePickerStyle(.compact)
+                .labelsHidden()
+                .tint(SonderColors.terracotta)
         }
     }
 
@@ -314,25 +343,27 @@ struct RatePlaceView: View {
     private func tripChip(_ trip: Trip) -> some View {
         let isSelected = selectedTrip?.id == trip.id
 
-        return HStack(spacing: 4) {
-            Image(systemName: "suitcase.fill")
-                .font(.system(size: 10))
-            Text(trip.name)
-                .font(SonderTypography.caption)
-                .fontWeight(.medium)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, SonderSpacing.sm)
-        .padding(.vertical, SonderSpacing.xs)
-        .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
-        .foregroundColor(isSelected ? .white : SonderColors.inkDark)
-        .clipShape(Capsule())
-        .onTapGesture {
+        return Button {
             withAnimation(.easeInOut(duration: 0.15)) {
                 selectedTrip = isSelected ? nil : trip
             }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "suitcase.fill")
+                    .font(.system(size: 10))
+                Text(trip.name)
+                    .font(SonderTypography.caption)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, SonderSpacing.sm)
+            .padding(.vertical, SonderSpacing.xs)
+            .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
+            .foregroundColor(isSelected ? .white : SonderColors.inkDark)
+            .clipShape(Capsule())
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: - New Trip Sheet
@@ -382,6 +413,7 @@ struct RatePlaceView: View {
                 if let url = await photoService.uploadPhoto(coverImage, for: userId) {
                     trip.coverPhotoURL = url
                     trip.updatedAt = Date()
+                    trip.syncStatus = .pending
                     try? modelContext.save()
                 }
             }
@@ -401,6 +433,7 @@ struct RatePlaceView: View {
             placeID: place.id,
             rating: rating,
             tripID: selectedTrip?.id,
+            visitedAt: visitedAt,
             syncStatus: .pending
         )
 
@@ -415,6 +448,7 @@ struct RatePlaceView: View {
                let url = GooglePlacesService.photoURL(for: ref) {
                 trip.coverPhotoURL = url.absoluteString
                 trip.updatedAt = Date()
+                trip.syncStatus = .pending
                 try? modelContext.save()
                 // Show nudge since it's only a Google photo placeholder
                 coverNudgeTrip = trip

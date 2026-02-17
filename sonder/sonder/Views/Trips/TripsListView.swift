@@ -28,6 +28,7 @@ struct TripsListView: View {
     @State private var pendingInvitationCount = 0
     @State private var selectedTrip: Trip?
     @State private var selectedLog: Log?
+    @Namespace private var tripTransition
 
     /// Trips filtered to current user (owned + collaborating)
     private var trips: [Trip] {
@@ -85,6 +86,7 @@ struct TripsListView: View {
             }
             .navigationDestination(item: $selectedTrip) { trip in
                 TripDetailView(trip: trip)
+                    .navigationTransition(.zoom(sourceID: trip.id, in: tripTransition))
             }
             .navigationDestination(item: $selectedLog) { log in
                 if let place = places.first(where: { $0.id == log.placeID }) {
@@ -187,6 +189,7 @@ struct TripsListView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .matchedTransitionSource(id: trip.id, in: tripTransition)
                     }
                 }
                 .padding(SonderSpacing.md)

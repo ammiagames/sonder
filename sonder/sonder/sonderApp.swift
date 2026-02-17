@@ -27,8 +27,12 @@ struct sonderApp: App {
     @State private var tripService: TripService?
     @State private var proximityService = ProximityNotificationService()
     @State private var exploreMapService = ExploreMapService()
+    @State private var photoSuggestionService = PhotoSuggestionService()
 
     init() {
+        // Configure Google Places SDK
+        GooglePlacesService.configure()
+
         // Configure Google Sign-In
         GoogleConfig.configure()
 
@@ -85,23 +89,37 @@ struct sonderApp: App {
         }
     }
 
+    /// Services that need ModelContext are initialized lazily on first body evaluation
+    /// (not in init, because modelContainer.mainContext requires the main actor).
+    @State private var servicesInitialized = false
+
     var body: some Scene {
         WindowGroup {
-            RootView(
-                authService: authService,
-                locationService: locationService,
-                googlePlacesService: googlePlacesService,
-                photoService: photoService,
-                syncEngine: syncEngine ?? createSyncEngine(),
-                placesCacheService: placesCacheService ?? createPlacesCacheService(),
-                socialService: socialService ?? createSocialService(),
-                feedService: feedService ?? createFeedService(),
-                wantToGoService: wantToGoService ?? createWantToGoService(),
-                tripService: tripService ?? createTripService(),
-                proximityService: proximityService,
-                exploreMapService: exploreMapService,
-                onAppear: initializeServices
-            )
+            Group {
+                if servicesInitialized,
+                   let syncEngine, let placesCacheService,
+                   let socialService, let feedService,
+                   let wantToGoService, let tripService {
+                    RootView(
+                        authService: authService,
+                        locationService: locationService,
+                        googlePlacesService: googlePlacesService,
+                        photoService: photoService,
+                        syncEngine: syncEngine,
+                        placesCacheService: placesCacheService,
+                        socialService: socialService,
+                        feedService: feedService,
+                        wantToGoService: wantToGoService,
+                        tripService: tripService,
+                        proximityService: proximityService,
+                        exploreMapService: exploreMapService,
+                        photoSuggestionService: photoSuggestionService
+                    )
+                } else {
+                    SplashView()
+                        .onAppear { initializeServices() }
+                }
+            }
         }
         .modelContainer(modelContainer)
     }
@@ -109,57 +127,36 @@ struct sonderApp: App {
     // MARK: - Service Initialization
 
     private func initializeServices() {
-        // Initialize sync engine
-        if syncEngine == nil {
-            let engine = SyncEngine(modelContext: modelContainer.mainContext)
-            syncEngine = engine
+        guard !servicesInitialized else { return }
+
+        let ctx = modelContainer.mainContext
+
+        // Initialize sync engine — defer the first sync so it doesn't compete with first render
+        let engine = SyncEngine(modelContext: ctx, startAutomatically: false)
+        syncEngine = engine
+
+        let cache = PlacesCacheService(modelContext: ctx)
+        placesCacheService = cache
+        googlePlacesService.cachedPhotoReferenceLookup = { [weak cache] placeId in
+            cache?.getPlace(by: placeId)?.photoReference
         }
 
-        // Initialize places cache service
-        if placesCacheService == nil {
-            placesCacheService = PlacesCacheService(modelContext: modelContainer.mainContext)
+        socialService = SocialService(modelContext: ctx)
+        feedService = FeedService(modelContext: ctx)
+        wantToGoService = WantToGoService(modelContext: ctx)
+        tripService = TripService(modelContext: ctx)
+
+        // Pass ModelContext to AuthenticationService for user caching
+        authService.modelContext = ctx
+
+        // Mark initialized — this triggers the RootView to appear
+        servicesInitialized = true
+
+        // Start sync after a short delay so the first frame renders first
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            engine.resumePeriodicSync()
         }
-
-        // Initialize social services
-        if socialService == nil {
-            socialService = SocialService(modelContext: modelContainer.mainContext)
-        }
-
-        if feedService == nil {
-            feedService = FeedService(modelContext: modelContainer.mainContext)
-        }
-
-        if wantToGoService == nil {
-            wantToGoService = WantToGoService(modelContext: modelContainer.mainContext)
-        }
-
-        if tripService == nil {
-            tripService = TripService(modelContext: modelContainer.mainContext)
-        }
-    }
-
-    private func createSyncEngine() -> SyncEngine {
-        SyncEngine(modelContext: modelContainer.mainContext)
-    }
-
-    private func createPlacesCacheService() -> PlacesCacheService {
-        PlacesCacheService(modelContext: modelContainer.mainContext)
-    }
-
-    private func createSocialService() -> SocialService {
-        SocialService(modelContext: modelContainer.mainContext)
-    }
-
-    private func createFeedService() -> FeedService {
-        FeedService(modelContext: modelContainer.mainContext)
-    }
-
-    private func createWantToGoService() -> WantToGoService {
-        WantToGoService(modelContext: modelContainer.mainContext)
-    }
-
-    private func createTripService() -> TripService {
-        TripService(modelContext: modelContainer.mainContext)
     }
 }
 
@@ -178,7 +175,7 @@ struct RootView: View {
     let tripService: TripService
     let proximityService: ProximityNotificationService
     let exploreMapService: ExploreMapService
-    let onAppear: () -> Void
+    let photoSuggestionService: PhotoSuggestionService
 
     var body: some View {
         contentView
@@ -194,17 +191,20 @@ struct RootView: View {
             .environment(tripService)
             .environment(proximityService)
             .environment(exploreMapService)
-            .onAppear(perform: onAppear)
+            .environment(photoSuggestionService)
             .onChange(of: authService.currentUser?.id) { _, newID in
                 if let userID = newID {
                     Task {
                         await socialService.refreshCounts(for: userID)
-                        // Pull remote data immediately on login
-                        await syncEngine.syncNow()
-                        // Configure and start proximity monitoring
+                        // Configure proximity service (don't prompt — only resume if already authorized)
                         proximityService.configure(wantToGoService: wantToGoService, userID: userID)
                         proximityService.setupNotificationCategories()
-                        await proximityService.startMonitoring()
+                        await proximityService.resumeMonitoringIfAuthorized()
+                    }
+                    // Defer full sync so the feed can load first
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        await syncEngine.syncNow()
                     }
                 } else {
                     // User logged out - stop monitoring
@@ -214,10 +214,10 @@ struct RootView: View {
             .task {
                 if let userID = authService.currentUser?.id {
                     await socialService.refreshCounts(for: userID)
-                    // Start proximity monitoring for existing session
+                    // Configure proximity service (don't prompt — only resume if already authorized)
                     proximityService.configure(wantToGoService: wantToGoService, userID: userID)
                     proximityService.setupNotificationCategories()
-                    await proximityService.startMonitoring()
+                    await proximityService.resumeMonitoringIfAuthorized()
                 }
             }
             .onOpenURL { url in

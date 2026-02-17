@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 enum TripFormMode {
     case create
@@ -20,7 +21,12 @@ struct CreateEditTripView: View {
     @Environment(PhotoService.self) private var photoService
     @Environment(SyncEngine.self) private var syncEngine
 
+    @Query(sort: \Log.visitedAt, order: .reverse) private var allLogs: [Log]
+    @Query private var allPlaces: [Place]
+    @Query private var allTrips: [Trip]
+
     let mode: TripFormMode
+    var onTripCreated: ((Trip) -> Void)?
     var onDelete: (() -> Void)?
 
     @State private var name = ""
@@ -36,6 +42,8 @@ struct CreateEditTripView: View {
     @State private var showStartDatePicker = false
     @State private var showEndDatePicker = false
     @State private var showDeleteAlert = false
+    @State private var selectedLogIDs: Set<String> = []
+    @State private var showLogPicker = false
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
@@ -45,6 +53,16 @@ struct CreateEditTripView: View {
     private var existingTrip: Trip? {
         if case .edit(let trip) = mode { return trip }
         return nil
+    }
+
+    private var orphanedLogs: [Log] {
+        guard let userID = authService.currentUser?.id else { return [] }
+        let tripIDs = Set(allTrips.map(\.id))
+        return allLogs.filter { $0.userID == userID && ($0.hasNoTrip || !tripIDs.contains($0.tripID!)) }
+    }
+
+    private var placesByID: [String: Place] {
+        Dictionary(uniqueKeysWithValues: allPlaces.map { ($0.id, $0) })
     }
 
     var body: some View {
@@ -152,6 +170,46 @@ struct CreateEditTripView: View {
                     Text("Dates (Optional)")
                 }
 
+                // Add Logs section
+                if !orphanedLogs.isEmpty {
+                    Section {
+                        DisclosureGroup(isExpanded: $showLogPicker) {
+                            HStack {
+                                Spacer()
+                                Button(selectedLogIDs.count == orphanedLogs.count ? "Deselect All" : "Select All") {
+                                    if selectedLogIDs.count == orphanedLogs.count {
+                                        selectedLogIDs.removeAll()
+                                    } else {
+                                        selectedLogIDs = Set(orphanedLogs.map(\.id))
+                                        autoFillDatesIfNeeded()
+                                    }
+                                }
+                                .font(SonderTypography.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(SonderColors.terracotta)
+                            }
+
+                            ForEach(orphanedLogs, id: \.id) { log in
+                                if let place = placesByID[log.placeID] {
+                                    logPickerRow(log: log, place: place)
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: SonderSpacing.xs) {
+                                Text("Add Logs")
+                                if !selectedLogIDs.isEmpty {
+                                    Text("\(selectedLogIDs.count)")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .frame(width: 20, height: 20)
+                                        .background(SonderColors.terracotta)
+                                        .clipShape(Circle())
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Delete section (edit mode only)
                 if isEditing {
                     Section {
@@ -166,6 +224,7 @@ struct CreateEditTripView: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .scrollContentBackground(.hidden)
             .background(SonderColors.cream)
             .navigationTitle(isEditing ? "Edit Trip" : "New Trip")
@@ -343,6 +402,8 @@ struct CreateEditTripView: View {
             do {
                 let trimmedDescription = tripDescription.trimmingCharacters(in: .whitespaces)
 
+                let savedTrip: Trip
+
                 if let trip = existingTrip {
                     // Update existing
                     trip.name = trimmedName
@@ -351,9 +412,10 @@ struct CreateEditTripView: View {
                     trip.endDate = endDate
                     trip.coverPhotoURL = coverPhotoURL
                     try await tripService.updateTrip(trip)
+                    savedTrip = trip
                 } else {
                     // Create new
-                    _ = try await tripService.createTrip(
+                    let newTrip = try await tripService.createTrip(
                         name: trimmedName,
                         description: trimmedDescription.isEmpty ? nil : trimmedDescription,
                         startDate: startDate,
@@ -361,6 +423,13 @@ struct CreateEditTripView: View {
                         coverPhotoURL: coverPhotoURL,
                         createdBy: userID
                     )
+                    onTripCreated?(newTrip)
+                    savedTrip = newTrip
+                }
+
+                // Assign selected logs to the trip
+                if !selectedLogIDs.isEmpty {
+                    try await tripService.associateLogs(ids: selectedLogIDs, with: savedTrip)
                 }
 
                 // Haptic feedback
@@ -381,6 +450,97 @@ struct CreateEditTripView: View {
 
             isSaving = false
         }
+    }
+
+    // MARK: - Log Picker
+
+    private func logPickerRow(log: Log, place: Place) -> some View {
+        let isSelected = selectedLogIDs.contains(log.id)
+
+        return Button {
+            let generator = UISelectionFeedbackGenerator()
+            generator.selectionChanged()
+            if isSelected {
+                selectedLogIDs.remove(log.id)
+            } else {
+                selectedLogIDs.insert(log.id)
+                autoFillDatesIfNeeded()
+            }
+        } label: {
+            HStack(spacing: SonderSpacing.sm) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundColor(isSelected ? SonderColors.terracotta : SonderColors.inkLight)
+
+                logPickerPhoto(log: log, place: place)
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(place.name)
+                            .font(SonderTypography.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(SonderColors.inkDark)
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        Text(log.rating.emoji)
+                            .font(.system(size: 14))
+                    }
+
+                    Text(log.visitedAt.formatted(date: .abbreviated, time: .omitted))
+                        .font(.system(size: 11))
+                        .foregroundColor(SonderColors.inkLight)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func logPickerPhoto(log: Log, place: Place) -> some View {
+        if let urlString = log.photoURL, let url = URL(string: urlString) {
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 44, height: 44)) {
+                logPickerPlacePhoto(place: place)
+            }
+        } else {
+            logPickerPlacePhoto(place: place)
+        }
+    }
+
+    @ViewBuilder
+    private func logPickerPlacePhoto(place: Place) -> some View {
+        if let photoRef = place.photoReference,
+           let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 200) {
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 44, height: 44)) {
+                logPickerPhotoPlaceholder
+            }
+        } else {
+            logPickerPhotoPlaceholder
+        }
+    }
+
+    private var logPickerPhotoPlaceholder: some View {
+        Rectangle()
+            .fill(SonderColors.warmGrayDark)
+            .overlay {
+                Image(systemName: "photo")
+                    .font(.system(size: 12))
+                    .foregroundColor(SonderColors.inkLight)
+            }
+    }
+
+    private func autoFillDatesIfNeeded() {
+        guard startDate == nil && endDate == nil else { return }
+
+        let selectedLogs = orphanedLogs.filter { selectedLogIDs.contains($0.id) }
+        guard !selectedLogs.isEmpty else { return }
+
+        let dates = selectedLogs.map(\.visitedAt)
+        startDate = dates.min()
+        endDate = dates.max()
     }
 
     private func deleteTrip(keepLogs: Bool) {
