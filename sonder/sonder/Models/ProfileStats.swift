@@ -19,7 +19,6 @@ struct ProfileStats {
     let streak: StreakData
     let dayOfWeek: DayOfWeekPattern
     let bookends: Bookends?
-    let explorationStats: ExplorationStats?
     let totalLogs: Int
 }
 
@@ -173,52 +172,3 @@ struct Bookends {
     let daysBetween: Int
 }
 
-// MARK: - Exploration Stats
-
-struct ExplorationStats {
-    let cumulativeDistance: CumulativeDistance
-    let cityPassportStamps: [CityStamp]
-    let neighborhoodCoverage: NeighborhoodCoverage?
-    let travelSparkline: TravelSparkline
-    let farthestFromHome: FarthestFromHome?
-    let explorationScore: ExplorationScore
-}
-
-struct CumulativeDistance {
-    let totalMiles: Double
-    let cityCount: Int
-    let countryCount: Int
-    let milesThisMonth: Double
-}
-
-struct CityStamp: Identifiable {
-    let id: String        // city name
-    let cityName: String
-    let logCount: Int
-}
-
-struct NeighborhoodCoverage {
-    let cityName: String
-    let uniqueZones: Int
-    let totalLogsInCity: Int
-}
-
-struct TravelSparkline {
-    let dataPoints: [(date: Date, cumulativeMiles: Double)]
-}
-
-struct FarthestFromHome {
-    let homeCityName: String
-    let placeName: String
-    let placeCity: String?
-    let distanceMiles: Double
-}
-
-struct ExplorationScore {
-    let score: Int
-    let level: String
-    let cityPoints: Int
-    let countryPoints: Int
-    let logPoints: Int
-    let categoryPoints: Int
-}

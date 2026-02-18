@@ -3,7 +3,7 @@
 //  sonder
 //
 //  Context-aware bottom card for the unified map.
-//  Uses native sheet presentation with detent-based state transitions.
+//  Presented as a custom overlay with drag-to-expand / drag-to-dismiss.
 //
 
 import SwiftUI
@@ -16,40 +16,172 @@ struct UnifiedBottomCard: View {
     var onFocusFriend: ((String, String) -> Void)? = nil
     var onExpandedChanged: ((Bool) -> Void)? = nil
 
-    static let compactDetent: PresentationDetent = .height(100)
-    static let expandedDetent: PresentationDetent = .fraction(0.65)
-
     @State private var isExpandedState = false
+    @State private var dragTranslation: CGFloat = 0
+    @State private var compactHeight: CGFloat = 0
+    @State private var scrollCooldown = false
 
     private var isExpanded: Bool { isExpandedState }
+    private var isDragging: Bool { dragTranslation != 0 }
 
-    var body: some View {
-        ScrollView {
-            cardContent
-                .padding(.top, SonderSpacing.sm)
-                .padding(.horizontal, SonderSpacing.md)
-                .padding(.bottom, SonderSpacing.md)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .scrollDisabled(!isExpanded)
-        .background(
-            GeometryReader { proxy in
-                Color.clear.preference(key: SheetHeightKey.self, value: proxy.size.height)
-            }
-        )
-        .onPreferenceChange(SheetHeightKey.self) { height in
-            let expanded = height > 150
-            if expanded != isExpandedState {
-                isExpandedState = expanded
-                onExpandedChanged?(expanded)
-            }
+    /// Show expanded detail content during drag-up (at ~30% progress) — not just after snap.
+    private var showExpandedContent: Bool { isExpandedState || dragProgress > 0.3 }
+
+    /// Edge inset: 10pt when compact, 0pt when expanded. Animated via spring on snap — NOT per-frame.
+    /// Per-frame padding changes cause full horizontal layout recalculation (text reflow, etc.) = glitchy.
+    private var edgeInset: CGFloat { isExpandedState ? 0 : 10 }
+
+    private var expandedHeight: CGFloat {
+        UIScreen.main.bounds.height * 0.5
+    }
+
+    /// Height interpolated between compact and expanded based on drag translation.
+    /// Negative dragTranslation = dragging up (expand), positive = dragging down (collapse/dismiss).
+    private var displayHeight: CGFloat {
+        let baseCompact = compactHeight > 0 ? compactHeight : 120
+        if isExpandedState {
+            // Expanded: drag down (positive translation) shrinks toward compact
+            let h = expandedHeight - dragTranslation
+            return max(baseCompact, min(expandedHeight, h))
+        } else {
+            // Compact: drag up grows toward expanded
+            let h = baseCompact - dragTranslation
+            return max(baseCompact, min(expandedHeight, h))
         }
     }
 
-    private struct SheetHeightKey: PreferenceKey {
-        static var defaultValue: CGFloat = 0
-        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-            value = max(value, nextValue())
+    /// Offset applied when dragging down from compact (for dismiss gesture).
+    private var dismissOffset: CGFloat {
+        if !isExpandedState && dragTranslation > 0 {
+            return dragTranslation
+        }
+        return 0
+    }
+
+    /// Progress from 0 (compact) to 1 (expanded) for interpolating visual properties.
+    private var dragProgress: CGFloat {
+        let baseCompact = compactHeight > 0 ? compactHeight : 120
+        let range = expandedHeight - baseCompact
+        guard range > 0 else { return isExpandedState ? 1 : 0 }
+        return (displayHeight - baseCompact) / range
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Drag handle — always outside ScrollView so touch-drag works for collapse
+            Capsule()
+                .fill(SonderColors.inkLight.opacity(0.35))
+                .frame(width: 36, height: 5)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
+
+            if isExpanded && !isDragging {
+                ScrollView {
+                    cardContent
+                        .padding(.top, SonderSpacing.sm)
+                        .padding(.horizontal, SonderSpacing.md)
+                        .padding(.bottom, SonderSpacing.md)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .onScrollGeometryChange(for: CGFloat.self) { geo in
+                    geo.contentOffset.y
+                } action: { _, offset in
+                    handleScrollOffset(offset)
+                }
+            } else {
+                cardContent
+                    .padding(.top, SonderSpacing.sm)
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.bottom, SonderSpacing.md)
+                    .background {
+                        if compactHeight == 0 {
+                            GeometryReader { geo in
+                                Color.clear.preference(key: CompactHeightKey.self, value: geo.size.height + 17)
+                            }
+                        }
+                    }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: isDragging ? displayHeight : (isExpanded ? expandedHeight : (compactHeight > 0 ? compactHeight : 120)), alignment: .top)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(SonderColors.cream)
+                .shadow(color: .black.opacity(isExpandedState ? 0 : 0.12), radius: 12, y: 4)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, edgeInset)
+        .padding(.bottom, edgeInset)
+        .offset(y: dismissOffset)
+        .opacity(Double(dismissOffset > 100 ? max(0, 1 - (dismissOffset - 100) / 80) : 1))
+        .contentShape(Rectangle())
+        .gesture(cardDragGesture)
+        .onPreferenceChange(CompactHeightKey.self) { value in
+            if value > 0 && compactHeight == 0 {
+                compactHeight = value
+            }
+        }
+        .onChange(of: isExpandedState) { _, expanded in
+            onExpandedChanged?(expanded)
+        }
+    }
+
+    // MARK: - Drag Gesture (live tracking + snap on release)
+    // Compact: scroll is disabled, so DragGesture captures all touch drags (live resize).
+    // Expanded: scroll is enabled for content. DragGesture only fires on the handle area
+    //   (top ~25pt, outside ScrollView's hit area) for collapse.
+
+    private var cardDragGesture: some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                dragTranslation = value.translation.height
+            }
+            .onEnded { value in
+                let ty = value.translation.height
+                let predicted = value.predictedEndTranslation.height
+
+                if isExpandedState {
+                    if ty > 60 || predicted > 150 {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            isExpandedState = false
+                            dragTranslation = 0
+                        }
+                    } else {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            dragTranslation = 0
+                        }
+                    }
+                } else {
+                    if ty < -25 || predicted < -120 {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            isExpandedState = true
+                            dragTranslation = 0
+                        }
+                    } else if ty > 50 || predicted > 120 {
+                        onDismiss()
+                    } else {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            dragTranslation = 0
+                        }
+                    }
+                }
+            }
+    }
+
+    // MARK: - Scroll-based collapse (for two-finger trackpad in iPhone Mirroring)
+    // Only handles expanded→collapse via top overscroll. Compact→expand is handled by DragGesture.
+    // Cooldown prevents rapid re-triggering when scroll offset is still stale after state change.
+
+    private func handleScrollOffset(_ offset: CGFloat) {
+        guard !isDragging, !scrollCooldown else { return }
+        if isExpandedState && offset < -30 {
+            scrollCooldown = true
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                isExpandedState = false
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                scrollCooldown = false
+            }
         }
     }
 
@@ -74,7 +206,7 @@ struct UnifiedBottomCard: View {
             if logs.count <= 1, let log = logs.first {
                 compactHeader(log: log, logs: logs, place: place)
 
-                if isExpanded {
+                if showExpandedContent {
                     heroImage(logs: logs, place: place)
 
                     if let note = log.note, !note.isEmpty {
@@ -99,7 +231,7 @@ struct UnifiedBottomCard: View {
                 }
             } else {
                 multiLogHeader(logs: logs, place: place)
-                if isExpanded {
+                if showExpandedContent {
                     Divider()
                     VStack(spacing: SonderSpacing.xs) {
                         ForEach(logs, id: \.id) { log in
@@ -123,7 +255,7 @@ struct UnifiedBottomCard: View {
                 }
                 .frame(width: 56, height: 56)
                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-                .opacity(isExpanded ? 0 : 1)
+                .opacity(1 - dragProgress)
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -213,7 +345,7 @@ struct UnifiedBottomCard: View {
                 }
             }
 
-            if isExpanded {
+            if showExpandedContent {
                 if place.isFriendsLoved { friendsLovedBadge }
 
                 HStack {
@@ -252,7 +384,7 @@ struct UnifiedBottomCard: View {
                 Spacer(minLength: 0)
             }
 
-            if isExpanded {
+            if showExpandedContent {
                 Divider()
 
                 HStack {
@@ -514,5 +646,15 @@ struct UnifiedBottomCard: View {
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(SonderColors.inkMuted)
             }
+    }
+}
+
+// MARK: - Preference Key for compact height measurement
+
+private struct CompactHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > 0 { value = next }
     }
 }

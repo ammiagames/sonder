@@ -14,7 +14,6 @@ enum ProfileDestination: Hashable {
     case followers
     case following
     case wantToGo
-    case heatmap
     case city(String)
     case tag(String)
     case logDetail(logID: String, placeID: String)
@@ -35,7 +34,6 @@ struct ProfileView: View {
     @State private var showShareProfile = false
     @State private var wantToGoCount = 0
     @State private var profileStats: ProfileStats?
-    @State private var showPinnedEditor = false
     @State private var activeDestination: ProfileDestination?
 
     @Binding var selectedTab: Int
@@ -136,9 +134,6 @@ struct ProfileView: View {
                     mustSeeCount: logs.filter { $0.rating == .mustSee }.count
                 )
             }
-            .sheet(isPresented: $showPinnedEditor) {
-                PinnedFavoritesEditorSheet(logs: logs, places: places)
-            }
             .refreshable {
                 await syncEngine.forceSyncNow()
                 if let userID = authService.currentUser?.id {
@@ -166,8 +161,6 @@ struct ProfileView: View {
                     )
                 case .wantToGo:
                     WantToGoListView()
-                case .heatmap:
-                    HeatmapShowcaseView()
                 case .city(let name):
                     CityLogsView(title: name, logs: logsForCity(name))
                 case .tag(let name):
@@ -484,57 +477,6 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - View My Map Banner
-
-    private var viewMyMapBanner: some View {
-        Button {
-            if !logs.isEmpty {
-                exploreFocusMyPlaces = true
-                selectedTab = 1
-            }
-        } label: {
-            HStack(spacing: SonderSpacing.sm) {
-                Image(systemName: "map.fill")
-                    .font(.system(size: 20))
-                    .foregroundColor(SonderColors.terracotta)
-                    .frame(width: 40, height: 40)
-                    .background(SonderColors.terracotta.opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    if logs.isEmpty {
-                        Text("Your Map")
-                            .font(SonderTypography.headline)
-                            .foregroundColor(SonderColors.inkDark)
-                        Text("Start logging places to see them on the map")
-                            .font(SonderTypography.caption)
-                            .foregroundColor(SonderColors.inkMuted)
-                    } else {
-                        Text("Your Map")
-                            .font(SonderTypography.headline)
-                            .foregroundColor(SonderColors.inkDark)
-                        Text("\(logs.count) places logged")
-                            .font(SonderTypography.caption)
-                            .foregroundColor(SonderColors.inkMuted)
-                    }
-                }
-
-                Spacer()
-
-                if !logs.isEmpty {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(SonderColors.inkLight)
-                }
-            }
-            .padding(SonderSpacing.md)
-            .background(SonderColors.warmGray)
-            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
-        }
-        .buttonStyle(.plain)
-        .disabled(logs.isEmpty)
-    }
-
     // MARK: - Profile Header
 
     private var hasAvatarPhoto: Bool {
@@ -671,17 +613,6 @@ struct ProfileView: View {
                     .font(.system(size: 36, weight: .bold, design: .rounded))
                     .foregroundColor(SonderColors.terracotta)
             }
-    }
-
-    // MARK: - Pinned Favorites Section
-
-    private var pinnedFavoritesSection: some View {
-        PinnedFavoritesView(
-            logs: logs,
-            places: places,
-            pinnedPlaceIDs: authService.currentUser?.pinnedPlaceIDs ?? [],
-            onEditTapped: { showPinnedEditor = true }
-        )
     }
 
     // MARK: - Hero Stat Section
@@ -918,83 +849,6 @@ struct ProfileView: View {
         .padding(.vertical, vPad)
         .background(bgColor)
         .clipShape(Capsule())
-    }
-
-    // MARK: - Recent Activity Section
-
-    private var recentActivitySection: some View {
-        let recentLogs = Array(logs.sorted { $0.createdAt > $1.createdAt }.prefix(3))
-
-        return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            Text("Recent activity")
-                .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
-                .textCase(.uppercase)
-                .tracking(0.5)
-
-            ForEach(recentLogs, id: \.id) { log in
-                if let place = places.first(where: { $0.id == log.placeID }) {
-                    Button {
-                        activeDestination = .logDetail(logID: log.id, placeID: place.id)
-                    } label: {
-                        HStack(spacing: SonderSpacing.sm) {
-                            Text(log.rating.emoji)
-                                .font(.system(size: 20))
-                                .frame(width: 36, height: 36)
-                                .background(SonderColors.pinColor(for: log.rating).opacity(0.2))
-                                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(place.name)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(SonderColors.inkDark)
-                                    .lineLimit(1)
-
-                                Text(log.createdAt.relativeDisplay)
-                                    .font(.system(size: 12))
-                                    .foregroundColor(SonderColors.inkLight)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(SonderColors.inkLight)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .buttonStyle(.plain)
-
-                    if log.id != recentLogs.last?.id {
-                        Divider()
-                    }
-                }
-            }
-
-            // "See all" link → switches to Journal tab
-            if logs.count > 3 {
-                Divider()
-
-                Button {
-                    selectedTab = 2
-                } label: {
-                    HStack {
-                        Text("See all \(logs.count) logs")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(SonderColors.terracotta)
-                        Spacer()
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(SonderColors.terracotta)
-                    }
-                }
-                .contentShape(Rectangle())
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
     }
 
     // MARK: - City Data (shared)
@@ -1287,83 +1141,3 @@ struct FilteredLogsListView: View {
     }
 }
 
-// MARK: - Journey Stat Card (Warm Style)
-
-struct JourneyStatCard: View {
-    let value: String
-    let label: String
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        VStack(spacing: SonderSpacing.xs) {
-            Image(systemName: icon)
-                .font(.system(size: 20))
-                .foregroundColor(color)
-                .frame(width: 40, height: 40)
-                .background(color.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-
-            Text(value)
-                .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
-
-            Text(label)
-                .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
-    }
-}
-
-// MARK: - Warm Flow Layout Tags
-
-struct WarmFlowLayoutTags: View {
-    let tags: [String]
-
-    var body: some View {
-        FlowLayoutWrapper {
-            ForEach(tags, id: \.self) { tag in
-                Text(tag)
-                    .font(SonderTypography.subheadline)
-                    .padding(.horizontal, SonderSpacing.sm)
-                    .padding(.vertical, SonderSpacing.xs)
-                    .background(SonderColors.terracotta.opacity(0.12))
-                    .foregroundColor(SonderColors.terracotta)
-                    .clipShape(Capsule())
-            }
-        }
-    }
-}
-
-// MARK: - Stat Card (Legacy)
-
-struct StatCard: View {
-    let value: String
-    let label: String
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(color)
-
-            Text(value)
-                .font(.title)
-                .fontWeight(.bold)
-
-            Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-}

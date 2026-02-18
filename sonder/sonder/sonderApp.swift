@@ -177,6 +177,11 @@ struct RootView: View {
     let exploreMapService: ExploreMapService
     let photoSuggestionService: PhotoSuggestionService
 
+    @Environment(\.modelContext) private var modelContext
+
+    @State private var onboardingComplete = false
+    @State private var initialTab: Int = 0
+
     var body: some View {
         contentView
             .environment(authService)
@@ -231,9 +236,56 @@ struct RootView: View {
             // Show splash while restoring session to avoid flashing the auth screen
             SplashView()
         } else if authService.isAuthenticated {
-            MainTabView()
+            if hasCompletedOnboarding {
+                MainTabView(initialTab: initialTab)
+            } else {
+                OnboardingView { result in
+                    markOnboardingComplete()
+                    // Land on Journal if they logged, Feed (default) otherwise
+                    initialTab = result.didLogPlace ? 2 : 0
+                    onboardingComplete = true
+                }
+            }
         } else {
             AuthenticationView()
         }
+    }
+
+    // MARK: - Onboarding Gate
+
+    /// Check if onboarding is completed for the current user.
+    /// Uses UserDefaults keyed by user ID, with a fallback heuristic:
+    /// if the user already has logs, they're not new.
+    private var hasCompletedOnboarding: Bool {
+        if onboardingComplete { return true }
+
+        guard let userID = authService.currentUser?.id else { return false }
+
+        // Primary: UserDefaults flag
+        if UserDefaults.standard.bool(forKey: "onboarding_completed_\(userID)") {
+            return true
+        }
+
+        // Fallback: existing users who have logs skip onboarding
+        if userHasExistingLogs(userID: userID) {
+            // Set the flag so we don't re-check next time
+            markOnboardingComplete()
+            return true
+        }
+
+        return false
+    }
+
+    private func userHasExistingLogs(userID: String) -> Bool {
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.userID == userID }
+        )
+        let count = (try? modelContext.fetchCount(descriptor)) ?? 0
+        return count > 0
+    }
+
+    private func markOnboardingComplete() {
+        guard let userID = authService.currentUser?.id else { return }
+        UserDefaults.standard.set(true, forKey: "onboarding_completed_\(userID)")
     }
 }

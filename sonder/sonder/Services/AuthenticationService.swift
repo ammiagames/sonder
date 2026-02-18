@@ -19,6 +19,8 @@ final class AuthenticationService {
     var isLoading = false
     /// True while restoring session on launch. Show splash screen instead of auth screen.
     var isCheckingSession = true
+    /// True when a brand-new user just signed up (first time in Supabase).
+    var isNewUser = false
     var error: Error?
 
     /// Set by sonderApp after ModelContainer is ready. Used for local user caching.
@@ -258,6 +260,9 @@ final class AuthenticationService {
             .value
 
         if existingUsers.isEmpty {
+            // Flag for onboarding flow
+            isNewUser = true
+
             // New user - create with current timestamp
             let user = User(
                 id: id,

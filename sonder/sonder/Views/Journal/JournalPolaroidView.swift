@@ -65,6 +65,9 @@ struct JournalPolaroidView: View {
                 // Background layer
                 polaroidBackground(size: outerGeo.size)
                     .ignoresSafeArea()
+                    .id(backgroundStyle)
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.8), value: backgroundStyle)
 
                 ScrollView {
                     VStack(spacing: 0) {
@@ -104,13 +107,9 @@ struct JournalPolaroidView: View {
                                                 cardProximities[index] = normalizedDistance
                                             }
                                             .onChange(of: midY) { _, _ in
-                                                // Only update state when proximity changes enough to matter visually
-                                                let oldProximity = cardProximities[index] ?? 1.0
-                                                if abs(normalizedDistance - oldProximity) > 0.05 {
-                                                    let localMid = cardGeo.frame(in: .named("polaroidScroll")).midY
-                                                    cardCenters[index] = localMid
-                                                    cardProximities[index] = normalizedDistance
-                                                }
+                                                let localMid = cardGeo.frame(in: .named("polaroidScroll")).midY
+                                                cardCenters[index] = localMid
+                                                cardProximities[index] = normalizedDistance
                                             }
                                     }
                                     .frame(height: 380)
@@ -188,13 +187,20 @@ struct JournalPolaroidView: View {
     }
 
     private func tripPhotosBackground(size: CGSize) -> some View {
-        ZStack {
+        let focusedIndex = trips.firstIndex(where: { $0.id == scrolledID }) ?? 0
+
+        return ZStack {
             Color(red: 0.08, green: 0.07, blue: 0.06)
 
             ForEach(Array(trips.enumerated()), id: \.element.id) { index, trip in
                 let isFocused = trip.id == scrolledID
                 let proximity = isFocused ? 0.0 : (cardProximities[index] ?? 1.0)
-                let bgOpacity = max(0, 1.0 - proximity * 1.8)
+                // Wider crossfade range so adjacent backgrounds blend smoothly
+                let bgOpacity = max(0, 1.0 - proximity * 1.2)
+
+                // Subtle parallax: shift background opposite to scroll direction
+                let direction: CGFloat = index < focusedIndex ? -1 : (index > focusedIndex ? 1 : 0)
+                let parallaxOffset = direction * proximity * 30
 
                 if bgOpacity > 0.01 {
                     if let url = backgroundPhotoURL(for: trip) {
@@ -202,15 +208,15 @@ struct JournalPolaroidView: View {
                             tripColorFallback(for: trip)
                         }
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: size.width, height: size.height)
+                        .frame(width: size.width, height: size.height + 80)
                         .clipped()
+                        .offset(y: parallaxOffset)
                         .opacity(bgOpacity)
-                        .animation(.easeOut(duration: 0.4), value: bgOpacity)
                     } else {
                         tripColorFallback(for: trip)
                             .frame(width: size.width, height: size.height)
+                            .offset(y: parallaxOffset)
                             .opacity(bgOpacity)
-                            .animation(.easeOut(duration: 0.4), value: bgOpacity)
                     }
                 }
             }

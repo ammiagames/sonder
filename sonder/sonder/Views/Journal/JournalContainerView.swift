@@ -177,7 +177,7 @@ struct JournalContainerView: View {
                         Menu {
                             ForEach(PolaroidBackgroundStyle.allCases, id: \.self) { bg in
                                 Button {
-                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                    withAnimation(.easeInOut(duration: 0.8)) {
                                         polaroidBackground = bg
                                     }
                                 } label: {

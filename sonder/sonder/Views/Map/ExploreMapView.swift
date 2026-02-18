@@ -54,8 +54,6 @@ struct ExploreMapView: View {
     @State private var pinDropToast: PinDropToastInfo?
     @State private var cardIsExpanded = false
     @State private var sheetPin: UnifiedMapPin?
-    @State private var sheetDetent: PresentationDetent = UnifiedBottomCard.compactDetent
-    @State private var pendingSheetPin: UnifiedMapPin?
 
     // Memoized pin data — recomputed only when inputs change
     @State private var cachedUnifiedPins: [UnifiedMapPin] = []
@@ -135,46 +133,48 @@ struct ExploreMapView: View {
             wantToGoBottomContent
                 .animation(.easeOut(duration: 0.2), value: mapSelection != nil)
         }
-        .sheet(item: $sheetPin, onDismiss: handleUnifiedSheetDismiss) { pin in
-            UnifiedBottomCard(
-                pin: pin,
-                onDismiss: { clearSelection() },
-                onNavigateToLog: { logID, place in
-                    detailLogID = logID
-                    detailPlace = place
-                    sheetPin = nil
-                    mapSelection = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        showDetail = true
-                    }
-                },
-                onNavigateToFeedItem: { feedItem in
-                    sheetPin = nil
-                    mapSelection = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        selectedFeedItem = feedItem
-                    }
-                },
-                onFocusFriend: { friendID, _ in
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        filter.selectedFriendIDs = [friendID]
-                        filter.showFriendsPlaces = true
-                        sheetPin = nil
+        .overlay(alignment: .bottom) {
+            if let pin = sheetPin {
+                UnifiedBottomCard(
+                    pin: pin,
+                    onDismiss: {
+                        UISelectionFeedbackGenerator().selectionChanged()
                         clearSelection()
+                    },
+                    onNavigateToLog: { logID, place in
+                        detailLogID = logID
+                        detailPlace = place
+                        withAnimation(.smooth(duration: 0.2)) { sheetPin = nil }
+                        mapSelection = nil
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            showDetail = true
+                        }
+                    },
+                    onNavigateToFeedItem: { feedItem in
+                        withAnimation(.smooth(duration: 0.2)) { sheetPin = nil }
+                        mapSelection = nil
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            selectedFeedItem = feedItem
+                        }
+                    },
+                    onFocusFriend: { friendID, _ in
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            filter.selectedFriendIDs = [friendID]
+                            filter.showFriendsPlaces = true
+                            sheetPin = nil
+                            clearSelection()
+                        }
+                    },
+                    onExpandedChanged: { expanded in
+                        cardIsExpanded = expanded
+                        recenterForCardState(coordinate: pin.coordinate, expanded: expanded)
                     }
-                },
-                onExpandedChanged: { expanded in
-                    cardIsExpanded = expanded
-                    recenterForCardState(coordinate: pin.coordinate, expanded: expanded)
-                }
-            )
-            .id(pin.id)
-            .presentationDetents([UnifiedBottomCard.compactDetent, UnifiedBottomCard.expandedDetent], selection: $sheetDetent)
-            .presentationBackgroundInteraction(.enabled(upThrough: UnifiedBottomCard.compactDetent))
-            .presentationBackground(SonderColors.cream)
-            .presentationCornerRadius(SonderSpacing.radiusLg)
-            .presentationDragIndicator(.visible)
+                )
+                .id(pin.id)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .animation(.smooth(duration: 0.25), value: sheetPin?.id)
     }
 
     // MARK: - Core Map View (split to help type-checker)
@@ -210,21 +210,14 @@ struct ExploreMapView: View {
             }
             .onChange(of: mapSelection) { _, newTag in
                 hasSelection?.wrappedValue = newTag != nil
-                // Manage unified sheet presentation
+                // Manage unified card presentation
                 if case .unified(let id) = newTag,
                    let pin = filteredPins.first(where: { $0.id == id }) {
-                    if sheetPin != nil {
-                        // Queue new pin and dismiss fast — onDismiss will re-present
-                        pendingSheetPin = pin
-                        withAnimation(.easeIn(duration: 0.08)) { sheetPin = nil }
-                    } else {
-                        sheetDetent = UnifiedBottomCard.compactDetent
-                        sheetPin = pin
-                    }
+                    withAnimation(.smooth(duration: 0.25)) { sheetPin = pin }
                     UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                 } else {
                     // Not a unified pin — dismiss if showing
-                    sheetPin = nil
+                    withAnimation(.smooth(duration: 0.25)) { sheetPin = nil }
                 }
                 // Zoom to selected pin
                 guard let newTag else { return }
@@ -494,22 +487,6 @@ struct ExploreMapView: View {
         }
     }
 
-    private func handleUnifiedSheetDismiss() {
-        if let pending = pendingSheetPin {
-            // Pin swap — re-present at compact immediately
-            pendingSheetPin = nil
-            sheetDetent = UnifiedBottomCard.compactDetent
-            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-            sheetPin = pending
-        } else {
-            // User dismissed — clear everything
-            UISelectionFeedbackGenerator().selectionChanged()
-            if mapSelection != nil {
-                clearSelection()
-            }
-        }
-    }
-
     private func clearSelection() {
         // Recenter camera on the pin before dismissing
         if let tag = mapSelection {
@@ -523,7 +500,7 @@ struct ExploreMapView: View {
             if let coordinate {
                 let currentSpan = visibleRegion?.span ?? cameraPosition.region?.span
                     ?? MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                withAnimation(.smooth(duration: 0.4)) {
+                withAnimation(.smooth(duration: 0.5)) {
                     cameraPosition = .region(MKCoordinateRegion(center: coordinate, span: currentSpan))
                 }
             }
@@ -878,11 +855,11 @@ struct ExploreMapView: View {
                 latitude: coordinate.latitude - latOffset,
                 longitude: coordinate.longitude
             )
-            withAnimation(.smooth(duration: 0.4)) {
+            withAnimation(.smooth(duration: 0.5)) {
                 cameraPosition = .region(MKCoordinateRegion(center: offsetCenter, span: currentSpan))
             }
         } else {
-            withAnimation(.smooth(duration: 0.4)) {
+            withAnimation(.smooth(duration: 0.5)) {
                 cameraPosition = .region(MKCoordinateRegion(center: coordinate, span: currentSpan))
             }
         }
