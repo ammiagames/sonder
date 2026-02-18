@@ -25,7 +25,7 @@ struct WantToGoTab: View {
     var body: some View {
         Image(systemName: "bookmark.fill")
             .font(.system(size: 9, weight: .bold))
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .frame(width: 18, height: 18)
             .background(SonderColors.wantToGoPin, in: Circle())
             .shadow(color: .black.opacity(0.15), radius: 1.5, y: 0.5)
@@ -187,7 +187,7 @@ struct LogPinView: View {
             if visitCount > 1 {
                 Text("×\(visitCount)")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
                     .background(SonderColors.terracotta)
@@ -347,7 +347,7 @@ struct CombinedMapPinView: View {
                         .font(.system(size: 9, weight: .bold))
                 }
             }
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .padding(.horizontal, 5)
             .padding(.vertical, 3)
             .background(SonderColors.exploreCluster)
@@ -358,7 +358,7 @@ struct CombinedMapPinView: View {
             if visitCount > 1 {
                 Text("×\(visitCount)")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
                     .background(SonderColors.terracotta)
@@ -380,7 +380,7 @@ struct CombinedMapPinView: View {
             if hasNote {
                 Image(systemName: "text.quote")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .frame(width: 16, height: 16)
                     .background(SonderColors.cream, in: Circle())
                     .shadow(color: .black.opacity(0.15), radius: 1, y: 0.5)

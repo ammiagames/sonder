@@ -11,6 +11,7 @@ import AuthenticationServices
 struct AuthenticationView: View {
     @Environment(AuthenticationService.self) private var authService
     @State private var isSigningInWithGoogle = false
+    @State private var signInError: String?
 
     var body: some View {
         VStack(spacing: SonderSpacing.xxl) {
@@ -24,11 +25,11 @@ struct AuthenticationView: View {
 
                 Text("Sonder")
                     .font(.system(size: 48, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
 
                 Text("Log anything. Remember everywhere.")
                     .font(SonderTypography.body)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
             }
 
@@ -48,7 +49,7 @@ struct AuthenticationView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
                     .background(SonderColors.ochre)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
                 }
                 #endif
@@ -60,10 +61,14 @@ struct AuthenticationView: View {
                         switch result {
                         case .success(let authorization):
                             if let credential = authorization.credential as? ASAuthorizationAppleIDCredential {
-                                try? await authService.signInWithApple(credential: credential)
+                                do {
+                                    try await authService.signInWithApple(credential: credential)
+                                } catch {
+                                    signInError = error.localizedDescription
+                                }
                             }
                         case .failure(let error):
-                            print("Sign in with Apple failed: \(error)")
+                            signInError = error.localizedDescription
                         }
                     }
                 }
@@ -89,7 +94,7 @@ struct AuthenticationView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
                     .background(SonderColors.warmGray)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
                     .overlay(
                         RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
@@ -103,6 +108,14 @@ struct AuthenticationView: View {
         }
         .padding()
         .background(SonderColors.cream)
+        .alert("Sign In Failed", isPresented: Binding(
+            get: { signInError != nil },
+            set: { if !$0 { signInError = nil } }
+        )) {
+            Button("OK", role: .cancel) { signInError = nil }
+        } message: {
+            Text(signInError ?? "An unknown error occurred.")
+        }
     }
 }
 

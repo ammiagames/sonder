@@ -40,7 +40,7 @@ struct ShareProfileCardView: View {
                         Text("Share Your Journey")
                     }
                     .font(SonderTypography.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, SonderSpacing.md)
                     .background(SonderColors.terracotta)
@@ -57,7 +57,7 @@ struct ShareProfileCardView: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                 }
             }
             .sheet(isPresented: $showShareSheet) {
@@ -76,7 +76,7 @@ struct ShareProfileCardView: View {
             HStack {
                 Text("sonder")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
                 Spacer()
             }
 
@@ -98,12 +98,12 @@ struct ShareProfileCardView: View {
                 VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                     Text(authService.currentUser?.username ?? "Explorer")
                         .font(SonderTypography.title)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
 
                     if let bio = authService.currentUser?.bio, !bio.isEmpty {
                         Text(bio)
                             .font(SonderTypography.caption)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .lineLimit(2)
                     }
                 }
@@ -124,7 +124,7 @@ struct ShareProfileCardView: View {
                     Text("🔥")
                     Text("\(mustSeeCount) must-see places discovered")
                         .font(SonderTypography.subheadline)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                     Spacer()
                 }
             }
@@ -138,7 +138,7 @@ struct ShareProfileCardView: View {
                             .padding(.horizontal, SonderSpacing.xs)
                             .padding(.vertical, SonderSpacing.xxs)
                             .background(SonderColors.terracotta.opacity(0.12))
-                            .foregroundColor(SonderColors.terracotta)
+                            .foregroundStyle(SonderColors.terracotta)
                             .clipShape(Capsule())
                     }
                     Spacer()
@@ -159,10 +159,10 @@ struct ShareProfileCardView: View {
         VStack(spacing: SonderSpacing.xxs) {
             Text(value)
                 .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
             Text(label)
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, SonderSpacing.sm)
@@ -182,7 +182,7 @@ struct ShareProfileCardView: View {
             .overlay {
                 Text(authService.currentUser?.username.prefix(1).uppercased() ?? "?")
                     .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
     }
 

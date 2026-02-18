@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "OtherUserProfileView")
 
 /// View another user's profile (read-only)
 struct OtherUserProfileView: View {
@@ -33,7 +36,7 @@ struct OtherUserProfileView: View {
                         .tint(SonderColors.terracotta)
                     Text("Loading profile...")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 120)
@@ -84,10 +87,10 @@ struct OtherUserProfileView: View {
             } else {
                 ContentUnavailableView {
                     Label("User Not Found", systemImage: "person.slash")
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 } description: {
                     Text("This user doesn't exist or has been deleted")
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
                 .padding(.top, 80)
             }
@@ -103,7 +106,7 @@ struct OtherUserProfileView: View {
                         OtherUserMapView(userID: user.id, username: user.username, logs: userLogs)
                     } label: {
                         Image(systemName: "map")
-                            .foregroundColor(SonderColors.terracotta)
+                            .foregroundStyle(SonderColors.terracotta)
                     }
                 }
             }
@@ -140,13 +143,13 @@ struct OtherUserProfileView: View {
             // Username
             Text("@\(user.username)")
                 .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             // Bio
             if let bio = user.bio, !bio.isEmpty {
                 Text(bio)
                     .font(SonderTypography.body)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, SonderSpacing.xxl)
             }
@@ -155,10 +158,10 @@ struct OtherUserProfileView: View {
             HStack(spacing: SonderSpacing.xxs) {
                 Image(systemName: "leaf.fill")
                     .font(.system(size: 11))
-                    .foregroundColor(SonderColors.sage)
+                    .foregroundStyle(SonderColors.sage)
                 Text("Exploring since \(user.createdAt.formatted(date: .abbreviated, time: .omitted))")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
         }
         .frame(maxWidth: .infinity)
@@ -177,7 +180,7 @@ struct OtherUserProfileView: View {
             .overlay {
                 Text(user.username.prefix(1).uppercased())
                     .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
     }
 
@@ -224,10 +227,10 @@ struct OtherUserProfileView: View {
         VStack(spacing: SonderSpacing.xxs) {
             Text("\(value)")
                 .font(.system(.title3, design: .rounded).weight(.bold))
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
             Text(label)
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
         }
         .frame(maxWidth: .infinity)
     }
@@ -258,7 +261,7 @@ struct OtherUserProfileView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, SonderSpacing.sm)
             .background(isFollowing ? SonderColors.warmGray : SonderColors.terracotta)
-            .foregroundColor(isFollowing ? SonderColors.inkDark : .white)
+            .foregroundStyle(isFollowing ? SonderColors.inkDark : .white)
             .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         }
         .disabled(isFollowLoading)
@@ -271,13 +274,13 @@ struct OtherUserProfileView: View {
             HStack {
                 Text("Places")
                     .font(SonderTypography.journalTitle)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
 
                 Spacer()
 
                 Text("\(userLogs.count)")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
             .padding(.horizontal, SonderSpacing.xs)
 
@@ -285,10 +288,10 @@ struct OtherUserProfileView: View {
                 VStack(spacing: SonderSpacing.sm) {
                     Image(systemName: "mappin.slash")
                         .font(.system(size: 32))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                     Text("No places logged yet")
                         .font(SonderTypography.body)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, SonderSpacing.xxl)
@@ -315,7 +318,7 @@ struct OtherUserProfileView: View {
         return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Recent activity")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -333,19 +336,19 @@ struct OtherUserProfileView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.place.name)
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(SonderColors.inkDark)
+                                .foregroundStyle(SonderColors.inkDark)
                                 .lineLimit(1)
 
                             Text(item.createdAt.relativeDisplay)
                                 .font(.system(size: 12))
-                                .foregroundColor(SonderColors.inkLight)
+                                .foregroundStyle(SonderColors.inkLight)
                         }
 
                         Spacer()
 
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
                     }
                 }
                 .contentShape(Rectangle())
@@ -417,7 +420,7 @@ struct OtherUserProfileView: View {
         .overlay {
             Image(systemName: "airplane")
                 .font(.system(size: 24, weight: .light))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundStyle(.white.opacity(0.4))
         }
     }
 
@@ -425,7 +428,7 @@ struct OtherUserProfileView: View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Recent trips")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -463,12 +466,12 @@ struct OtherUserProfileView: View {
             VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                 Text("DESTINATION")
                     .font(.system(size: 8, weight: .medium))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
                     .tracking(0.5)
 
                 Text(trip.name)
                     .font(.system(size: 15, weight: .bold, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(1)
 
                 Spacer()
@@ -477,11 +480,11 @@ struct OtherUserProfileView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("DATE")
                             .font(.system(size: 7, weight: .medium))
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
                             .tracking(0.5)
                         Text(tripDateText(trip) ?? "—")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                     }
                 }
 
@@ -510,7 +513,7 @@ struct OtherUserProfileView: View {
         do {
             user = try await socialService.getUser(id: userID)
         } catch {
-            print("Error loading user: \(error)")
+            logger.error("Error loading user: \(error.localizedDescription)")
         }
 
         // Check follow status
@@ -526,14 +529,14 @@ struct OtherUserProfileView: View {
         do {
             userLogs = try await feedService.fetchUserLogs(userID: userID)
         } catch {
-            print("Error loading user logs: \(error)")
+            logger.error("Error loading user logs: \(error.localizedDescription)")
         }
 
         // Load trips
         do {
             userTrips = try await tripService.fetchTrips(for: userID)
         } catch {
-            print("Error loading user trips: \(error)")
+            logger.error("Error loading user trips: \(error.localizedDescription)")
         }
 
         isLoading = false
@@ -557,7 +560,7 @@ struct OtherUserProfileView: View {
 
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             } catch {
-                print("Follow error: \(error)")
+                logger.error("Follow error: \(error.localizedDescription)")
             }
             isFollowLoading = false
         }
@@ -588,7 +591,7 @@ struct OtherUserLogRow: View {
                 HStack {
                     Text(feedItem.place.name)
                         .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(1)
 
                     Spacer()
@@ -598,12 +601,12 @@ struct OtherUserLogRow: View {
 
                 Text(feedItem.place.address)
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .lineLimit(1)
 
                 Text(feedItem.createdAt.formatted(date: .abbreviated, time: .omitted))
                     .font(.system(size: 11))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
         }
         .padding(SonderSpacing.md)
@@ -637,7 +640,7 @@ struct OtherUserLogRow: View {
             .frame(width: 60, height: 60)
             .overlay {
                 Image(systemName: "photo")
-                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
+                    .foregroundStyle(SonderColors.terracotta.opacity(0.5))
             }
     }
 }

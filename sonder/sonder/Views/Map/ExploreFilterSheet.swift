@@ -48,7 +48,7 @@ struct ExploreFilterSheet: View {
                                     }
                                 }
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
                             }
                         }
                     }
@@ -77,7 +77,7 @@ struct ExploreFilterSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, SonderSpacing.sm)
                             .background(allSelected ? SonderColors.terracotta.opacity(0.15) : SonderColors.warmGray)
-                            .foregroundColor(allSelected ? SonderColors.terracotta : SonderColors.inkDark)
+                            .foregroundStyle(allSelected ? SonderColors.terracotta : SonderColors.inkDark)
                             .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                             .overlay {
                                 if allSelected {
@@ -104,7 +104,7 @@ struct ExploreFilterSheet: View {
                                         if isSelected {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .font(.system(size: 12))
-                                                .foregroundColor(SonderColors.terracotta)
+                                                .foregroundStyle(SonderColors.terracotta)
                                                 .transition(.scale.combined(with: .opacity))
                                                 .offset(x: 14, y: -10)
                                         }
@@ -115,7 +115,7 @@ struct ExploreFilterSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, SonderSpacing.sm)
                                 .background(isSelected ? SonderColors.terracotta.opacity(0.15) : SonderColors.warmGray)
-                                .foregroundColor(isSelected ? SonderColors.terracotta : SonderColors.inkDark)
+                                .foregroundStyle(isSelected ? SonderColors.terracotta : SonderColors.inkDark)
                                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                                 .overlay {
                                     if isSelected {
@@ -144,11 +144,11 @@ struct ExploreFilterSheet: View {
                             HStack {
                                 ratingIcon(for: option)
                                 Text(option.label)
-                                    .foregroundColor(SonderColors.inkDark)
+                                    .foregroundStyle(SonderColors.inkDark)
                                 Spacer()
                                 if filter.rating == option {
                                     Image(systemName: "checkmark")
-                                        .foregroundColor(SonderColors.terracotta)
+                                        .foregroundStyle(SonderColors.terracotta)
                                         .fontWeight(.semibold)
                                         .transition(.scale.combined(with: .opacity))
                                 }
@@ -169,11 +169,11 @@ struct ExploreFilterSheet: View {
                         } label: {
                             HStack {
                                 Text(option.label)
-                                    .foregroundColor(SonderColors.inkDark)
+                                    .foregroundStyle(SonderColors.inkDark)
                                 Spacer()
                                 if filter.recency == option {
                                     Image(systemName: "checkmark")
-                                        .foregroundColor(SonderColors.terracotta)
+                                        .foregroundStyle(SonderColors.terracotta)
                                         .fontWeight(.semibold)
                                         .transition(.scale.combined(with: .opacity))
                                 }
@@ -204,7 +204,7 @@ struct ExploreFilterSheet: View {
                                 filter = ExploreMapFilter()
                             }
                         }
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -246,7 +246,7 @@ struct ExploreFilterSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, SonderSpacing.sm)
                     .background(isSelected && !allSelected ? SonderColors.terracotta.opacity(0.15) : SonderColors.warmGray)
-                    .foregroundColor(isSelected ? SonderColors.inkDark : SonderColors.inkLight)
+                    .foregroundStyle(isSelected ? SonderColors.inkDark : SonderColors.inkLight)
                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                     .overlay {
                         if isSelected && !allSelected {
@@ -302,7 +302,7 @@ struct ExploreFilterSheet: View {
             .overlay {
                 Text(user.username.prefix(1).uppercased())
                     .font(.system(size: size * 0.4, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
     }
 
@@ -311,7 +311,7 @@ struct ExploreFilterSheet: View {
             switch option {
             case .all:
                 Image(systemName: "star")
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             case .solidPlus:
                 Text("\u{1F44D}")
             case .mustSeeOnly:

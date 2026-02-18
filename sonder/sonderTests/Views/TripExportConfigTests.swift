@@ -162,7 +162,7 @@ struct ExportStyleTests {
         #expect(ExportStyle.cover.rawValue == "cover")
         #expect(ExportStyle.route.rawValue == "route")
         #expect(ExportStyle.journey.rawValue == "journey")
-        #expect(ExportStyle.filmStrip.rawValue == "filmStrip")
+        #expect(ExportStyle.collage.rawValue == "collage")
     }
 }
 

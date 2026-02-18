@@ -9,6 +9,9 @@ import SwiftUI
 import SwiftData
 import CoreLocation
 import Photos
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "AddDetailsView")
 
 private struct IdentifiedImage: Identifiable {
     let id = UUID()
@@ -188,12 +191,12 @@ struct AddDetailsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(place.name)
                     .font(SonderTypography.headline)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(1)
 
                 Text(rating.displayName)
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
 
             Spacer()
@@ -211,7 +214,7 @@ struct AddDetailsView: View {
                 Text("Photos")
                     .font(SonderTypography.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .textCase(.uppercase)
                     .tracking(0.5)
 
@@ -219,7 +222,7 @@ struct AddDetailsView: View {
 
                 Text("\(selectedImages.count)/\(maxPhotos)")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
 
             photoSuggestionsRow
@@ -235,7 +238,7 @@ struct AddDetailsView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 120)
                     .background(SonderColors.warmGray)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                 }
             } else {
@@ -257,7 +260,7 @@ struct AddDetailsView: View {
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .font(.system(size: 18))
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(.white)
                                         .shadow(radius: 2)
                                 }
                                 .padding(2)
@@ -276,7 +279,7 @@ struct AddDetailsView: View {
                                 }
                                 .frame(width: 80, height: 80)
                                 .background(SonderColors.warmGray)
-                                .foregroundColor(SonderColors.inkMuted)
+                                .foregroundStyle(SonderColors.inkMuted)
                                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
                             }
                         }
@@ -296,10 +299,10 @@ struct AddDetailsView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 11))
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                     Text("Nearby photos")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -406,7 +409,7 @@ struct AddDetailsView: View {
                 Text("Note")
                     .font(SonderTypography.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .textCase(.uppercase)
                     .tracking(0.5)
 
@@ -414,7 +417,7 @@ struct AddDetailsView: View {
 
                 Text("\(note.count)/\(maxNoteLength)")
                     .font(SonderTypography.caption)
-                    .foregroundColor(note.count > maxNoteLength ? .red : SonderColors.inkLight)
+                    .foregroundStyle(note.count > maxNoteLength ? .red : SonderColors.inkLight)
             }
 
             TextEditor(text: $note)
@@ -439,7 +442,7 @@ struct AddDetailsView: View {
             Text("Tags")
                 .font(SonderTypography.caption)
                 .fontWeight(.semibold)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -454,7 +457,7 @@ struct AddDetailsView: View {
             Text("When")
                 .font(SonderTypography.caption)
                 .fontWeight(.semibold)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -472,7 +475,7 @@ struct AddDetailsView: View {
             Text("Trip")
                 .font(SonderTypography.caption)
                 .fontWeight(.semibold)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -496,7 +499,7 @@ struct AddDetailsView: View {
                             .padding(.horizontal, SonderSpacing.sm)
                             .padding(.vertical, SonderSpacing.xs)
                             .background(SonderColors.warmGray)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .clipShape(Capsule())
                             .overlay(
                                 Capsule()
@@ -521,7 +524,7 @@ struct AddDetailsView: View {
                         .padding(.horizontal, SonderSpacing.sm)
                         .padding(.vertical, SonderSpacing.xs)
                         .background(SonderColors.warmGray)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .clipShape(Capsule())
                         .overlay(
                             Capsule()
@@ -536,10 +539,10 @@ struct AddDetailsView: View {
                 HStack(spacing: SonderSpacing.xxs) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12))
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                     Text("Saving to \(trip.name)")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -573,7 +576,7 @@ struct AddDetailsView: View {
             .padding(.horizontal, SonderSpacing.sm)
             .padding(.vertical, SonderSpacing.xs)
             .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
-            .foregroundColor(isSelected ? .white : SonderColors.inkDark)
+            .foregroundStyle(isSelected ? .white : SonderColors.inkDark)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -602,7 +605,7 @@ struct AddDetailsView: View {
                     VStack(alignment: .leading, spacing: SonderSpacing.xs) {
                         Text("Tap a photo to use as the trip cover")
                             .font(SonderTypography.caption)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: SonderSpacing.xs) {
@@ -626,7 +629,7 @@ struct AddDetailsView: View {
                                                 if isSelected {
                                                     Image(systemName: "checkmark.circle.fill")
                                                         .font(.system(size: 16))
-                                                        .foregroundColor(SonderColors.terracotta)
+                                                        .foregroundStyle(SonderColors.terracotta)
                                                         .background(Circle().fill(.white).padding(2))
                                                         .offset(x: 4, y: 4)
                                                 }
@@ -711,7 +714,7 @@ struct AddDetailsView: View {
                 .padding(.horizontal, SonderSpacing.lg)
                 .padding(.vertical, SonderSpacing.sm)
                 .background(SonderColors.terracotta)
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .clipShape(Capsule())
                 .shadow(color: SonderColors.terracotta.opacity(0.3), radius: 8, y: 4)
             }
@@ -816,7 +819,7 @@ struct AddDetailsView: View {
 
             showConfirmation = true
         } catch {
-            print("Failed to save log: \(error)")
+            logger.error("Failed to save log: \(error.localizedDescription)")
         }
     }
 
@@ -849,11 +852,11 @@ struct AllTripsPickerSheet: View {
                 } label: {
                     HStack {
                         Text("None")
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                         Spacer()
                         if selectedTrip == nil {
                             Image(systemName: "checkmark")
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
                         }
                     }
                 }
@@ -865,11 +868,11 @@ struct AllTripsPickerSheet: View {
                     } label: {
                         HStack {
                             Text(trip.name)
-                                .foregroundColor(SonderColors.inkDark)
+                                .foregroundStyle(SonderColors.inkDark)
                             Spacer()
                             if selectedTrip?.id == trip.id {
                                 Image(systemName: "checkmark")
-                                    .foregroundColor(SonderColors.terracotta)
+                                    .foregroundStyle(SonderColors.terracotta)
                             }
                         }
                     }
@@ -901,7 +904,7 @@ struct AllTripsPickerSheet: View {
             ),
             rating: .solid
         ) { _ in
-            print("Log complete")
+            logger.debug("Log complete")
         }
     }
 }

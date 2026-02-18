@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "RatingButton")
 
 /// Large tappable rating button with emoji and label
 struct RatingButton: View {
@@ -80,11 +83,11 @@ struct RatingButton: View {
 
                 Text(label)
                     .font(SonderTypography.headline)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
 
                 Text(subtitle)
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
@@ -114,13 +117,13 @@ struct ScaleButtonStyle: ButtonStyle {
 #Preview {
     VStack(spacing: 16) {
         RatingButton(rating: .skip, isSelected: false) {
-            print("Skip tapped")
+            logger.debug("Skip tapped")
         }
         RatingButton(rating: .solid, isSelected: true) {
-            print("Solid tapped")
+            logger.debug("Solid tapped")
         }
         RatingButton(rating: .mustSee, isSelected: false) {
-            print("Must-See tapped")
+            logger.debug("Must-See tapped")
         }
     }
     .padding()

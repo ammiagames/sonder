@@ -49,7 +49,7 @@ struct TagInputView: View {
                 if !inputText.isEmpty {
                     Button(action: addCustomTag) {
                         Image(systemName: "plus.circle.fill")
-                            .foregroundColor(SonderColors.terracotta)
+                            .foregroundStyle(SonderColors.terracotta)
                     }
                 }
             }
@@ -62,7 +62,7 @@ struct TagInputView: View {
                 VStack(alignment: .leading, spacing: SonderSpacing.xs) {
                     Text("Suggestions")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
 
                     FlowLayout(spacing: SonderSpacing.xs) {
                         ForEach(availableSuggestions, id: \.self) { tag in
@@ -125,7 +125,7 @@ struct TagChip: View {
             .padding(.horizontal, SonderSpacing.sm)
             .padding(.vertical, SonderSpacing.xxs)
             .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
-            .foregroundColor(isSelected ? .white : SonderColors.inkDark)
+            .foregroundStyle(isSelected ? .white : SonderColors.inkDark)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)

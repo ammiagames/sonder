@@ -7,13 +7,6 @@
 
 import SwiftUI
 
-// MARK: - Journal Segment
-
-enum JournalSegment: String, CaseIterable {
-    case trips = "Trips"
-    case logs = "Logs"
-}
-
 // MARK: - Card Frame Preference Key
 
 /// Preference key for collecting rendered card positions in the masonry grid.

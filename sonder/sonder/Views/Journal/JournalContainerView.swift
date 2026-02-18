@@ -142,7 +142,7 @@ struct JournalContainerView: View {
                         }
                     } label: {
                         Image(systemName: displayStyle.icon)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .toolbarIcon()
                     }
                 }
@@ -152,7 +152,7 @@ struct JournalContainerView: View {
                         showCreateTrip = true
                     } label: {
                         Image(systemName: "plus")
-                            .foregroundColor(SonderColors.terracotta)
+                            .foregroundStyle(SonderColors.terracotta)
                             .toolbarIcon()
                     }
                 }
@@ -254,7 +254,7 @@ struct JournalContainerView: View {
     private var searchBar: some View {
         HStack(spacing: SonderSpacing.sm) {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
             TextField("Search trips...", text: $searchText)
                 .font(SonderTypography.body)
             if !searchText.isEmpty {
@@ -262,7 +262,7 @@ struct JournalContainerView: View {
                     searchText = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
             }
         }
@@ -280,17 +280,17 @@ struct JournalContainerView: View {
                     .tint(SonderColors.terracotta)
                 Text("Syncing your journal...")
                     .font(SonderTypography.body)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             } else {
                 Image(systemName: "book.closed")
                     .font(.system(size: 48))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
                 Text("Your Journal Awaits")
                     .font(SonderTypography.title)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                 Text("Start logging places to build your personal travel journal")
                     .font(SonderTypography.body)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, SonderSpacing.xl)
             }

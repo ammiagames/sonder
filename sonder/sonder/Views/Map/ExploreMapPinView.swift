@@ -69,7 +69,7 @@ struct ExploreMapPinView: View {
             // Right side: friend count badge
             Text("\(place.friendCount)")
                 .font(.system(size: 10, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 2)
                 .background(SonderColors.exploreCluster)
@@ -138,7 +138,7 @@ struct ExploreMapPinView: View {
             .overlay {
                 Text(user?.username.prefix(1).uppercased() ?? "?")
                     .font(.system(size: size * 0.5, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
     }
 
@@ -153,7 +153,7 @@ struct ExploreMapPinView: View {
     private var noteBadge: some View {
         Image(systemName: "text.quote")
             .font(.system(size: 8, weight: .bold))
-            .foregroundColor(SonderColors.inkDark)
+            .foregroundStyle(SonderColors.inkDark)
             .frame(width: 16, height: 16)
             .background(SonderColors.cream, in: Circle())
             .shadow(color: .black.opacity(0.15), radius: 1, y: 0.5)

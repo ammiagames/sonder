@@ -89,14 +89,14 @@ struct TripCoverPlaceholderView: View {
                         if let title, !title.isEmpty, size.height > 92 {
                             Text(title)
                                 .font(.system(size: min(20, max(12, size.height * 0.15)), weight: .semibold, design: .serif))
-                                .foregroundColor(.white.opacity(0.88))
+                                .foregroundStyle(.white.opacity(0.88))
                                 .lineLimit(1)
                         }
 
                         if let caption, !caption.isEmpty {
                             Text(caption)
                                 .font(.system(size: min(13, max(10, size.height * 0.10)), weight: .medium, design: .rounded))
-                                .foregroundColor(.white.opacity(0.78))
+                                .foregroundStyle(.white.opacity(0.78))
                                 .lineLimit(1)
                         }
                     }
@@ -146,7 +146,7 @@ struct TripCoverPlaceholderView: View {
         .overlay {
             Image(systemName: "mappin.circle.fill")
                 .font(.system(size: max(8, size.height * 0.09), weight: .semibold))
-                .foregroundColor(.white.opacity(0.72))
+                .foregroundStyle(.white.opacity(0.72))
                 .position(end)
         }
     }

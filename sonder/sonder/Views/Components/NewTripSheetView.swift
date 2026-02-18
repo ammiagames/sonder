@@ -30,7 +30,7 @@ struct NewTripSheetView: View {
                 VStack(alignment: .leading, spacing: SonderSpacing.xs) {
                     Text("Cover photo (optional)")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
 
                     if let image = coverImage {
                         ZStack(alignment: .topTrailing) {
@@ -46,7 +46,7 @@ struct NewTripSheetView: View {
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                                     .font(.system(size: 22))
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(.white)
                                     .shadow(radius: 2)
                             }
                             .padding(SonderSpacing.xs)
@@ -64,7 +64,7 @@ struct NewTripSheetView: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 80)
                             .background(SonderColors.warmGray)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                         }
                     }

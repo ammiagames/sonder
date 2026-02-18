@@ -8,6 +8,9 @@
 import SwiftUI
 import SwiftData
 import Supabase
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "EditProfileView")
 
 /// Edit profile sheet for updating username, bio, and avatar
 struct EditProfileView: View {
@@ -55,7 +58,7 @@ struct EditProfileView: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
@@ -63,7 +66,7 @@ struct EditProfileView: View {
                         saveProfile()
                     }
                     .fontWeight(.semibold)
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
                     .disabled(isSaving || username.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
@@ -124,7 +127,7 @@ struct EditProfileView: View {
 
             Text("Tap to change photo")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
         }
     }
 
@@ -140,7 +143,7 @@ struct EditProfileView: View {
             .overlay {
                 Text(username.prefix(1).uppercased())
                     .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
     }
 
@@ -150,7 +153,7 @@ struct EditProfileView: View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("First Name")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -164,7 +167,7 @@ struct EditProfileView: View {
 
             Text("Used in greetings around the app")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
         }
     }
 
@@ -174,7 +177,7 @@ struct EditProfileView: View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Username")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -195,7 +198,7 @@ struct EditProfileView: View {
             HStack {
                 Text("Bio")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .textCase(.uppercase)
                     .tracking(0.5)
 
@@ -203,7 +206,7 @@ struct EditProfileView: View {
 
                 Text("\(bio.count)/\(maxBioLength)")
                     .font(SonderTypography.caption)
-                    .foregroundColor(bio.count > maxBioLength ? .red : SonderColors.inkLight)
+                    .foregroundStyle(bio.count > maxBioLength ? .red : SonderColors.inkLight)
             }
 
             TextField("Coffee snob. Always hunting for the best ramen.", text: $bio, axis: .vertical)
@@ -220,7 +223,7 @@ struct EditProfileView: View {
 
             Text("Tell others what you love to explore")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
         }
     }
 
@@ -273,7 +276,7 @@ struct EditProfileView: View {
                     dismiss()
                 }
             } catch {
-                print("Error saving profile: \(error)")
+                logger.error("Error saving profile: \(error.localizedDescription)")
             }
 
             isSaving = false
@@ -303,9 +306,9 @@ struct EditProfileView: View {
                 .update(update)
                 .eq("id", value: user.id)
                 .execute()
-            print("User profile synced to Supabase")
+            logger.info("User profile synced to Supabase")
         } catch {
-            print("Error syncing user to Supabase: \(error)")
+            logger.error("Error syncing user to Supabase: \(error.localizedDescription)")
         }
     }
 }

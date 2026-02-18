@@ -1,22 +1,19 @@
 # Sonder - Non-Blocking Issues & Code Quality
 
-Last updated: 2026-02-16
+Last updated: 2026-02-17
 
 ---
 
 ## Summary
 
-| Severity | Count | Category |
-|----------|-------|----------|
 | Severity | Count | Category | Status |
 |----------|-------|----------|--------|
 | ~~High~~ | ~~2~~ | ~~Deprecated APIs~~ | FIXED |
 | High | 1 | Silent auth failure | |
-| Medium | 10 | Force unwraps (non-Calendar) | 5 FIXED, 5 remaining |
-| Medium | 78 | `try?` silent error swallowing | |
-| Medium | 81 | `print()` statements in production code | 6 were `#Preview` only |
-| Low | 998 | `.foregroundColor()` deprecated | |
-| Low | 2 | TODO markers | |
+| Medium | 5 | Force unwraps (non-Calendar) | |
+| Medium | ~102 | `try?` silent error swallowing | |
+| Medium | ~55 | `print()` statements in production code | |
+| Low | ~398 | `.foregroundColor()` deprecated | |
 | Low | 10 | Large files (500+ lines) | |
 | Low | 1 | Dead code | |
 | Medium | 6 | Concurrency / actor isolation | |
@@ -30,26 +27,21 @@ Last updated: 2026-02-16
 
 ### ~~1a. `UIWindowScene.windows` (deprecated iOS 16+)~~ FIXED
 
-Replaced `windowScene.windows.first` with `windowScene.keyWindow` in 2 files:
-
-| File | Line | Status |
-|------|------|--------|
-| `Services/AuthenticationService.swift` | 138 | FIXED |
-| `Views/Journal/JournalView.swift` | 617 | FIXED |
+Replaced `windowScene.windows.first` with `windowScene.keyWindow` in 2 files.
 
 ### 1b. `.foregroundColor()` (deprecated iOS 17+)
 
-998 occurrences across 82 files. Replace with `.foregroundStyle()`.
+~398 occurrences across ~40 files. Replace with `.foregroundStyle()`.
 
 **Biggest offenders:**
 
 | File | Count |
 |------|-------|
-| `Views/Main/MainTabView.swift` | 81 |
 | `Views/Profile/ProfileView.swift` | 82 |
-| `Views/Feed/FeedItemCardStyles.swift` | 41 |
 | `Views/Share/LogShareCardStyles.swift` | 38 |
 | `Views/Trips/TripDetailView.swift` | 37 |
+| `Views/Map/UnifiedBottomCard.swift` | 29 |
+| `Views/Logging/AddDetailsView.swift` | 26 |
 
 **Fix:** Global find-and-replace `.foregroundColor(` with `.foregroundStyle(`. Both take the same `Color` argument. Test after replacing since `.foregroundStyle` also accepts `ShapeStyle` which can cause type inference ambiguity in some cases.
 
@@ -85,64 +77,41 @@ do {
 |------|------|------|------|-----|
 | `sonderApp.swift` | 51 | `.withDesign(.serif)!` | Crash on launch if font unavailable | Use `?? .preferredFontDescriptor(withTextStyle:)` fallback |
 | `sonderApp.swift` | 52 | `.withDesign(.serif)!` | Same | Same |
-| `Services/ProfileStatsService.swift` | 267 | `sortedDays.last!` | Crash if empty array | Use `guard let last = sortedDays.last else { return }` |
+| `Services/ProfileStatsService.swift` | 265 | `sortedDays.last!` | Crash if empty array | Use `guard let last = sortedDays.last else { return }` |
 | `Services/ProfileStatsService.swift` | 518 | `cityPlaceSets.max(...)!` | Crash if empty dict | Already guarded by `count >= 2` but use `guard let` |
 | `Services/GooglePlacesService.swift` | 353 | `URL(string: ...)!` | Crash on malformed URL | Use `guard let url = URL(string:)` |
-| `Views/Feed/FeedCardStyle.swift` | 43 | `all.firstIndex(of: self)!` | Logically safe but unnecessary | Use `guard let` |
-| `Config/SupabaseConfig.swift` | 13 | `URL(string: "https://...")!` | Static URL, effectively safe | Acceptable |
-| `sonderApp.swift` | 84 | `fatalError("Could not init ModelContainer")` | Intentional - app can't run without SwiftData | Acceptable |
 
 ### ~~3b. Nil-check-then-force-unwrap pattern~~ FIXED
 
-Replaced `if x == nil || x!` with safe `if let` patterns in all 5 locations:
-
-| File | Line | Code | Status |
-|------|------|------|--------|
-| `Views/Logging/RatePlaceView.swift` | 49 | `map[tripID]!` → `if let existing` | FIXED |
-| `Views/Logging/AddDetailsView.swift` | 66 | `map[tripID]!` → `if let existing` | FIXED |
-| `Views/LogDetail/LogDetailView.swift` | 64 | `map[tripID]!` → `if let existing` | FIXED |
-| `Views/Trips/TripWrappedView.swift` | 56 | `best!.note.count` → `if let b = best` | FIXED |
-| `Views/Main/MainTabView.swift` | 518 | `selectedTagFilter!` → `.map { } ?? true` | FIXED |
+All 5 locations refactored to safe `if let` patterns.
 
 ### 3c. Calendar date arithmetic force unwraps (low risk, acceptable)
 
 These are `calendar.date(byAdding:)!` calls which are effectively guaranteed to succeed with standard Gregorian calendar. Present in all heatmap views and several service files. Not worth refactoring.
 
-| File | Lines |
-|------|-------|
-| `Views/Profile/CalendarHeatmapView.swift` | 123, 130, 138 |
-| `Views/Profile/HeatmapIsometricView.swift` | 181, 186, 194 |
-| `Views/Profile/HeatmapSeasonalView.swift` | 149, 154, 162 |
-| `Views/Profile/HeatmapDotGardenView.swift` | 167, 172, 180 |
-| `Views/Profile/HeatmapStreakGlowView.swift` | 238, 243, 251 |
-| `Views/Profile/HeatmapInteractiveView.swift` | 211, 216, 224 |
-| `Views/Profile/HeatmapAuraView.swift` | 201, 206, 214 |
-| `Views/Profile/HeatmapRadialView.swift` | 143, 169 |
-| `Views/Profile/HeatmapShowcaseView.swift` | 88, 130 |
-| `Services/ProfileStatsService.swift` | 266 |
-
 ---
 
 ## 4. `try?` Silent Error Swallowing
 
-78 occurrences across 25 files. Most are in `catch` blocks that already `print()` the error, but some silently discard results.
+~102 occurrences across ~30 files. Most are in `catch` blocks that already `print()` the error, but some silently discard results.
 
 ### High priority (user-facing operations that should show errors):
 
 | File | Line | Operation |
 |------|------|-----------|
 | `Views/Authentication/AuthenticationView.swift` | 64 | Apple Sign-In |
-| `Views/Main/MainTabView.swift` | 900 | Sign out |
+| `Views/Main/MainTabView.swift` | ~900 | Sign out |
 | `Services/WantToGoService.swift` | 230, 238 | Supabase network calls |
 
 ### Medium priority (data operations where failures should be logged):
 
 | File | Lines | Operation |
 |------|-------|-----------|
-| `Services/SyncEngine.swift` | 521, 726, 732, 773, 784, 791, 801, 811 | ModelContext saves, Supabase operations |
-| `Views/LogDetail/LogDetailView.swift` | 679, 705, 715 | Log saves |
-| `Views/Logging/AddDetailsView.swift` | 133, 681, 691, 739, 749, 783, 791 | Photo/log saves |
-| `Views/Logging/RatePlaceView.swift` | 179, 400, 413, 447 | Log creation |
+| `Services/SyncEngine.swift` | multiple (10) | ModelContext saves, Supabase operations |
+| `Views/LogDetail/LogDetailView.swift` | multiple (5) | Log saves |
+| `Views/Logging/AddDetailsView.swift` | multiple (7) | Photo/log saves |
+| `Views/Logging/RatePlaceView.swift` | multiple (4) | Log creation |
+| `Services/PlacesCacheService.swift` | multiple (18) | Cache operations (best-effort, low priority) |
 
 ### Low priority (acceptable uses):
 
@@ -153,34 +122,20 @@ These are `calendar.date(byAdding:)!` calls which are effectively guaranteed to 
 
 ## 5. `print()` Statements in Production Code
 
-87 `print()` calls across production source files. These should be replaced with `os.Logger` or removed before release.
+~55 `print()` calls across ~15 production source files. These should be replaced with `os.Logger` or removed before release.
 
 ### Debug logging (most impactful files):
 
 | File | Count | Notes |
 |------|-------|-------|
-| `Services/SyncEngine.swift` | 14 | Network status, sync progress, errors |
+| `Services/SyncEngine.swift` | 16 | Network status, sync progress, errors |
 | `Views/Logging/SearchPlaceView.swift` | 7 | `[Nearby]` debug logging |
 | `Services/FeedService.swift` | 6 | Feed loading errors |
-| `Services/SocialService.swift` | 4 | Follow errors |
-| `Views/Trips/TripCollaboratorsView.swift` | 5 | Collaborator errors |
 | `Services/ProximityNotificationService.swift` | 5 | Permission/notification errors |
+| `Views/Trips/TripCollaboratorsView.swift` | 5 | Collaborator errors |
+| `Services/SocialService.swift` | 4 | Follow errors |
 | `Services/WantToGoService.swift` | 4 | Deferred sync errors |
-| `Views/Profile/EditProfileView.swift` | 4 | Profile save/sync |
-| `Views/Profile/OtherUserProfileView.swift` | 3 | User loading errors |
-
-### ~~Placeholder/stub prints~~ NOT AN ISSUE
-
-All 6 flagged prints are inside `#Preview` blocks, which are stripped from production builds. No changes needed.
-
-| File | Line | Code | Status |
-|------|------|------|--------|
-| `Views/Components/FloatingActionButton.swift` | 44 | `print("FAB tapped")` | `#Preview` only |
-| `Views/Components/PlaceSearchRow.swift` | 270 | `print("Delete tapped")` | `#Preview` only |
-| `Views/Logging/PlacePreviewView.swift` | 401 | `print("Log tapped")` | `#Preview` only |
-| `Views/Components/RatingButton.swift` | 117, 120, 123 | `print("Skip/Solid/Must-See tapped")` | `#Preview` only |
-| `Views/Logging/LogConfirmationView.swift` | 195, 201, 203 | `print("Dismissed")` | `#Preview` only |
-| `Views/Logging/CreateCustomPlaceView.swift` | 240 | `print("Created place: ...")` | `#Preview` only |
+| `Services/GooglePlacesService.swift` | 4 | API errors |
 
 **Fix:** Replace meaningful error logging with `os.Logger`:
 ```swift
@@ -194,16 +149,11 @@ print("Push sync error: \(error)")
 logger.error("Push sync error: \(error)")
 ```
 
-Remove placeholder prints entirely.
-
 ---
 
 ## 6. TODO Markers
 
-| File | Line | Note |
-|------|------|------|
-| `Services/AuthenticationService.swift` | 13 | `// TODO: Test Sign in with Apple when we have a paid Apple Developer account ($99/year)` |
-| `Views/Authentication/AuthenticationView.swift` | 56 | `// TODO: Test Sign in with Apple when we have paid Apple Developer account` |
+None remaining in Swift source files. Previously had 2 TODOs about Apple Sign-In testing — both removed.
 
 ---
 
@@ -211,24 +161,35 @@ Remove placeholder prints entirely.
 
 | File | Lines | Suggestion |
 |------|-------|------------|
-| `Views/Profile/ProfileView.swift` | 1,418 | Extract sections (stats, insights, settings) into subviews |
-| `Views/Trips/TripDetailView.swift` | 1,156 | Extract route map, stop card, export into separate files |
-| `Views/Feed/FeedItemCardStyles.swift` | 1,034 | Already organized by style - could split into one file per style |
-| `Views/Map/ExploreMapView.swift` | 1,016 | Extract filter sheet, bottom card, pin views |
-| `Views/Journal/JournalView.swift` | 855 | Extract share sheet, filter logic |
+| `Views/Trips/TripDetailView.swift` | 2,146 | Extract route map, stop card, export, moment cards into separate files |
+| `Views/Profile/ProfileView.swift` | 1,143 | Extract sections (stats, cities mosaic, settings) into subviews |
+| `Views/Map/ExploreMapView.swift` | 1,072 | Extract filter sheet, bottom card, pin views |
+| `Services/SyncEngine.swift` | 976 | Extract push/pull logic into separate helpers |
+| `Views/Trips/ShareTripView.swift` | 911 | Extract export styles, preview, configuration |
+| `Views/Logging/AddDetailsView.swift` | 907 | Extract photo picker, tag input sections |
+| `Views/Journal/JournalPolaroidView.swift` | 907 | Extract polaroid card, vintage effects |
+| `Views/LogDetail/LogDetailView.swift` | 868 | Extract edit form, photo section |
 | `Views/Share/LogShareCardStyles.swift` | 842 | Split into one file per share style |
-| `Views/LogDetail/LogDetailView.swift` | 841 | Extract edit form, photo section |
-| `Views/Main/MainTabView.swift` | 832 | Extract LogsView and SettingsView into own files |
-| `Services/SyncEngine.swift` | 771 | Extract push/pull logic into separate helpers |
-| `Views/Logging/AddDetailsView.swift` | 728 | Extract photo picker, tag input sections |
+| `Views/Feed/FeedLogDetailView.swift` | 660 | Extract sections into subviews |
 
 ---
 
 ## 8. Dead Code
 
-| File | Lines | Description |
-|------|-------|-------------|
-| `Views/Trips/Export/TripExportFilmStrip.swift` | all | Defined but never used - no `.filmStrip` case in `ExportStyle` enum |
+| File | Lines | Description | Status |
+|------|-------|-------------|--------|
+| ~~`Views/Journal/JournalView.swift`~~ | ~~855~~ | ~~Replaced by `JournalContainerView`~~ | DELETED |
+| ~~`Views/Map/ExploreBottomCard.swift`~~ | ~~153~~ | ~~Replaced by `UnifiedBottomCard`~~ | DELETED |
+| ~~`Views/Trips/TripPostcardStack.swift`~~ | ~~333~~ | ~~Never referenced~~ | DELETED |
+| ~~`Views/Trips/TripCinematicView.swift`~~ | ~~364~~ | ~~Never referenced~~ | DELETED |
+| ~~`Views/Trips/TripPhotoWall.swift`~~ | ~~302~~ | ~~Never referenced~~ | DELETED |
+| ~~`Views/Trips/TripWrappedView.swift`~~ | ~~393~~ | ~~Never referenced~~ | DELETED |
+| ~~`Views/Trips/TripBookView.swift`~~ | ~~348~~ | ~~Never referenced~~ | DELETED |
+| ~~`Views/Trips/TripHighlightReel.swift`~~ | ~~197~~ | ~~Never referenced~~ | DELETED |
+| ~~`JournalSegment` enum~~ | ~~4~~ | ~~Unused in `JournalShared.swift`~~ | DELETED |
+| `Views/Trips/Export/TripExportFilmStrip.swift` | all | Defined but never used — no `.filmStrip` case in `ExportStyle` enum | |
+
+**Total deleted:** ~2,953 lines of dead code removed (2026-02-17).
 
 ---
 
@@ -236,8 +197,8 @@ Remove placeholder prints entirely.
 
 | File | Line | Description |
 |------|------|-------------|
-| `Services/AuthenticationService.swift` | 30-33 | `debugBypassAuth` flag (currently `false` in both DEBUG and release) |
-| `Views/Authentication/AuthenticationView.swift` | 39-54 | `#if DEBUG` "Debug Sign In" button - OK for dev, ensure stripped in release |
+| `Services/AuthenticationService.swift` | 34-36 | `debugBypassAuth` flag (currently `false` in both DEBUG and release) |
+| `Views/Authentication/AuthenticationView.swift` | 39-54 | `#if DEBUG` "Debug Sign In" button — OK for dev, ensure stripped in release |
 
 These are properly gated behind `#if DEBUG` / hardcoded `false`, so they won't affect production. Just ensure the `debugBypassAuth` flag is never accidentally set to `true`.
 
@@ -262,7 +223,7 @@ Several service classes lack `@MainActor` but vend mutable state to Views. Under
 
 ### `FeedService` infinite tasks never cancelled
 
-`Services/FeedService.swift` lines 366-386: Two `Task { for await change in ... }` blocks iterate infinite async sequences with no cancellation. If `subscribeToRealtime` is called multiple times (e.g. sign-out/sign-in cycle), tasks pile up.
+`Services/FeedService.swift`: Two `Task { for await change in ... }` blocks iterate infinite async sequences with no cancellation. If `subscribeToRealtime` is called multiple times (e.g. sign-out/sign-in cycle), tasks pile up.
 
 **Fix:** Store tasks and cancel on unsubscribe:
 ```swift
@@ -272,7 +233,7 @@ private var realtimeTripTask: Task<Void, Never>?
 
 ### `SyncEngine` public mutable state
 
-`Services/SyncEngine.swift` lines 182, 185: `var isSyncing` and `var isOnline` are publicly writable — Views could accidentally mutate sync state.
+`Services/SyncEngine.swift`: `var isSyncing` and `var isOnline` are publicly writable — Views could accidentally mutate sync state.
 
 **Fix:** `private(set) var isSyncing = false`
 
@@ -280,27 +241,34 @@ private var realtimeTripTask: Task<Void, Never>?
 
 ## 11. Duplicate Code
 
-### 11a. Place selection in `SearchPlaceView.swift`
+### 11a. `extractCity(from:)` — 4 separate implementations
 
-`Views/Logging/SearchPlaceView.swift` lines ~467-530: Four nearly identical functions (`selectPrediction`, `selectNearbyPlace`, `selectRecentSearch`, cached variant) all do:
-```swift
-isLoadingDetails = true
-guard let details = await placesService.getPlaceDetails(placeId: X.placeId) else { ... }
-selectedDetails = details
-showPreview = true
-```
+The city extraction logic is implemented independently in 4 places with diverging behavior:
+
+| File | Line | Return Type | Notes |
+|------|------|-------------|-------|
+| `ProfileView.swift` | 1072 | `String?` | Returns `nil` on failure |
+| `WantToGoListView.swift` | 268 | `String` | Returns `"Unknown"`, has extra state/zip heuristic |
+| `ProfileStatsService.swift` | 359 | `String?` (static) | Identical to ProfileView — ideal canonical location |
+| `ShareLogView.swift` | 267 | `String` | Different algorithm entirely (`parts[1]` vs `parts[count-3]`) |
+
+**Fix:** Use `ProfileStatsService.extractCity(from:)` as the single source of truth. Delete the other 3 implementations.
+
+### 11b. Place selection in `SearchPlaceView.swift`
+
+`Views/Logging/SearchPlaceView.swift`: Four nearly identical functions (`selectPrediction`, `selectNearbyPlace`, `selectRecentSearch`, cached variant) all repeat the same pattern.
 
 **Fix:** Extract `func selectPlace(byID placeId: String) async`.
 
-### 11b. Heatmap date grid logic
+### 11c. Heatmap date grid logic
 
 7 heatmap views all implement identical week-grid generation with the same `calendar.date(byAdding:)!` pattern.
 
 **Fix:** Extract to a shared `HeatmapDateGrid` helper.
 
-### 11c. `RemoteLog`/`RemoteTrip` at file scope
+### 11d. `RemoteLog`/`RemoteTrip` at file scope
 
-`Services/SyncEngine.swift` lines 14, 116: Internal Codable types defined at file scope visible to the whole module.
+`Services/SyncEngine.swift`: Internal Codable types defined at file scope visible to the whole module.
 
 **Fix:** Nest inside `SyncEngine` or mark `private`.
 
@@ -313,19 +281,20 @@ showPreview = true
 | File | Line | Issue |
 |------|------|-------|
 | `sonderApp.swift` | 40-43, 63 | `UIColor(red: 0.98, green: 0.96, ...)` duplicates `SonderColors.cream` |
-| `Views/Journal/JournalPolaroidView.swift` | 191-192 | `Color(red: 0.80, green: 0.45, ...)` duplicates `SonderColors.terracotta` |
-| `Views/Journal/MasonryTripsGrid.swift` | 233-234 | Same near-duplicate terracotta |
-| `Views/Trips/TripWrappedView.swift` | 130-135 | Multiple inline `Color(red:...)` values |
-| `Views/Trips/TripDetailView.swift` | 1879-1884 | Inline time-of-day color tuples |
+| `Views/Journal/JournalPolaroidView.swift` | 151-189+ | Multiple inline `Color(red:...)` values |
+| `Views/Journal/MasonryTripsGrid.swift` | 233-234 | Near-duplicate of `SonderColors.terracotta` |
+| `Views/Trips/TripDetailView.swift` | 1804-1809 | Inline time-of-day color tuples |
+| `Views/Trips/Export/TripExportConfig.swift` | 70-172 | ~60 inline `Color(red:...)` values (export theme palettes) |
+| `Views/Journal/JournalBoardingPassView.swift` | 102-374 | ~10 inline color values |
+| `Views/Feed/FeedLogDetailView.swift` | 203-204 | Inline gradient colors |
 
-**Fix:** Expose `UIColor` variants from `SonderTheme.swift` for UIKit contexts. Reference `SonderColors` everywhere else.
+**Fix:** Expose `UIColor` variants from `SonderTheme.swift` for UIKit contexts. Reference `SonderColors` everywhere else. For export themes, consider a `TripExportColors` namespace.
 
 ### Hardcoded frame dimensions
 
 | File | Lines | Values |
 |------|-------|--------|
 | `Views/Share/ShareLogView.swift` | 282, 294 | `1080 x 1350` (Instagram ratio) — name as constant |
-| `Views/Trips/TripPostcardStack.swift` | 53, 120, 237 | `320 x 440` repeated 3 times |
 
 ---
 
@@ -335,19 +304,20 @@ showPreview = true
 |------|------|-------|-----|
 | `sonderApp.swift` | 13 | `struct sonderApp` lowercase type name | Rename to `SonderApp` |
 | `Services/ProfileStatsService.swift` | 13 | Caseless `enum ProfileStatsService` used as namespace but named like a service class | Rename to `ProfileStatsCalculator` or convert to `struct` |
-| `Services/AuthenticationService.swift` | 30-33 | `#if DEBUG` / `#else` branches both set `debugBypassAuth = false` — dead conditional | Remove `#if`/`#else`, keep single declaration |
+| `Services/AuthenticationService.swift` | 34-36 | `#if DEBUG` / `#else` branches both set `debugBypassAuth = false` — dead conditional | Remove `#if`/`#else`, keep single declaration |
 
 ---
 
 ## Recommended Fix Order
 
-1. ~~**Quick wins (30 min):** Fix nil-check-then-force-unwrap pattern (5 locations), fix `UIWindowScene.windows` deprecation (2 locations), remove placeholder `print()` stubs (6 locations)~~ **DONE** — all 5 force-unwraps refactored, 2 deprecated APIs fixed, placeholder prints confirmed `#Preview`-only
-2. **Auth safety (15 min):** Add error handling to Apple Sign-In `try?` and sign-out `try?`
-3. **Force unwrap safety (30 min):** Add fallbacks for `withDesign(.serif)!`, `sortedDays.last!`, `cityPlaceSets.max(...)!`, URL construction
-4. **Concurrency safety (1 hr):** Add `@MainActor` to service classes, cancel FeedService realtime tasks, add `private(set)` to SyncEngine state
-5. **Logging cleanup (1-2 hrs):** Replace `print()` with `os.Logger` across all services and views
-6. **Deprecation sweep (2-3 hrs):** Replace `.foregroundColor()` with `.foregroundStyle()` across all 82 files
-7. **Duplicate code (30 min):** Extract shared place selection helper, shared heatmap date grid helper
-8. **Inline colors (30 min):** Replace hardcoded `Color(red:...)` / `UIColor(red:...)` with `SonderColors` references
-9. **File size (ongoing):** Extract large views into smaller components as you touch those files
-10. **Dead code (5 min):** Delete `TripExportFilmStrip.swift` or add `.filmStrip` to `ExportStyle`
+1. ~~**Quick wins (30 min):** Fix nil-check-then-force-unwrap pattern (5 locations), fix `UIWindowScene.windows` deprecation (2 locations)~~ **DONE**
+2. ~~**Dead code cleanup (5 min):** Delete 8 unused files + JournalSegment enum~~ **DONE** — 2,953 lines removed
+3. **Auth safety (15 min):** Add error handling to Apple Sign-In `try?` and sign-out `try?`
+4. **Force unwrap safety (30 min):** Add fallbacks for `withDesign(.serif)!`, `sortedDays.last!`, `cityPlaceSets.max(...)!`, URL construction
+5. **Concurrency safety (1 hr):** Add `@MainActor` to service classes, cancel FeedService realtime tasks, add `private(set)` to SyncEngine state
+6. **Duplicate code (30 min):** Consolidate `extractCity` to one implementation, extract shared place selection helper
+7. **Logging cleanup (1-2 hrs):** Replace `print()` with `os.Logger` across all services and views
+8. **Deprecation sweep (2-3 hrs):** Replace `.foregroundColor()` with `.foregroundStyle()` across all ~40 files
+9. **Inline colors (30 min):** Replace hardcoded `Color(red:...)` / `UIColor(red:...)` with `SonderColors` references
+10. **File size (ongoing):** Extract large views into smaller components as you touch those files
+11. **Remaining dead code (5 min):** Delete `TripExportFilmStrip.swift` or add `.filmStrip` to `ExportStyle`

@@ -14,7 +14,7 @@ struct ProfileInsightsSection: View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Insights")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -39,7 +39,7 @@ struct ProfileInsightsSection: View {
         HStack(spacing: SonderSpacing.sm) {
             Image(systemName: "flame.fill")
                 .font(.system(size: 20))
-                .foregroundColor(SonderColors.terracotta)
+                .foregroundStyle(SonderColors.terracotta)
                 .frame(width: 36, height: 36)
                 .background(SonderColors.terracotta.opacity(0.15))
                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
@@ -48,16 +48,16 @@ struct ProfileInsightsSection: View {
                 if stats.streak.currentStreak > 0 {
                     Text("\(stats.streak.currentStreak)-day streak")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                 } else {
                     Text("No active streak")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                 }
 
                 Text("Longest: \(stats.streak.longestStreak) days")
                     .font(.system(size: 12))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
 
             Spacer()
@@ -70,7 +70,7 @@ struct ProfileInsightsSection: View {
         HStack(spacing: SonderSpacing.sm) {
             Image(systemName: "calendar")
                 .font(.system(size: 20))
-                .foregroundColor(SonderColors.warmBlue)
+                .foregroundStyle(SonderColors.warmBlue)
                 .frame(width: 36, height: 36)
                 .background(SonderColors.warmBlue.opacity(0.15))
                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
@@ -79,16 +79,16 @@ struct ProfileInsightsSection: View {
                 if stats.dayOfWeek.isWeekdayExplorer {
                     Text("You're a weekday explorer")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                 } else {
                     Text("You explore most on **\(stats.dayOfWeek.peakDay)**")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                 }
 
                 Text("\(Int(stats.dayOfWeek.peakPercentage * 100))% of your logs")
                     .font(.system(size: 12))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
 
             Spacer()

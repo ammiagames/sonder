@@ -53,6 +53,7 @@ final class PlacesCacheService {
         trimRecentSearches()
 
         try? modelContext.save()
+        recentSearchesVersion += 1
     }
 
     /// Get recent searches sorted by most recent

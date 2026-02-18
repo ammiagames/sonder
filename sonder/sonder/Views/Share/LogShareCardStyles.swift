@@ -97,7 +97,7 @@ struct LogShareFilmFrame: View {
             // Place name
             Text(data.placeName)
                 .font(.system(size: 52, weight: .semibold, design: .serif))
-                .foregroundColor(Color(red: 0.15, green: 0.13, blue: 0.11))
+                .foregroundStyle(Color(red: 0.15, green: 0.13, blue: 0.11))
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
                 .multilineTextAlignment(.center)
@@ -111,7 +111,7 @@ struct LogShareFilmFrame: View {
                     .tracking(1)
             }
             .font(.system(size: 24, weight: .regular))
-            .foregroundColor(Color(red: 0.5, green: 0.47, blue: 0.43))
+            .foregroundStyle(Color(red: 0.5, green: 0.47, blue: 0.43))
 
             Spacer(minLength: 0)
 
@@ -120,13 +120,13 @@ struct LogShareFilmFrame: View {
                 // Rating
                 Text("\(data.rating.emoji) \(data.rating.displayName)")
                     .font(.system(size: 30, weight: .medium, design: .rounded))
-                    .foregroundColor(SonderColors.pinColor(for: data.rating))
+                    .foregroundStyle(SonderColors.pinColor(for: data.rating))
 
                 Spacer()
 
                 Text("sonder")
                     .font(.system(size: 22, weight: .semibold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
+                    .foregroundStyle(SonderColors.terracotta.opacity(0.5))
             }
         }
         .frame(height: bottomStrip - border)
@@ -204,7 +204,7 @@ struct LogShareStamp: View {
                     .font(.system(size: 40))
                 Text(data.rating.displayName.uppercased())
                     .font(.system(size: 16, weight: .heavy))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
                     .tracking(1)
             }
         }
@@ -216,7 +216,7 @@ struct LogShareStamp: View {
         VStack(spacing: 16) {
             Text(data.placeName)
                 .font(.system(size: 48, weight: .bold, design: .serif))
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
                 .lineLimit(2)
                 .minimumScaleFactor(0.6)
                 .multilineTextAlignment(.center)
@@ -227,7 +227,7 @@ struct LogShareStamp: View {
                 Text(data.cityName)
                     .font(.system(size: 28))
             }
-            .foregroundColor(SonderColors.inkMuted)
+            .foregroundStyle(SonderColors.inkMuted)
 
             // Tags as small stamps
             if !data.tags.isEmpty {
@@ -236,7 +236,7 @@ struct LogShareStamp: View {
                         Text(tag.uppercased())
                             .font(.system(size: 20, weight: .semibold))
                             .tracking(1)
-                            .foregroundColor(SonderColors.terracotta)
+                            .foregroundStyle(SonderColors.terracotta)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
                             .overlay(
@@ -260,12 +260,12 @@ struct LogShareStamp: View {
             if let milestone = data.milestoneText {
                 Text(milestone)
                     .font(.system(size: 22, weight: .medium))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
             Spacer()
             Text("sonder")
                 .font(.system(size: 24, weight: .semibold, design: .rounded))
-                .foregroundColor(SonderColors.terracotta.opacity(0.5))
+                .foregroundStyle(SonderColors.terracotta.opacity(0.5))
         }
     }
 }
@@ -325,19 +325,19 @@ struct LogShareGradient: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(data.placeName)
                         .font(.system(size: 64, weight: .bold, design: .serif))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .lineLimit(3)
                         .minimumScaleFactor(0.6)
 
                     Text(data.cityName)
                         .font(.system(size: 32))
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundStyle(.white.opacity(0.8))
 
                     if let note = data.note, !note.isEmpty {
                         Text("\"\(note)\"")
                             .font(.system(size: 28, weight: .regular, design: .serif))
                             .italic()
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundStyle(.white.opacity(0.7))
                             .lineLimit(2)
                             .padding(.top, 4)
                     }
@@ -348,7 +348,7 @@ struct LogShareGradient: View {
                             ForEach(data.tags.prefix(3), id: \.self) { tag in
                                 Text(tag)
                                     .font(.system(size: 22, weight: .medium))
-                                    .foregroundColor(.white.opacity(0.9))
+                                    .foregroundStyle(.white.opacity(0.9))
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 8)
                                     .background(.white.opacity(0.15))
@@ -369,18 +369,18 @@ struct LogShareGradient: View {
                                 .overlay {
                                     Text(String(data.username.prefix(1)).uppercased())
                                         .font(.system(size: 18, weight: .bold))
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(.white)
                                 }
                             Text("@\(data.username)")
                                 .font(.system(size: 24, weight: .medium))
-                                .foregroundColor(.white.opacity(0.7))
+                                .foregroundStyle(.white.opacity(0.7))
                         }
 
                         Spacer()
 
                         Text("sonder")
                             .font(.system(size: 24, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.4))
+                            .foregroundStyle(.white.opacity(0.4))
                     }
                 }
                 .padding(.horizontal, 56)
@@ -397,7 +397,7 @@ struct LogShareGradient: View {
                 .font(.system(size: 36))
             Text(data.rating.displayName)
                 .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 14)
@@ -459,14 +459,14 @@ struct LogShareSplit: View {
                 Text(data.rating.displayName.uppercased())
                     .font(.system(size: 24, weight: .heavy))
                     .tracking(4)
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
 
                 Spacer().frame(height: 24)
 
                 // Place name — large stacked
                 Text(data.placeName)
                     .font(.system(size: 56, weight: .bold, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(4)
                     .minimumScaleFactor(0.5)
                     .fixedSize(horizontal: false, vertical: true)
@@ -477,10 +477,10 @@ struct LogShareSplit: View {
                 HStack(spacing: 8) {
                     Image(systemName: "mappin.circle.fill")
                         .font(.system(size: 22))
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                     Text(data.cityName)
                         .font(.system(size: 28, weight: .medium))
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 Spacer().frame(height: 12)
@@ -488,7 +488,7 @@ struct LogShareSplit: View {
                 // Date
                 Text(data.formattedDate)
                     .font(.system(size: 24))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
 
                 Spacer()
 
@@ -498,7 +498,7 @@ struct LogShareSplit: View {
                         ForEach(data.tags.prefix(3), id: \.self) { tag in
                             Text(tag)
                                 .font(.system(size: 22, weight: .medium, design: .rounded))
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 6)
                                 .background(SonderColors.terracotta.opacity(0.1))
@@ -514,11 +514,11 @@ struct LogShareSplit: View {
                     if let milestone = data.milestoneText {
                         Text(milestone)
                             .font(.system(size: 22, weight: .medium))
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                     }
                     Text("sonder")
                         .font(.system(size: 22, weight: .semibold, design: .rounded))
-                        .foregroundColor(SonderColors.terracotta.opacity(0.5))
+                        .foregroundStyle(SonderColors.terracotta.opacity(0.5))
                 }
 
                 Spacer(minLength: 60)
@@ -591,14 +591,14 @@ struct LogSharePostcard: View {
                 Text("\"\(note)\"")
                     .font(.system(size: 28, weight: .regular, design: .serif))
                     .italic()
-                    .foregroundColor(SonderColors.inkDark.opacity(0.8))
+                    .foregroundStyle(SonderColors.inkDark.opacity(0.8))
                     .lineLimit(3)
             }
 
             // Place name
             Text(data.placeName)
                 .font(.system(size: 44, weight: .bold, design: .serif))
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
                 .lineLimit(2)
                 .minimumScaleFactor(0.6)
 
@@ -612,14 +612,14 @@ struct LogSharePostcard: View {
                 Text(data.formattedDate)
                     .font(.system(size: 24))
             }
-            .foregroundColor(SonderColors.inkMuted)
+            .foregroundStyle(SonderColors.inkMuted)
 
             // Sonder branding
             HStack {
                 Spacer()
                 Text("sonder")
                     .font(.system(size: 20, weight: .semibold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta.opacity(0.6))
+                    .foregroundStyle(SonderColors.terracotta.opacity(0.6))
             }
         }
         .padding(32)
@@ -637,7 +637,7 @@ struct LogSharePostcard: View {
                 Text(data.rating.displayName.uppercased())
                     .font(.system(size: 18, weight: .heavy))
                     .tracking(2)
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
             .frame(width: 160, height: 180)
             .background(SonderColors.cream)
@@ -699,7 +699,7 @@ struct LogShareMinimal: View {
                 // Place name
                 Text(data.placeName)
                     .font(.system(size: 52, weight: .semibold, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(2)
                     .minimumScaleFactor(0.6)
                     .multilineTextAlignment(.center)
@@ -713,13 +713,13 @@ struct LogShareMinimal: View {
                     Text(data.shortDate)
                 }
                 .font(.system(size: 26))
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
 
                 // Note
                 if let note = data.note, !note.isEmpty {
                     Text(note)
                         .font(.system(size: 28, weight: .regular, design: .default))
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
@@ -731,7 +731,7 @@ struct LogShareMinimal: View {
                         ForEach(data.tags.prefix(4), id: \.self) { tag in
                             Text(tag)
                                 .font(.system(size: 22, weight: .medium, design: .rounded))
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
                                 .background(SonderColors.terracotta.opacity(0.08))
@@ -758,14 +758,14 @@ struct LogShareMinimal: View {
                 if let milestone = data.milestoneText {
                     Text(milestone)
                         .font(.system(size: 24, weight: .medium))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
 
                 Spacer()
 
                 Text("sonder")
                     .font(.system(size: 24, weight: .semibold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta.opacity(0.4))
+                    .foregroundStyle(SonderColors.terracotta.opacity(0.4))
             }
             .padding(.horizontal, margin)
 
@@ -792,7 +792,7 @@ private func photoPlaceholder(width: CGFloat, height: CGFloat) -> some View {
             Text("Your photo here")
                 .font(.system(size: 24))
         }
-        .foregroundColor(SonderColors.terracotta.opacity(0.3))
+        .foregroundStyle(SonderColors.terracotta.opacity(0.3))
     }
 }
 

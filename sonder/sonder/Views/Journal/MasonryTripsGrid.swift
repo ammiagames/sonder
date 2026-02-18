@@ -150,19 +150,19 @@ struct MasonryTripsGrid: View {
                 HStack {
                     Text("Not in a trip")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .textCase(.uppercase)
                         .tracking(0.5)
 
                     Text("(\(unassignedLogs.count))")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
 
                     Spacer()
 
                     Image(systemName: unassignedExpanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
                 .padding(.horizontal, SonderSpacing.md)
             }
@@ -190,13 +190,13 @@ struct MasonryTripsGrid: View {
         VStack(spacing: SonderSpacing.md) {
             Image(systemName: "suitcase")
                 .font(.system(size: 40))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
             Text("No trips yet")
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
             Text("Create a trip from the toolbar to organize your logs")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, SonderSpacing.xl)
         }
@@ -265,5 +265,124 @@ struct ZigzagTrailView: View {
             }
         }
         .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Journal Log Row
+
+struct JournalLogRow: View {
+    let log: Log
+    let place: Place
+    let tripName: String?
+
+    var body: some View {
+        HStack(spacing: SonderSpacing.sm) {
+            // Photo thumbnail
+            photoView
+                .frame(width: 64, height: 64)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+
+            // Info
+            VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
+                // Place name + rating
+                HStack {
+                    Text(place.name)
+                        .font(SonderTypography.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(SonderColors.inkDark)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    Text(log.rating.emoji)
+                        .font(.system(size: 18))
+                }
+
+                // Note preview or address
+                if let note = log.note, !note.isEmpty {
+                    Text(note)
+                        .font(SonderTypography.caption)
+                        .foregroundStyle(SonderColors.inkDark)
+                        .lineLimit(1)
+                } else {
+                    Text(place.address)
+                        .font(SonderTypography.caption)
+                        .foregroundStyle(SonderColors.inkDark)
+                        .lineLimit(1)
+                }
+
+                // Trip + date
+                HStack(spacing: SonderSpacing.xs) {
+                    if let tripName = tripName {
+                        HStack(spacing: 2) {
+                            Image(systemName: "suitcase.fill")
+                                .font(.system(size: 9))
+                            Text(tripName)
+                        }
+                        .font(SonderTypography.caption)
+                        .foregroundStyle(SonderColors.terracotta)
+                    }
+
+                    Text(log.createdAt.formatted(date: .abbreviated, time: .omitted))
+                        .font(SonderTypography.caption)
+                        .foregroundStyle(SonderColors.inkLight)
+                }
+
+                // Tags
+                if !log.tags.isEmpty {
+                    HStack(spacing: SonderSpacing.xxs) {
+                        ForEach(log.tags.prefix(3), id: \.self) { tag in
+                            Text(tag)
+                                .font(.system(size: 10))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(SonderColors.terracotta.opacity(0.12))
+                                .foregroundStyle(SonderColors.terracotta)
+                                .clipShape(Capsule())
+                        }
+                        if log.tags.count > 3 {
+                            Text("+\(log.tags.count - 3)")
+                                .font(.system(size: 10))
+                                .foregroundStyle(SonderColors.inkLight)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(SonderSpacing.sm)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+    }
+
+    @ViewBuilder
+    private var photoView: some View {
+        if let urlString = log.photoURL, let url = URL(string: urlString) {
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 64, height: 64)) {
+                placePhotoView
+            }
+        } else {
+            placePhotoView
+        }
+    }
+
+    @ViewBuilder
+    private var placePhotoView: some View {
+        if let photoRef = place.photoReference,
+           let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 200) {
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 64, height: 64)) {
+                photoPlaceholder
+            }
+        } else {
+            photoPlaceholder
+        }
+    }
+
+    private var photoPlaceholder: some View {
+        Rectangle()
+            .fill(SonderColors.warmGrayDark)
+            .overlay {
+                Image(systemName: "photo")
+                    .foregroundStyle(SonderColors.inkLight)
+            }
     }
 }

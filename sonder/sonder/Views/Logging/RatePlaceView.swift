@@ -8,6 +8,9 @@
 import SwiftUI
 import SwiftData
 import CoreLocation
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "RatePlaceView")
 
 /// Screen 2: Rate the selected place
 struct RatePlaceView: View {
@@ -72,7 +75,7 @@ struct RatePlaceView: View {
                 VStack(spacing: SonderSpacing.lg) {
                     Text("How was it?")
                         .font(SonderTypography.title)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .padding(.top, SonderSpacing.lg)
 
                     // Rating circles
@@ -112,7 +115,7 @@ struct RatePlaceView: View {
                     .frame(maxWidth: .infinity)
                     .padding(SonderSpacing.md)
                     .background(selectedRating != nil ? SonderColors.terracotta : SonderColors.inkLight)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                 }
                 .disabled(selectedRating == nil || isSaving)
@@ -124,7 +127,7 @@ struct RatePlaceView: View {
                         .frame(maxWidth: .infinity)
                         .padding(SonderSpacing.md)
                         .background(SonderColors.warmGray)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                 }
                 .disabled(selectedRating == nil)
@@ -140,7 +143,7 @@ struct RatePlaceView: View {
                 Button("Cancel") {
                     dismiss()
                 }
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
             }
         }
         .navigationDestination(isPresented: $showAddDetails) {
@@ -206,17 +209,17 @@ struct RatePlaceView: View {
         HStack(spacing: SonderSpacing.sm) {
             Image(systemName: "mappin.circle.fill")
                 .font(.system(size: 40))
-                .foregroundColor(SonderColors.terracotta)
+                .foregroundStyle(SonderColors.terracotta)
 
             VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                 Text(place.name)
                     .font(SonderTypography.headline)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(2)
 
                 Text(place.address)
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .lineLimit(2)
             }
 
@@ -256,7 +259,7 @@ struct RatePlaceView: View {
                 Text(rating.displayName)
                     .font(SonderTypography.caption)
                     .fontWeight(.medium)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
             }
         }
         .buttonStyle(.plain)
@@ -268,7 +271,7 @@ struct RatePlaceView: View {
         HStack {
             Image(systemName: "clock")
                 .font(.system(size: 14))
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
 
             DatePicker("", selection: $visitedAt)
                 .datePickerStyle(.compact)
@@ -283,7 +286,7 @@ struct RatePlaceView: View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Add to a trip?")
                 .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
                 .padding(.horizontal, SonderSpacing.md)
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -310,7 +313,7 @@ struct RatePlaceView: View {
                         .padding(.horizontal, SonderSpacing.sm)
                         .padding(.vertical, SonderSpacing.xs)
                         .background(SonderColors.warmGray)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .clipShape(Capsule())
                         .overlay(
                             Capsule()
@@ -327,10 +330,10 @@ struct RatePlaceView: View {
                 HStack(spacing: SonderSpacing.xxs) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12))
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                     Text("Saving to \(trip.name)")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
                 .padding(.horizontal, SonderSpacing.md)
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -360,7 +363,7 @@ struct RatePlaceView: View {
             .padding(.horizontal, SonderSpacing.sm)
             .padding(.vertical, SonderSpacing.xs)
             .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
-            .foregroundColor(isSelected ? .white : SonderColors.inkDark)
+            .foregroundStyle(isSelected ? .white : SonderColors.inkDark)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -465,7 +468,7 @@ struct RatePlaceView: View {
 
             showConfirmation = true
         } catch {
-            print("Failed to save log: \(error)")
+            logger.error("Failed to save log: \(error.localizedDescription)")
             isSaving = false
         }
     }
@@ -482,7 +485,7 @@ struct RatePlaceView: View {
                 longitude: -122.4194
             )
         ) { _ in
-            print("Log complete")
+            logger.debug("Log complete")
         }
     }
 }

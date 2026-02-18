@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "WantToGoButton")
 
 /// Bookmark toggle button for saving places to Want to Go list
 struct WantToGoButton: View {
@@ -46,7 +49,7 @@ struct WantToGoButton: View {
                 } else {
                     Image(systemName: isWantToGo ? "bookmark.fill" : "bookmark")
                         .font(.system(size: 20))
-                        .foregroundColor(isWantToGo ? SonderColors.terracotta : SonderColors.inkDark)
+                        .foregroundStyle(isWantToGo ? SonderColors.terracotta : SonderColors.inkDark)
                 }
             }
         }
@@ -73,7 +76,7 @@ struct WantToGoButton: View {
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
             } catch {
-                print("Error toggling want to go: \(error)")
+                logger.error("Error toggling want to go: \(error.localizedDescription)")
             }
             isLoading = false
         }
@@ -126,7 +129,7 @@ struct WantToGoButtonLarge: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, SonderSpacing.sm)
             .background(isWantToGo ? SonderColors.warmGray : SonderColors.terracotta)
-            .foregroundColor(isWantToGo ? SonderColors.inkMuted : .white)
+            .foregroundStyle(isWantToGo ? SonderColors.inkMuted : .white)
             .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         }
         .disabled(isLoading)
@@ -152,7 +155,7 @@ struct WantToGoButtonLarge: View {
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
             } catch {
-                print("Error toggling want to go: \(error)")
+                logger.error("Error toggling want to go: \(error.localizedDescription)")
             }
             isLoading = false
         }

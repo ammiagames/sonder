@@ -10,10 +10,12 @@ import AuthenticationServices
 import SwiftData
 import Supabase
 import GoogleSignIn
+import os
 
 @MainActor
 @Observable
 final class AuthenticationService {
+    private let logger = Logger(subsystem: "com.sonder.app", category: "AuthenticationService")
     var currentUser: User?
     var isAuthenticated: Bool { currentUser != nil }
     var isLoading = false
@@ -23,18 +25,14 @@ final class AuthenticationService {
     var isNewUser = false
     var error: Error?
 
-    /// Set by sonderApp after ModelContainer is ready. Used for local user caching.
+    /// Set by SonderApp after ModelContainer is ready. Used for local user caching.
     var modelContext: ModelContext?
 
     private let supabase = SupabaseConfig.client
 
     // Debug mode - set to true to bypass authentication during development
     // NOTE: Must be false for Supabase RLS to work (need real auth session)
-    #if DEBUG
     private let debugBypassAuth = false
-    #else
-    private let debugBypassAuth = false
-    #endif
 
     init() {
         Task {
@@ -234,7 +232,7 @@ final class AuthenticationService {
 
             await loadUser(id: userID)
         } catch {
-            print("Google Sign-In failed: \(error)")
+            logger.error("Google Sign-In failed: \(error.localizedDescription)")
             self.error = error
         }
     }

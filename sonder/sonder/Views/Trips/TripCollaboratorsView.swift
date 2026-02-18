@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "TripCollaboratorsView")
 
 /// View for managing trip collaborators
 struct TripCollaboratorsView: View {
@@ -95,13 +98,13 @@ struct TripCollaboratorsView: View {
 
                                 Text("Invitation sent")
                                     .font(SonderTypography.caption)
-                                    .foregroundColor(SonderColors.ochre)
+                                    .foregroundStyle(SonderColors.ochre)
                             }
 
                             Spacer()
 
                             Image(systemName: "clock")
-                                .foregroundColor(SonderColors.ochre)
+                                .foregroundStyle(SonderColors.ochre)
                         }
                     }
                 }
@@ -148,7 +151,7 @@ struct TripCollaboratorsView: View {
                 // Search bar
                 HStack {
                     Image(systemName: "magnifyingglass")
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
 
                     TextField("Search by username", text: $searchText)
                         .textFieldStyle(.plain)
@@ -164,7 +167,7 @@ struct TripCollaboratorsView: View {
                             searchResults = []
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(SonderColors.inkMuted)
+                                .foregroundStyle(SonderColors.inkMuted)
                         }
                     }
                 }
@@ -191,13 +194,13 @@ struct TripCollaboratorsView: View {
                     VStack(spacing: SonderSpacing.md) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 40))
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
                         Text("No Results")
                             .font(SonderTypography.headline)
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                         Text("No users found")
                             .font(SonderTypography.body)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -254,7 +257,7 @@ struct TripCollaboratorsView: View {
             }
             pendingInvitees = pendingUsers
         } catch {
-            print("Error loading collaborators: \(error)")
+            logger.error("Error loading collaborators: \(error.localizedDescription)")
         }
 
         isLoading = false
@@ -271,7 +274,7 @@ struct TripCollaboratorsView: View {
                         Text(user.username.prefix(1).uppercased())
                             .font(SonderTypography.headline)
                             .fontWeight(.bold)
-                            .foregroundColor(SonderColors.ochre)
+                            .foregroundStyle(SonderColors.ochre)
                     }
             }
         } else {
@@ -281,7 +284,7 @@ struct TripCollaboratorsView: View {
                     Text(user.username.prefix(1).uppercased())
                         .font(SonderTypography.headline)
                         .fontWeight(.bold)
-                        .foregroundColor(SonderColors.ochre)
+                        .foregroundStyle(SonderColors.ochre)
                 }
         }
     }
@@ -301,7 +304,7 @@ struct TripCollaboratorsView: View {
                     user.id != authService.currentUser?.id
                 }
             } catch {
-                print("Search error: \(error)")
+                logger.error("Search error: \(error.localizedDescription)")
             }
             isSearching = false
         }
@@ -327,7 +330,7 @@ struct TripCollaboratorsView: View {
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)
             } catch {
-                print("Error inviting user: \(error)")
+                logger.error("Error inviting user: \(error.localizedDescription)")
             }
         }
     }
@@ -341,7 +344,7 @@ struct TripCollaboratorsView: View {
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)
             } catch {
-                print("Error removing collaborator: \(error)")
+                logger.error("Error removing collaborator: \(error.localizedDescription)")
             }
         }
     }
@@ -354,7 +357,7 @@ struct TripCollaboratorsView: View {
                 try await tripService.leaveTrip(trip, userID: userID)
                 dismiss()
             } catch {
-                print("Error leaving trip: \(error)")
+                logger.error("Error leaving trip: \(error.localizedDescription)")
             }
         }
     }
@@ -384,7 +387,7 @@ struct CollaboratorRow: View {
                 if isOwner {
                     Text("Owner")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                 }
             }
 
@@ -396,7 +399,7 @@ struct CollaboratorRow: View {
                     onRemove()
                 } label: {
                     Image(systemName: "minus.circle.fill")
-                        .foregroundColor(.red)
+                        .foregroundStyle(.red)
                 }
                 .buttonStyle(.plain)
             }
@@ -428,7 +431,7 @@ struct CollaboratorRow: View {
                 Text(user.username.prefix(1).uppercased())
                     .font(SonderTypography.headline)
                     .fontWeight(.bold)
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
     }
 }
@@ -459,11 +462,11 @@ struct InviteUserRow: View {
             if isAlreadyAdded {
                 Text("Added")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             } else if isPending {
                 Text("Invited")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.ochre)
+                    .foregroundStyle(SonderColors.ochre)
             } else {
                 Button {
                     onInvite()
@@ -474,7 +477,7 @@ struct InviteUserRow: View {
                         .padding(.horizontal, SonderSpacing.sm)
                         .padding(.vertical, SonderSpacing.xs)
                         .background(SonderColors.terracotta)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -507,7 +510,7 @@ struct InviteUserRow: View {
                 Text(user.username.prefix(1).uppercased())
                     .font(SonderTypography.headline)
                     .fontWeight(.bold)
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
     }
 }

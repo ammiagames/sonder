@@ -45,11 +45,11 @@ struct AssignLogsToTripSheet: View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text(trip.name)
                 .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             Text("Select logs to add to this trip")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
 
             HStack {
                 Spacer()
@@ -62,7 +62,7 @@ struct AssignLogsToTripSheet: View {
                 }
                 .font(SonderTypography.caption)
                 .fontWeight(.medium)
-                .foregroundColor(SonderColors.terracotta)
+                .foregroundStyle(SonderColors.terracotta)
             }
         }
         .padding(.horizontal, SonderSpacing.md)
@@ -104,7 +104,7 @@ struct AssignLogsToTripSheet: View {
                 // Selection indicator
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 22))
-                    .foregroundColor(isSelected ? SonderColors.terracotta : SonderColors.inkLight)
+                    .foregroundStyle(isSelected ? SonderColors.terracotta : SonderColors.inkLight)
             }
             .padding(SonderSpacing.sm)
             .background(isSelected ? SonderColors.terracotta.opacity(0.08) : SonderColors.warmGray)
@@ -125,7 +125,7 @@ struct AssignLogsToTripSheet: View {
                     Text(place.name)
                         .font(SonderTypography.subheadline)
                         .fontWeight(.medium)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(1)
 
                     Spacer()
@@ -137,18 +137,18 @@ struct AssignLogsToTripSheet: View {
                 if let note = log.note, !note.isEmpty {
                     Text(note)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(1)
                 } else {
                     Text(place.address)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(1)
                 }
 
                 Text(log.createdAt.formatted(date: .abbreviated, time: .omitted))
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
         }
     }
@@ -181,7 +181,7 @@ struct AssignLogsToTripSheet: View {
             .fill(SonderColors.warmGrayDark)
             .overlay {
                 Image(systemName: "photo")
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
     }
 
@@ -198,7 +198,7 @@ struct AssignLogsToTripSheet: View {
                     } label: {
                         Text("Skip")
                             .font(SonderTypography.headline)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, SonderSpacing.sm)
                     }
@@ -214,7 +214,7 @@ struct AssignLogsToTripSheet: View {
                             Text("Add \(selectedIDs.count) Log\(selectedIDs.count == 1 ? "" : "s")")
                                 .font(SonderTypography.headline)
                         }
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, SonderSpacing.sm)
                         .background(SonderColors.terracotta)

@@ -86,7 +86,7 @@ struct FeedLogDetailView: View {
                 } label: {
                     Text(option.label)
                         .font(.system(size: 13, weight: style == option ? .semibold : .regular))
-                        .foregroundColor(style == option ? SonderColors.inkDark : SonderColors.inkMuted)
+                        .foregroundStyle(style == option ? SonderColors.inkDark : SonderColors.inkMuted)
                         .padding(.horizontal, SonderSpacing.md)
                         .padding(.vertical, SonderSpacing.xs)
                 }
@@ -148,7 +148,7 @@ private struct CinematicDetailView: View {
                     VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                         Text(feedItem.place.name)
                             .font(.system(size: 28, weight: .bold, design: .serif))
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
 
                         HStack(spacing: SonderSpacing.xxs) {
                             Image(systemName: "mappin")
@@ -156,7 +156,7 @@ private struct CinematicDetailView: View {
                             Text(feedItem.place.cityName)
                                 .font(.system(size: 14))
                         }
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundStyle(.white.opacity(0.7))
                     }
                     .padding(SonderSpacing.lg)
                 }
@@ -211,7 +211,7 @@ private struct CinematicDetailView: View {
 
             Image(systemName: feedItem.place.categoryIcon)
                 .font(.system(size: 120, weight: .ultraLight))
-                .foregroundColor(.white.opacity(0.06))
+                .foregroundStyle(.white.opacity(0.06))
                 .rotationEffect(.degrees(-15))
         }
     }
@@ -226,10 +226,10 @@ private struct CinematicDetailView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(feedItem.rating.displayName)
                     .font(.system(size: 20, weight: .bold, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                 Text(feedItem.createdAt.formatted(date: .long, time: .omitted))
                     .font(.system(size: 13))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
 
             Spacer()
@@ -250,7 +250,7 @@ private struct CinematicDetailView: View {
             Text(note)
                 .font(.system(size: 17, design: .serif))
                 .italic()
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
                 .lineSpacing(5)
         }
     }
@@ -269,17 +269,17 @@ private struct CinematicDetailView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("@\(feedItem.user.username)")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                     Text(feedItem.createdAt.relativeDisplay)
                         .font(.system(size: 13))
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 Spacer()
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
         }
         .buttonStyle(.plain)
@@ -311,7 +311,7 @@ private struct JournalDetailView: View {
                         .font(.system(size: 56))
                     Text(feedItem.rating.displayName)
                         .font(.system(size: 18, weight: .semibold, design: .serif))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                 }
                 .frame(maxWidth: .infinity)
 
@@ -319,7 +319,7 @@ private struct JournalDetailView: View {
                 VStack(spacing: SonderSpacing.xxs) {
                     Text(feedItem.place.name)
                         .font(.system(size: 26, weight: .bold, design: .serif))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .multilineTextAlignment(.center)
 
                     HStack(spacing: SonderSpacing.xxs) {
@@ -328,7 +328,7 @@ private struct JournalDetailView: View {
                         Text(feedItem.place.address)
                             .font(.system(size: 13))
                     }
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, SonderSpacing.lg)
@@ -337,7 +337,7 @@ private struct JournalDetailView: View {
                 Text(feedItem.place.cityName.uppercased())
                     .font(.system(size: 12, weight: .medium))
                     .tracking(2)
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
 
                 // Note
                 if let note = feedItem.log.note, !note.isEmpty {
@@ -381,7 +381,7 @@ private struct JournalDetailView: View {
                     .overlay {
                         Image(systemName: feedItem.place.categoryIcon)
                             .font(.system(size: 80, weight: .ultraLight))
-                            .foregroundColor(SonderColors.terracotta.opacity(0.2))
+                            .foregroundStyle(SonderColors.terracotta.opacity(0.2))
                     }
             }
         }
@@ -401,18 +401,18 @@ private struct JournalDetailView: View {
         VStack(spacing: SonderSpacing.xxs) {
             Text("\u{201C}")
                 .font(.system(size: 40, weight: .thin, design: .serif))
-                .foregroundColor(SonderColors.terracotta.opacity(0.5))
+                .foregroundStyle(SonderColors.terracotta.opacity(0.5))
 
             Text(note)
                 .font(.system(size: 17, design: .serif))
                 .italic()
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
                 .lineSpacing(6)
                 .multilineTextAlignment(.center)
 
             Text("\u{201D}")
                 .font(.system(size: 40, weight: .thin, design: .serif))
-                .foregroundColor(SonderColors.terracotta.opacity(0.5))
+                .foregroundStyle(SonderColors.terracotta.opacity(0.5))
         }
         .padding(.horizontal, SonderSpacing.xl)
     }
@@ -430,14 +430,14 @@ private struct JournalDetailView: View {
 
                 Text("@\(feedItem.user.username)")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
 
                 Text("\u{00B7}")
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
 
                 Text(feedItem.createdAt.formatted(date: .abbreviated, time: .omitted))
                     .font(.system(size: 13))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
         }
         .buttonStyle(.plain)
@@ -513,7 +513,7 @@ private struct StoryDetailView: View {
 
                         Image(systemName: feedItem.place.categoryIcon)
                             .font(.system(size: 80, weight: .ultraLight))
-                            .foregroundColor(SonderColors.terracotta.opacity(0.15))
+                            .foregroundStyle(SonderColors.terracotta.opacity(0.15))
                     }
                     .frame(height: 380 + stretchHeight)
                 }
@@ -532,22 +532,22 @@ private struct StoryDetailView: View {
             VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                 Text(feedItem.place.name)
                     .font(.system(size: 24, weight: .bold, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
 
                 Text(feedItem.place.cityName)
                     .font(.system(size: 14))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
 
                 Text(feedItem.place.address)
                     .font(.system(size: 13))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
 
             Spacer()
 
             Image(systemName: feedItem.place.categoryIcon)
                 .font(.system(size: 24))
-                .foregroundColor(SonderColors.terracotta.opacity(0.5))
+                .foregroundStyle(SonderColors.terracotta.opacity(0.5))
         }
         .padding(SonderSpacing.lg)
         .background(.white)
@@ -566,7 +566,7 @@ private struct StoryDetailView: View {
             VStack(alignment: .leading, spacing: SonderSpacing.xs) {
                 Text(feedItem.rating.displayName)
                     .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
 
                 // Visual rating bar
                 GeometryReader { geo in
@@ -607,7 +607,7 @@ private struct StoryDetailView: View {
             if let note = feedItem.log.note, !note.isEmpty {
                 Text(note)
                     .font(.system(size: 16, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineSpacing(4)
             }
 
@@ -637,17 +637,17 @@ private struct StoryDetailView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("@\(feedItem.user.username)")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                     Text(feedItem.createdAt.relativeDisplay)
                         .font(.system(size: 13))
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 Spacer()
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
             .padding(SonderSpacing.lg)
             .background(.white)

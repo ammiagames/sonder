@@ -9,6 +9,7 @@ import Foundation
 import SwiftData
 import Supabase
 import Network
+import os
 
 /// Plain Codable struct for decoding logs from Supabase (avoids @Model decode issues)
 struct RemoteLog: Codable {
@@ -179,10 +180,11 @@ struct RemoteTrip: Codable {
 @MainActor
 @Observable
 final class SyncEngine {
-    var isSyncing = false
+    private let logger = Logger(subsystem: "com.sonder.app", category: "SyncEngine")
+    private(set) var isSyncing = false
     @ObservationIgnored var lastSyncDate: Date?
-    var pendingCount = 0
-    var isOnline = true
+    private(set) var pendingCount = 0
+    private(set) var isOnline = true
 
     /// Log IDs deleted locally but not yet confirmed deleted on Supabase.
     /// `mergeRemoteLogs` skips these so pull sync doesn't resurrect them.
@@ -242,7 +244,7 @@ final class SyncEngine {
     /// Update online status. Exposed for testability and connectivity probes.
     func handleNetworkChange(isConnected: Bool) {
         guard isOnline != isConnected else { return }
-        print("Network status changed: \(isConnected ? "online" : "offline")")
+        logger.info("Network status changed: \(isConnected ? "online" : "offline")")
         isOnline = isConnected
     }
 
@@ -258,7 +260,7 @@ final class SyncEngine {
             return
         }
         guard isOnline else {
-            print("Offline - skipping sync")
+            logger.info("Offline - skipping sync")
             return
         }
 
@@ -266,12 +268,12 @@ final class SyncEngine {
         let userID: String
         do {
             guard let session = try supabase.auth.currentSession else {
-                print("No Supabase session - skipping sync (debug mode)")
+                logger.info("No Supabase session - skipping sync (debug mode)")
                 return
             }
             userID = session.user.id.uuidString
         } catch {
-            print("No Supabase session - skipping sync (debug mode)")
+            logger.info("No Supabase session - skipping sync (debug mode)")
             return
         }
 
@@ -285,7 +287,7 @@ final class SyncEngine {
             try await syncPendingTrips()
             try await syncPendingLogs()
         } catch {
-            print("Push sync error: \(error)")
+            logger.error("Push sync error: \(error.localizedDescription)")
         }
 
         // Retry any remote deletions that failed previously (e.g. offline)
@@ -295,13 +297,13 @@ final class SyncEngine {
         do {
             try await pullRemoteTrips(for: userID)
         } catch {
-            print("Pull trips error: \(error)")
+            logger.error("Pull trips error: \(error.localizedDescription)")
         }
 
         do {
             try await pullRemoteLogs(for: userID)
         } catch {
-            print("Pull logs error: \(error)")
+            logger.error("Pull logs error: \(error.localizedDescription)")
         }
 
         lastSyncDate = Date()
@@ -401,7 +403,7 @@ final class SyncEngine {
                 log.updatedAt = Date()
             } catch {
                 log.syncStatus = .failed
-                print("Failed to sync log \(log.id): \(error)")
+                logger.error("Failed to sync log \(log.id): \(error.localizedDescription)")
             }
         }
 
@@ -420,7 +422,7 @@ final class SyncEngine {
             do {
                 try await syncTrip(tripID: tripID)
             } catch {
-                print("Trip \(tripID) failed to sync, uploading log without trip reference: \(error)")
+                logger.warning("Trip \(tripID) failed to sync, uploading log without trip reference: \(error.localizedDescription)")
                 tripIDForUpload = nil
             }
         }
@@ -528,7 +530,7 @@ final class SyncEngine {
                     .execute()
                 trip.syncStatus = SyncStatus.synced
             } catch {
-                print("⚠️ Failed to sync trip '\(trip.name)' (\(trip.id)): \(error)")
+                logger.warning("Failed to sync trip '\(trip.name)' (\(trip.id)): \(error.localizedDescription)")
             }
         }
 
@@ -554,7 +556,7 @@ final class SyncEngine {
         }
 
         let ownedTrips: [RemoteTrip] = try await ownedQuery.execute().value
-        print("Pull trips: \(ownedTrips.count) owned\(isIncremental ? " (incremental)" : " (full)")")
+        logger.info("Pull trips: \(ownedTrips.count) owned\(isIncremental ? " (incremental)" : " (full)")")
 
         var allRemoteTrips = ownedTrips
 
@@ -573,12 +575,12 @@ final class SyncEngine {
             let ownedIDs = Set(allRemoteTrips.map(\.id))
             let newCollabs = collabTrips.filter { !ownedIDs.contains($0.id) }
             allRemoteTrips += newCollabs
-            print("Pull trips: \(newCollabs.count) as collaborator")
+            logger.info("Pull trips: \(newCollabs.count) as collaborator")
         }
 
         if !allRemoteTrips.isEmpty {
             try mergeRemoteTrips(allRemoteTrips)
-            print("Pull trips: merged \(allRemoteTrips.count) total")
+            logger.info("Pull trips: merged \(allRemoteTrips.count) total")
 
             // Advance cursor to the latest updatedAt from this batch
             let maxUpdatedAt = allRemoteTrips.map(\.updatedAt).max()
@@ -660,7 +662,7 @@ final class SyncEngine {
         }
 
         let remoteLogs: [RemoteLog] = try await query.execute().value
-        print("Pull logs: \(remoteLogs.count)\(isIncremental ? " (incremental)" : " (full)")")
+        logger.info("Pull logs: \(remoteLogs.count)\(isIncremental ? " (incremental)" : " (full)")")
 
         guard !remoteLogs.isEmpty else { return }
 
@@ -872,7 +874,7 @@ final class SyncEngine {
                 .execute()
             pendingDeletions.remove(logID.lowercased())
         } catch {
-            print("Failed to delete log \(logID) from Supabase: \(error)")
+            logger.error("Failed to delete log \(logID) from Supabase: \(error.localizedDescription)")
             // Stays in pendingDeletions for retry on next sync
         }
     }
@@ -891,7 +893,7 @@ final class SyncEngine {
                     .execute()
                 resolved.insert(logID)
             } catch {
-                print("Retry delete failed for \(logID): \(error)")
+                logger.warning("Retry delete failed for \(logID): \(error.localizedDescription)")
             }
         }
         pendingDeletions.subtract(resolved)

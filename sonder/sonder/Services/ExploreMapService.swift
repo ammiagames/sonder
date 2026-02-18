@@ -8,10 +8,12 @@
 import Foundation
 import CoreLocation
 import Supabase
+import os
 
 @MainActor
 @Observable
 final class ExploreMapService {
+    private let logger = Logger(subsystem: "com.sonder.app", category: "ExploreMapService")
     private let supabase = SupabaseConfig.client
 
     // State
@@ -62,7 +64,7 @@ final class ExploreMapService {
             placesMap = groupByPlace(feedItems)
         } catch {
             self.error = error.localizedDescription
-            print("Error loading explore map: \(error)")
+            logger.error("Error loading explore map: \(error.localizedDescription)")
         }
 
         isLoading = false

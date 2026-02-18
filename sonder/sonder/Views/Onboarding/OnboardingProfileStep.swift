@@ -6,6 +6,9 @@
 import SwiftUI
 import SwiftData
 import Supabase
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "OnboardingProfileStep")
 
 /// Step 2: Profile setup — username (required), photo/name/bio (optional)
 struct OnboardingProfileStep: View {
@@ -49,7 +52,7 @@ struct OnboardingProfileStep: View {
                 VStack(spacing: SonderSpacing.xs) {
                     Text("Make it yours")
                         .font(SonderTypography.title)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                 }
                 .padding(.top, SonderSpacing.lg)
 
@@ -124,7 +127,7 @@ struct OnboardingProfileStep: View {
                                 Spacer()
                                 Image(systemName: "camera.fill")
                                     .font(.system(size: 12))
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(.white)
                                     .padding(6)
                                     .background(SonderColors.terracotta)
                                     .clipShape(Circle())
@@ -143,7 +146,7 @@ struct OnboardingProfileStep: View {
 
             Text("Add a photo")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
         }
     }
 
@@ -159,7 +162,7 @@ struct OnboardingProfileStep: View {
             .overlay {
                 Text(username.isEmpty ? "?" : username.prefix(1).uppercased())
                     .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
     }
 
@@ -169,7 +172,7 @@ struct OnboardingProfileStep: View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Username")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -192,10 +195,10 @@ struct OnboardingProfileStep: View {
                             .scaleEffect(0.8)
                     case .available:
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(SonderColors.sage)
+                            .foregroundStyle(SonderColors.sage)
                     case .taken, .invalidChars, .tooShort:
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(SonderColors.dustyRose)
+                            .foregroundStyle(SonderColors.dustyRose)
                     case .empty:
                         EmptyView()
                     }
@@ -210,19 +213,19 @@ struct OnboardingProfileStep: View {
                 switch usernameStatus {
                 case .tooShort:
                     Text("Must be at least 3 characters")
-                        .foregroundColor(SonderColors.dustyRose)
+                        .foregroundStyle(SonderColors.dustyRose)
                 case .invalidChars:
                     Text("Letters, numbers, and underscores only")
-                        .foregroundColor(SonderColors.dustyRose)
+                        .foregroundStyle(SonderColors.dustyRose)
                 case .taken:
                     Text("Username is already taken")
-                        .foregroundColor(SonderColors.dustyRose)
+                        .foregroundStyle(SonderColors.dustyRose)
                 case .available:
                     Text("Username is available")
-                        .foregroundColor(SonderColors.sage)
+                        .foregroundStyle(SonderColors.sage)
                 default:
                     Text("3-20 characters, letters, numbers, underscores")
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
             }
             .font(SonderTypography.caption)
@@ -235,7 +238,7 @@ struct OnboardingProfileStep: View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("First Name")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -249,7 +252,7 @@ struct OnboardingProfileStep: View {
 
             Text("Used in greetings around the app")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
         }
     }
 
@@ -260,7 +263,7 @@ struct OnboardingProfileStep: View {
             HStack {
                 Text("Bio")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .textCase(.uppercase)
                     .tracking(0.5)
 
@@ -268,7 +271,7 @@ struct OnboardingProfileStep: View {
 
                 Text("\(bio.count)/\(maxBioLength)")
                     .font(SonderTypography.caption)
-                    .foregroundColor(bio.count > maxBioLength ? .red : SonderColors.inkLight)
+                    .foregroundStyle(bio.count > maxBioLength ? .red : SonderColors.inkLight)
             }
 
             TextField("Coffee snob. Always hunting for the best ramen.", text: $bio, axis: .vertical)
@@ -285,7 +288,7 @@ struct OnboardingProfileStep: View {
 
             Text("Tell others what you love to explore")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
         }
     }
 
@@ -398,7 +401,7 @@ struct OnboardingProfileStep: View {
 
                 await MainActor.run { onContinue() }
             } catch {
-                print("Error saving profile during onboarding: \(error)")
+                logger.error("Error saving profile during onboarding: \(error.localizedDescription)")
             }
 
             isSaving = false
@@ -429,7 +432,7 @@ struct OnboardingProfileStep: View {
                 .eq("id", value: user.id)
                 .execute()
         } catch {
-            print("Error syncing user during onboarding: \(error)")
+            logger.error("Error syncing user during onboarding: \(error.localizedDescription)")
         }
     }
 }

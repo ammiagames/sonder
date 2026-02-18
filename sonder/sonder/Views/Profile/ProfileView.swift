@@ -8,6 +8,9 @@
 import SwiftUI
 import SwiftData
 import CoreLocation
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "ProfileView")
 
 /// Routing enum for programmatic navigation in ProfileView
 enum ProfileDestination: Hashable {
@@ -32,7 +35,10 @@ struct ProfileView: View {
     @State private var showSettings = false
     @State private var showEditProfile = false
     @State private var showShareProfile = false
-    @State private var wantToGoCount = 0
+    private var wantToGoCount: Int {
+        guard let userID = authService.currentUser?.id else { return 0 }
+        return wantToGoService.items.filter { $0.userID == userID }.count
+    }
     @State private var profileStats: ProfileStats?
     @State private var activeDestination: ProfileDestination?
 
@@ -143,6 +149,9 @@ struct ProfileView: View {
             .task {
                 if let userID = authService.currentUser?.id {
                     await socialService.refreshCounts(for: userID)
+                    if wantToGoService.items.isEmpty {
+                        wantToGoService.items = wantToGoService.getWantToGoList(for: userID)
+                    }
                 }
             }
             .navigationDestination(item: $activeDestination) { dest in
@@ -262,7 +271,7 @@ struct ProfileView: View {
         .overlay {
             Image(systemName: "airplane")
                 .font(.system(size: 24, weight: .light))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundStyle(.white.opacity(0.4))
         }
     }
 
@@ -272,7 +281,7 @@ struct ProfileView: View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Recent trips")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -313,12 +322,12 @@ struct ProfileView: View {
             VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                 Text("DESTINATION")
                     .font(.system(size: 8, weight: .medium))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
                     .tracking(0.5)
 
                 Text(trip.name)
                     .font(.system(size: 15, weight: .bold, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(1)
 
                 Spacer()
@@ -327,21 +336,21 @@ struct ProfileView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("DATE")
                             .font(.system(size: 7, weight: .medium))
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
                             .tracking(0.5)
                         Text(tripDateText(trip) ?? "—")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                     }
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text("PLACES")
                             .font(.system(size: 7, weight: .medium))
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
                             .tracking(0.5)
                         Text("\(tripLogCount(trip))")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                     }
                 }
 
@@ -381,7 +390,7 @@ struct ProfileView: View {
                     if socialService.countsLoaded {
                         Text("\(socialService.followerCount)")
                             .font(SonderTypography.title)
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                     } else {
                         ProgressView()
                             .tint(SonderColors.terracotta)
@@ -389,7 +398,7 @@ struct ProfileView: View {
                     }
                     Text("Followers")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
             }
             .buttonStyle(.plain)
@@ -406,7 +415,7 @@ struct ProfileView: View {
                     if socialService.countsLoaded {
                         Text("\(socialService.followingCount)")
                             .font(SonderTypography.title)
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                     } else {
                         ProgressView()
                             .tint(SonderColors.terracotta)
@@ -414,7 +423,7 @@ struct ProfileView: View {
                     }
                     Text("Following")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
             }
             .buttonStyle(.plain)
@@ -431,7 +440,7 @@ struct ProfileView: View {
                 // Bookmark icon with warm background
                 Image(systemName: "bookmark.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
                     .frame(width: 36, height: 36)
                     .background(SonderColors.terracotta.opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
@@ -439,16 +448,16 @@ struct ProfileView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Want to Go")
                         .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
 
                     if wantToGoCount > 0 {
                         Text("\(wantToGoCount) saved")
                             .font(SonderTypography.caption)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                     } else {
                         Text("Save places to visit later")
                             .font(SonderTypography.caption)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                     }
                 }
 
@@ -456,26 +465,13 @@ struct ProfileView: View {
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
             .padding(SonderSpacing.md)
             .background(SonderColors.warmGray)
             .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
         }
         .buttonStyle(.plain)
-        .task {
-            await loadWantToGoCount()
-        }
-    }
-
-    private func loadWantToGoCount() async {
-        guard let userID = authService.currentUser?.id else { return }
-        do {
-            let items = try await wantToGoService.fetchWantToGoWithPlaces(for: userID)
-            wantToGoCount = items.count
-        } catch {
-            print("Error loading want to go count: \(error)")
-        }
     }
 
     // MARK: - Profile Header
@@ -512,7 +508,7 @@ struct ProfileView: View {
                     if !hasAvatarPhoto {
                         Image(systemName: "camera.fill")
                             .font(.system(size: 12))
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                             .padding(7)
                             .background(SonderColors.terracotta)
                             .clipShape(Circle())
@@ -529,7 +525,7 @@ struct ProfileView: View {
             // Username
             Text(authService.currentUser?.username ?? "User")
                 .font(SonderTypography.largeTitle)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             // Archetype badge
             if let stats = profileStats, stats.totalLogs > 0 {
@@ -539,7 +535,7 @@ struct ProfileView: View {
                     Text(stats.archetype.displayName)
                         .font(.system(size: 13, weight: .semibold))
                 }
-                .foregroundColor(SonderColors.terracotta)
+                .foregroundStyle(SonderColors.terracotta)
                 .padding(.horizontal, SonderSpacing.sm)
                 .padding(.vertical, SonderSpacing.xxs)
                 .background(SonderColors.terracotta.opacity(0.12))
@@ -550,7 +546,7 @@ struct ProfileView: View {
             if let bio = authService.currentUser?.bio, !bio.isEmpty {
                 Text(bio)
                     .font(SonderTypography.body)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, SonderSpacing.lg)
             }
@@ -559,7 +555,7 @@ struct ProfileView: View {
             if let user = authService.currentUser {
                 Text("Journaling since \(user.createdAt.formatted(date: .abbreviated, time: .omitted))")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
 
             // Edit Profile & Share buttons
@@ -573,7 +569,7 @@ struct ProfileView: View {
                     }
                     .font(SonderTypography.subheadline)
                     .fontWeight(.medium)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .padding(.horizontal, SonderSpacing.md)
                     .padding(.vertical, SonderSpacing.xs)
                     .background(SonderColors.warmGray)
@@ -589,7 +585,7 @@ struct ProfileView: View {
                     }
                     .font(SonderTypography.subheadline)
                     .fontWeight(.medium)
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
                     .padding(.horizontal, SonderSpacing.md)
                     .padding(.vertical, SonderSpacing.xs)
                     .background(SonderColors.terracotta.opacity(0.12))
@@ -612,7 +608,7 @@ struct ProfileView: View {
             .overlay {
                 Text(authService.currentUser?.username.prefix(1).uppercased() ?? "?")
                     .font(.system(size: 36, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
     }
 
@@ -622,11 +618,11 @@ struct ProfileView: View {
         VStack(spacing: SonderSpacing.xs) {
             Text("\(logs.count)")
                 .font(.system(size: 48, weight: .bold, design: .serif))
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             Text("places logged")
                 .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
 
             // Breakdown line
             let parts: [String] = {
@@ -643,7 +639,7 @@ struct ProfileView: View {
             if !parts.isEmpty {
                 Text("across " + parts.joined(separator: " in "))
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
 
             // Momentum indicator
@@ -651,7 +647,7 @@ struct ProfileView: View {
             if thisMonthCount > 0 {
                 Text("\(thisMonthCount) place\(thisMonthCount == 1 ? "" : "s") this month")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
                     .padding(.horizontal, SonderSpacing.sm)
                     .padding(.vertical, SonderSpacing.xxs)
                     .background(SonderColors.terracotta.opacity(0.1))
@@ -672,7 +668,7 @@ struct ProfileView: View {
         return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Ratings")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -711,7 +707,7 @@ struct ProfileView: View {
             // Philosophy one-liner
             Text(dist.philosophy)
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .italic()
                 .padding(.top, SonderSpacing.xxs)
         }
@@ -727,7 +723,7 @@ struct ProfileView: View {
                 .frame(width: 8, height: 8)
             Text("\(emoji) \(count)")
                 .font(.system(size: 12))
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
         }
     }
 
@@ -737,7 +733,7 @@ struct ProfileView: View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Your journey")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -746,20 +742,20 @@ struct ProfileView: View {
                 VStack(spacing: SonderSpacing.xxs) {
                     Image(systemName: "flag.fill")
                         .font(.system(size: 16))
-                        .foregroundColor(SonderColors.sage)
+                        .foregroundStyle(SonderColors.sage)
                     Text(bookends.firstPlaceName)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                     if let city = bookends.firstCity {
                         Text(city)
                             .font(.system(size: 11))
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                     }
                     Text(bookends.firstDate.formatted(date: .abbreviated, time: .omitted))
                         .font(.system(size: 10))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
                 .frame(maxWidth: .infinity)
 
@@ -767,30 +763,30 @@ struct ProfileView: View {
                 VStack(spacing: 2) {
                     Image(systemName: "arrow.right")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                     Text("\(bookends.daysBetween)d")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 // Latest log
                 VStack(spacing: SonderSpacing.xxs) {
                     Image(systemName: "mappin.circle.fill")
                         .font(.system(size: 16))
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                     Text(bookends.latestPlaceName)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                     if let city = bookends.latestCity {
                         Text(city)
                             .font(.system(size: 11))
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                     }
                     Text(bookends.latestDate.formatted(date: .abbreviated, time: .omitted))
                         .font(.system(size: 10))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -809,7 +805,7 @@ struct ProfileView: View {
         return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("You love")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -841,10 +837,10 @@ struct ProfileView: View {
         return HStack(spacing: 4) {
             Text(tag)
                 .font(.system(size: fontSize, weight: isTop ? .bold : .medium))
-                .foregroundColor(textColor)
+                .foregroundStyle(textColor)
             Text("\(count)")
                 .font(.system(size: fontSize - 2, weight: .regular))
-                .foregroundColor(countColor)
+                .foregroundStyle(countColor)
         }
         .padding(.horizontal, hPad)
         .padding(.vertical, vPad)
@@ -896,7 +892,7 @@ struct ProfileView: View {
         return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Your top cities")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -928,10 +924,10 @@ struct ProfileView: View {
                             Spacer()
                             Text(hero.city)
                                 .font(.system(size: 22, weight: .bold, design: .serif))
-                                .foregroundColor(.white)
+                                .foregroundStyle(.white)
                             Text("\(hero.count) place\(hero.count == 1 ? "" : "s") logged")
                                 .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.white.opacity(0.8))
+                                .foregroundStyle(.white.opacity(0.8))
                         }
                         .padding(SonderSpacing.md)
                     }
@@ -977,11 +973,11 @@ struct ProfileView: View {
                                     Spacer()
                                     Text(item.city)
                                         .font(.system(size: 14, weight: .bold, design: .serif))
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(.white)
                                         .lineLimit(1)
                                     Text("\(item.count)")
                                         .font(.system(size: 11, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.8))
+                                        .foregroundStyle(.white.opacity(0.8))
                                 }
                                 .padding(SonderSpacing.sm)
                             }
@@ -1070,22 +1066,11 @@ struct ProfileView: View {
     }
 
     private func extractCity(from address: String) -> String? {
-        let components = address.components(separatedBy: ", ")
-        guard components.count >= 2 else { return nil }
-        if components.count >= 3 {
-            return components[components.count - 3]
-        }
-        return components[0]
+        ProfileStatsService.extractCity(from: address)
     }
 
     private func extractCountry(from address: String) -> String? {
-        let components = address.components(separatedBy: ", ")
-        guard let last = components.last else { return nil }
-        let trimmed = last.trimmingCharacters(in: .whitespaces)
-        if trimmed.count <= 2 || trimmed.allSatisfy({ $0.isNumber }) {
-            return components.count >= 2 ? components[components.count - 2] : nil
-        }
-        return trimmed
+        ProfileStatsService.extractCountry(from: address)
     }
 }
 
@@ -1113,17 +1098,17 @@ struct FilteredLogsListView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(place.name)
                                     .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(SonderColors.inkDark)
+                                    .foregroundStyle(SonderColors.inkDark)
                                     .lineLimit(1)
 
                                 Text(place.address)
                                     .font(SonderTypography.caption)
-                                    .foregroundColor(SonderColors.inkMuted)
+                                    .foregroundStyle(SonderColors.inkMuted)
                                     .lineLimit(1)
 
                                 Text(log.createdAt.formatted(date: .abbreviated, time: .omitted))
                                     .font(.system(size: 12))
-                                    .foregroundColor(SonderColors.inkLight)
+                                    .foregroundStyle(SonderColors.inkLight)
                             }
 
                             Spacer()

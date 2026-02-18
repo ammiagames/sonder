@@ -86,6 +86,13 @@ enum SonderColors {
         case .mustSee: return ratingMustSee
         }
     }
+
+    // MARK: - UIColor Variants (for UIKit appearance APIs)
+
+    static let creamUI = UIColor(red: 0.98, green: 0.96, blue: 0.93, alpha: 1.0)
+    static let inkDarkUI = UIColor(red: 0.20, green: 0.18, blue: 0.16, alpha: 1.0)
+    static let inkMutedUI = UIColor(red: 0.50, green: 0.46, blue: 0.42, alpha: 1.0)
+    static let terracottaUI = UIColor(red: 0.80, green: 0.45, blue: 0.35, alpha: 1.0)
 }
 
 /// Sonder's typography styles
@@ -158,7 +165,7 @@ struct WarmButtonStyle: ButtonStyle {
             .padding(.horizontal, SonderSpacing.lg)
             .padding(.vertical, SonderSpacing.sm)
             .background(isPrimary ? SonderColors.primary : SonderColors.warmGray)
-            .foregroundColor(isPrimary ? .white : SonderColors.inkDark)
+            .foregroundStyle(isPrimary ? .white : SonderColors.inkDark)
             .clipShape(Capsule())
             .opacity(configuration.isPressed ? 0.85 : 1.0)
             .scaleEffect(configuration.isPressed ? 0.98 : 1.0)

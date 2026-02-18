@@ -17,7 +17,7 @@ struct TasteDNARadarChart: View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Taste DNA")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -69,7 +69,7 @@ struct TasteDNARadarChart: View {
                         Text(axis.label)
                             .font(.system(size: 9, weight: .medium))
                     }
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .position(labelPoint)
                 }
             }

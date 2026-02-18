@@ -10,7 +10,7 @@ import SwiftData
 import GoogleSignIn
 
 @main
-struct sonderApp: App {
+struct SonderApp: App {
     // SwiftData model container
     let modelContainer: ModelContainer
 
@@ -37,9 +37,8 @@ struct sonderApp: App {
         GoogleConfig.configure()
 
         // Configure UIKit appearance to match Sonder theme and prevent gray flashes
-        let creamUI = UIColor(red: 0.98, green: 0.96, blue: 0.93, alpha: 1.0)
-        let inkDarkUI = UIColor(red: 0.20, green: 0.18, blue: 0.16, alpha: 1.0)
-        let inkMutedUI = UIColor(red: 0.50, green: 0.46, blue: 0.42, alpha: 1.0)
+        let creamUI = SonderColors.creamUI
+        let inkDarkUI = SonderColors.inkDarkUI
 
         let tabBarAppearance = UITabBarAppearance()
         tabBarAppearance.configureWithOpaqueBackground()
@@ -48,8 +47,10 @@ struct sonderApp: App {
         UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance
 
         // Serif (New York) fonts for navigation bar titles
-        let serifLargeTitle = UIFont(descriptor: UIFontDescriptor.preferredFontDescriptor(withTextStyle: .largeTitle).withDesign(.serif)!, size: 0)
-        let serifTitle = UIFont(descriptor: UIFontDescriptor.preferredFontDescriptor(withTextStyle: .headline).withDesign(.serif)!, size: 0)
+        let largeTitleDescriptor = UIFontDescriptor.preferredFontDescriptor(withTextStyle: .largeTitle)
+        let headlineDescriptor = UIFontDescriptor.preferredFontDescriptor(withTextStyle: .headline)
+        let serifLargeTitle = UIFont(descriptor: largeTitleDescriptor.withDesign(.serif) ?? largeTitleDescriptor, size: 0)
+        let serifTitle = UIFont(descriptor: headlineDescriptor.withDesign(.serif) ?? headlineDescriptor, size: 0)
 
         let navBarAppearance = UINavigationBarAppearance()
         navBarAppearance.configureWithOpaqueBackground()
@@ -60,7 +61,7 @@ struct sonderApp: App {
         UINavigationBar.appearance().standardAppearance = navBarAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
         UINavigationBar.appearance().compactAppearance = navBarAppearance
-        UINavigationBar.appearance().tintColor = UIColor(red: 0.80, green: 0.45, blue: 0.35, alpha: 1.0) // terracotta
+        UINavigationBar.appearance().tintColor = SonderColors.terracottaUI
 
         do {
             // Configure SwiftData with all models

@@ -17,7 +17,6 @@ struct JournalPolaroidView: View {
     @Binding var selectedLog: Log?
 
     @State private var scrollOffset: CGFloat = 0
-    @State private var initialScrollY: CGFloat?
     @State private var cardCenters: [Int: CGFloat] = [:]  // index -> midY in scroll
     @State private var scrolledID: String?
     @State private var sessionSeed: UInt64 = .random(in: 0..<UInt64.max)
@@ -35,14 +34,14 @@ struct JournalPolaroidView: View {
         logsByTripID[trip.id] ?? []
     }
 
-    /// Small deterministic tilt so cards do not feel machine-perfect.
-    private func edgeRotation(for trip: Trip) -> Double {
-        let seed = abs(trip.id.hashValue)
-        return (Double(seed % 5) - 2.0) * 0.18  // -0.36 to +0.36
+    /// Alternating tilt so adjacent cards lean opposite directions.
+    private func edgeRotation(for index: Int, trip: Trip) -> Double {
+        let magnitude = 1.2 + Double(abs(trip.id.hashValue) % 5) * 0.3  // 1.2 to 2.4°
+        return index.isMultiple(of: 2) ? -magnitude : magnitude
     }
 
     private var trailLineColor: Color {
-        SonderColors.warmGrayDark
+        SonderColors.terracotta
     }
 
     var body: some View {
@@ -81,11 +80,11 @@ struct JournalPolaroidView: View {
                                         let opacity = 1.0 - normalizedDistance * 0.35
                                         let yShift = normalizedDistance * 6
 
-                                        polaroidCard(trip: trip, proximity: normalizedDistance)
+                                        polaroidCard(trip: trip, index: index, proximity: normalizedDistance)
                                             .scaleEffect(scale)
                                             .opacity(opacity)
                                             .offset(y: yShift)
-                                            .rotationEffect(.degrees(edgeRotation(for: trip) * normalizedDistance))
+                                            .rotationEffect(.degrees(edgeRotation(for: index, trip: trip)))
                                             .animation(.interpolatingSpring(stiffness: 280, damping: 22), value: scale)
                                             .onAppear {
                                                 updateCardCenter(index: index, from: cardGeo)
@@ -108,20 +107,13 @@ struct JournalPolaroidView: View {
                             orphanedLogsSection
                         }
                     }
-                    .background(
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: ScrollOffsetKey.self,
-                                value: proxy.frame(in: .global).minY
-                            )
-                        }
-                    )
                 }
                 .scrollTargetBehavior(.viewAligned(limitBehavior: .automatic))
                 .scrollPosition(id: $scrolledID, anchor: .center)
-                .onPreferenceChange(ScrollOffsetKey.self) { value in
-                    if initialScrollY == nil { initialScrollY = value }
-                    scrollOffset = value - (initialScrollY ?? value)
+                .onScrollGeometryChange(for: CGFloat.self) { geo in
+                    geo.contentOffset.y
+                } action: { _, newOffset in
+                    scrollOffset = -newOffset
                 }
             }
             .onAppear {
@@ -284,30 +276,6 @@ struct JournalPolaroidView: View {
         case both
     }
 
-    /// Tape appears on roughly 10% of cards, with varied placement.
-    private func tapePlacement(for trip: Trip) -> TapePlacement {
-        let hash = abs(trip.id.hashValue)
-        guard hash % 10 == 0 else { return .none }
-        switch hash % 5 {
-        case 0: return .both
-        case 1, 2: return .left
-        default: return .right
-        }
-    }
-
-    private func shouldShowTape(for trip: Trip, corner: Int) -> Bool {
-        switch tapePlacement(for: trip) {
-        case .none:
-            return false
-        case .left:
-            return corner == 0
-        case .right:
-            return corner == 1
-        case .both:
-            return true
-        }
-    }
-
     private func tapeTint(for trip: Trip, corner: Int) -> Color {
         let palette: [Color] = [
             Color(red: 0.95, green: 0.92, blue: 0.84),
@@ -376,13 +344,13 @@ struct JournalPolaroidView: View {
             // Soft bleed underlayer to emulate marker pressure on paper.
             Text(trip.name)
                 .font(.custom("Noteworthy-Bold", size: titleSize))
-                .foregroundColor(ink.opacity(0.24))
+                .foregroundStyle(ink.opacity(0.24))
                 .blur(radius: 0.8)
                 .offset(x: 0.25, y: 0.7)
 
             Text(trip.name)
                 .font(.custom("Noteworthy-Bold", size: titleSize))
-                .foregroundColor(ink.opacity(0.94))
+                .foregroundStyle(ink.opacity(0.94))
         }
         .lineLimit(1)
         .minimumScaleFactor(0.72)
@@ -414,21 +382,240 @@ struct JournalPolaroidView: View {
             .shadow(color: .black.opacity(0.07), radius: 2, y: 1)
     }
 
+    // MARK: - Per-Session Decoration Decisions
+
+    /// All decoration choices for a single card, reshuffled each app launch.
+    private struct TripDecorations {
+        let hasTape: Bool
+        let tapeSide: TapePlacement
+        let hasPostmark: Bool
+        let hasDogEar: Bool
+        let dogEarIsBottomRight: Bool
+        let hasPushPin: Bool
+        let paperWarmth: Double  // 0…1
+    }
+
+    /// Cheap deterministic-within-session RNG seeded from sessionSeed + trip identity.
+    /// Different every app launch, stable during a single session.
+    private func decorations(for trip: Trip) -> TripDecorations {
+        let tripBits = UInt64(bitPattern: Int64(trip.id.hashValue))
+        var rng = SeededRNG(seed: sessionSeed ^ tripBits ^ 0xA3B1C2D4E5F60718)
+
+        let tapeRoll = Int.random(in: 0..<100, using: &rng)
+        let hasTape = tapeRoll < 35
+        let tapeSide: TapePlacement
+        if hasTape {
+            switch Int.random(in: 0..<5, using: &rng) {
+            case 0: tapeSide = .both
+            case 1, 2: tapeSide = .left
+            default: tapeSide = .right
+            }
+        } else {
+            tapeSide = .none
+        }
+
+        return TripDecorations(
+            hasTape: hasTape,
+            tapeSide: tapeSide,
+            hasPostmark: Int.random(in: 0..<100, using: &rng) < 25,
+            hasDogEar: Int.random(in: 0..<100, using: &rng) < 20,
+            dogEarIsBottomRight: Bool.random(using: &rng),
+            hasPushPin: Int.random(in: 0..<100, using: &rng) < 20,
+            paperWarmth: Double.random(in: 0...1, using: &rng)
+        )
+    }
+
+    /// Paper aging — warmth varies per session.
+    private func paperColor(warmth: Double) -> Color {
+        let w = warmth * 0.06  // 0 to 0.06
+        return Color(
+            red: 0.975 - w * 0.4,
+            green: 0.964 - w * 1.0,
+            blue: 0.947 - w * 2.2
+        )
+    }
+
+    /// Film frame number in monospaced text with dark background pill.
+    private func filmFrameNumber(index: Int) -> some View {
+        Text("No. \(String(format: "%02d", index + 1))")
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .foregroundStyle(Color.white.opacity(0.85))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.black.opacity(0.35))
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .padding(.leading, 8)
+            .padding(.bottom, 8)
+    }
+
+    /// Rubber-stamp date in the corner of the photo (uses startDate or createdAt).
+    private func dateStamp(for trip: Trip) -> some View {
+        let date = trip.startDate ?? trip.createdAt
+        let formatted = date.formatted(.dateTime.month(.abbreviated).year(.twoDigits)).uppercased()
+        let stampInk = Color(red: 0.72, green: 0.38, blue: 0.28)
+
+        return Text(formatted)
+            .font(.system(size: 10.5, weight: .heavy, design: .monospaced))
+            .foregroundStyle(stampInk.opacity(0.70))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .overlay(
+                RoundedRectangle(cornerRadius: 2)
+                    .stroke(stampInk.opacity(0.55), lineWidth: 1.5)
+            )
+            .shadow(color: .black.opacity(0.3), radius: 1, y: 0.5)
+            .rotationEffect(.degrees(-8))
+            .padding(10)
+    }
+
+    /// Circular postmark cancellation stamp — visible on photos.
+    private func postmarkOverlay(for trip: Trip) -> some View {
+        Canvas { context, size in
+            let center = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
+            let radius: CGFloat = min(size.width, size.height) * 0.38
+            let color = Color(red: 0.55, green: 0.30, blue: 0.22).opacity(0.35)
+
+            // Outer circle
+            let outerRect = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+            context.stroke(Path(ellipseIn: outerRect), with: .color(color), style: StrokeStyle(lineWidth: 2.0))
+
+            // Inner circle
+            let innerR = radius * 0.75
+            let innerRect = CGRect(x: center.x - innerR, y: center.y - innerR, width: innerR * 2, height: innerR * 2)
+            context.stroke(Path(ellipseIn: innerRect), with: .color(color), style: StrokeStyle(lineWidth: 1.2))
+
+            // Wavy cancellation lines (wider spread)
+            for lineIdx in -3...3 {
+                let yOff = CGFloat(lineIdx) * 7
+                var linePath = Path()
+                linePath.move(to: CGPoint(x: center.x - radius * 1.2, y: center.y + yOff))
+                for s in 0...10 {
+                    let x = center.x - radius * 1.2 + CGFloat(s) * (radius * 2.4 / 10)
+                    let wave = sin(CGFloat(s) * 1.1 + CGFloat(lineIdx) * 0.4) * 3.0
+                    linePath.addLine(to: CGPoint(x: x, y: center.y + yOff + wave))
+                }
+                context.stroke(linePath, with: .color(color), style: StrokeStyle(lineWidth: 0.9))
+            }
+        }
+        .frame(width: 130, height: 130)
+        .rotationEffect(.degrees(15))
+    }
+
+    /// Folded corner (dog-ear) for a lived-in, tactile feel.
+    private func dogEarOverlay(isBottomRight: Bool) -> some View {
+        let foldSize: CGFloat = 26
+        // Inset from edge so rounded clip doesn't hide the fold
+        let inset: CGFloat = 2
+
+        return Canvas { context, size in
+            let paperUnder = Color(red: 0.90, green: 0.87, blue: 0.82)
+            let shadow = Color.black.opacity(0.18)
+
+            if isBottomRight {
+                let corner = CGPoint(x: size.width - inset, y: size.height - inset)
+                // Shadow triangle (slightly larger, offset)
+                var shadowPath = Path()
+                shadowPath.move(to: CGPoint(x: corner.x + 1, y: corner.y - foldSize - 2))
+                shadowPath.addLine(to: CGPoint(x: corner.x - foldSize - 2, y: corner.y + 1))
+                shadowPath.addLine(to: CGPoint(x: corner.x + 1, y: corner.y + 1))
+                shadowPath.closeSubpath()
+                context.fill(shadowPath, with: .color(shadow))
+
+                // Paper fold triangle
+                var foldPath = Path()
+                foldPath.move(to: CGPoint(x: corner.x, y: corner.y - foldSize))
+                foldPath.addLine(to: CGPoint(x: corner.x - foldSize, y: corner.y))
+                foldPath.addLine(to: corner)
+                foldPath.closeSubpath()
+                context.fill(foldPath, with: .color(paperUnder))
+
+                // Crease line
+                var crease = Path()
+                crease.move(to: CGPoint(x: corner.x, y: corner.y - foldSize))
+                crease.addLine(to: CGPoint(x: corner.x - foldSize, y: corner.y))
+                context.stroke(crease, with: .color(Color.black.opacity(0.12)), style: StrokeStyle(lineWidth: 1.0))
+            } else {
+                let corner = CGPoint(x: size.width - inset, y: inset)
+                var shadowPath = Path()
+                shadowPath.move(to: CGPoint(x: corner.x - foldSize - 2, y: corner.y - 1))
+                shadowPath.addLine(to: CGPoint(x: corner.x + 1, y: corner.y + foldSize + 2))
+                shadowPath.addLine(to: CGPoint(x: corner.x + 1, y: corner.y - 1))
+                shadowPath.closeSubpath()
+                context.fill(shadowPath, with: .color(shadow))
+
+                var foldPath = Path()
+                foldPath.move(to: CGPoint(x: corner.x - foldSize, y: corner.y))
+                foldPath.addLine(to: CGPoint(x: corner.x, y: corner.y + foldSize))
+                foldPath.addLine(to: corner)
+                foldPath.closeSubpath()
+                context.fill(foldPath, with: .color(paperUnder))
+
+                var crease = Path()
+                crease.move(to: CGPoint(x: corner.x - foldSize, y: corner.y))
+                crease.addLine(to: CGPoint(x: corner.x, y: corner.y + foldSize))
+                context.stroke(crease, with: .color(Color.black.opacity(0.12)), style: StrokeStyle(lineWidth: 1.0))
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// Push-pin / thumbtack at the top center — prominent enough to see.
+    private var pushPinOverlay: some View {
+        ZStack {
+            // Pin shadow
+            Ellipse()
+                .fill(Color.black.opacity(0.22))
+                .frame(width: 18, height: 10)
+                .offset(y: 8)
+
+            // Pin needle (line into card)
+            Rectangle()
+                .fill(Color.gray.opacity(0.40))
+                .frame(width: 1.5, height: 8)
+                .offset(y: 6)
+
+            // Pin head — terracotta gradient
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color(red: 0.88, green: 0.45, blue: 0.33),
+                            Color(red: 0.65, green: 0.28, blue: 0.20)
+                        ],
+                        center: .init(x: 0.35, y: 0.3),
+                        startRadius: 0,
+                        endRadius: 10
+                    )
+                )
+                .frame(width: 18, height: 18)
+
+            // Specular highlight
+            Circle()
+                .fill(Color.white.opacity(0.55))
+                .frame(width: 5.5, height: 5.5)
+                .offset(x: -3, y: -3)
+        }
+        .offset(y: -9)
+    }
+
     // MARK: - Polaroid Card
 
-    private func polaroidCard(trip: Trip, proximity: CGFloat) -> some View {
-        Button {
+    private func polaroidCard(trip: Trip, index: Int, proximity: CGFloat) -> some View {
+        let deco = decorations(for: trip)
+
+        return Button {
             selectedTrip = trip
         } label: {
             VStack(spacing: 0) {
-                ZStack {
+                ZStack(alignment: .bottomLeading) {
+                    // Photo
                     if let urlString = trip.coverPhotoURL, let url = URL(string: urlString) {
-                        DownsampledAsyncImage(url: url, targetSize: CGSize(width: 700, height: 700)) {
+                        DownsampledAsyncImage(url: url, targetSize: CGSize(width: 350, height: 350)) {
                             polaroidPlaceholder(trip: trip)
                         }
                         .aspectRatio(contentMode: .fill)
                     } else if let logPhotoURL = firstLogPhotoURL(for: trip) {
-                        DownsampledAsyncImage(url: logPhotoURL, targetSize: CGSize(width: 700, height: 700)) {
+                        DownsampledAsyncImage(url: logPhotoURL, targetSize: CGSize(width: 350, height: 350)) {
                             polaroidPlaceholder(trip: trip)
                         }
                         .aspectRatio(contentMode: .fill)
@@ -436,20 +623,47 @@ struct JournalPolaroidView: View {
                         polaroidPlaceholder(trip: trip)
                     }
 
+                    // Film mood overlay
                     photoMoodOverlay
                         .opacity(0.75 - Double(proximity) * 0.3)
+
+                    // Film frame number (bottom-left)
+                    filmFrameNumber(index: index)
+
+                    // Date stamp (bottom-right)
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            dateStamp(for: trip)
+                        }
+                    }
+
+                    // Postmark (~25% of cards)
+                    if deco.hasPostmark {
+                        VStack {
+                            HStack {
+                                Spacer()
+                                postmarkOverlay(for: trip)
+                                    .padding(.top, -4)
+                                    .padding(.trailing, -8)
+                            }
+                            Spacer()
+                        }
+                    }
                 }
                 .frame(height: 300)
                 .clipped()
                 .padding(.top, frameBorder)
                 .padding(.horizontal, frameBorder)
 
+                // Caption area
                 VStack(alignment: .leading, spacing: 5) {
                     sharpieTitle(for: trip)
 
                     Text(captionDetails(for: trip))
                         .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -457,30 +671,49 @@ struct JournalPolaroidView: View {
                 .padding(.top, 11)
                 .frame(height: frameBottomStrip, alignment: .topLeading)
             }
-            .background(Color(red: 0.975, green: 0.964, blue: 0.947))
+            .background(paperColor(warmth: deco.paperWarmth))
             .clipShape(RoundedRectangle(cornerRadius: frameRadius, style: .continuous))
+            // Paper grain
             .overlay {
                 PaperGrainOverlay(seed: paperSeed(for: trip))
                     .clipShape(RoundedRectangle(cornerRadius: frameRadius, style: .continuous))
                     .allowsHitTesting(false)
             }
+            // Dog-ear (~20%)
+            .overlay {
+                if deco.hasDogEar {
+                    dogEarOverlay(isBottomRight: deco.dogEarIsBottomRight)
+                        .clipShape(RoundedRectangle(cornerRadius: frameRadius, style: .continuous))
+                }
+            }
+            // Washi tape (~35%)
             .overlay(alignment: .topLeading) {
-                if shouldShowTape(for: trip, corner: 0) {
+                if deco.tapeSide == .left || deco.tapeSide == .both {
                     tapeSticker(trip: trip, corner: 0)
                         .allowsHitTesting(false)
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if shouldShowTape(for: trip, corner: 1) {
+                if deco.tapeSide == .right || deco.tapeSide == .both {
                     tapeSticker(trip: trip, corner: 1)
                         .allowsHitTesting(false)
                 }
             }
+            // Push-pin (~20%)
+            .overlay(alignment: .top) {
+                if deco.hasPushPin {
+                    pushPinOverlay
+                        .allowsHitTesting(false)
+                }
+            }
+            // Border
             .overlay(
                 RoundedRectangle(cornerRadius: frameRadius, style: .continuous)
                     .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
             )
-            .shadow(color: .black.opacity(0.10), radius: 12, y: 7)
+            // Layered shadows: tight contact + soft diffuse
+            .shadow(color: .black.opacity(0.14), radius: 3, y: 2)
+            .shadow(color: .black.opacity(0.10), radius: 16, y: 10)
             .padding(.horizontal, 28)
         }
         .buttonStyle(.plain)
@@ -493,13 +726,13 @@ struct JournalPolaroidView: View {
             HStack {
                 Text("Loose memories")
                     .font(.system(.headline, design: .serif).weight(.semibold))
-                    .foregroundColor(SonderColors.inkDark.opacity(0.85))
+                    .foregroundStyle(SonderColors.inkDark.opacity(0.85))
 
                 Spacer()
 
                 Text("\(orphanedLogs.count)")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background(
@@ -530,7 +763,7 @@ struct JournalPolaroidView: View {
             VStack(spacing: 0) {
                 ZStack {
                     if let urlString = log.photoURL, let url = URL(string: urlString) {
-                        DownsampledAsyncImage(url: url, targetSize: CGSize(width: 360, height: 360)) {
+                        DownsampledAsyncImage(url: url, targetSize: CGSize(width: 180, height: 180)) {
                             miniPolaroidPlaceholder(log: log)
                         }
                         .aspectRatio(contentMode: .fill)
@@ -553,12 +786,12 @@ struct JournalPolaroidView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(place?.name ?? "Unknown Place")
                         .font(.system(size: 14, weight: .semibold, design: .serif))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(1)
 
                     Text("\(log.visitedAt.formatted(.dateTime.month(.abbreviated).day())) · \(log.rating.displayName)")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -589,21 +822,12 @@ struct JournalPolaroidView: View {
         .overlay {
             Image(systemName: "mappin.circle")
                 .font(.system(size: 22))
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundStyle(.white.opacity(0.5))
         }
     }
 
     private func polaroidPlaceholder(trip: Trip) -> some View {
         TripCoverPlaceholderView(seedKey: trip.id, title: trip.name, caption: "Loading memories...")
-    }
-}
-
-// MARK: - Scroll Offset Tracking
-
-private struct ScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
 
@@ -656,7 +880,7 @@ private struct PaperGrainOverlay: View {
 
 // MARK: - Curvy Trail Line
 
-/// Dotted S-curve connecting card centers.
+/// Dotted S-curve connecting card centers with map-pin markers.
 private struct PolaroidTrailLine: View {
     let cardCenters: [Int: CGFloat]  // index -> midY
     let count: Int
@@ -668,19 +892,20 @@ private struct PolaroidTrailLine: View {
             let sortedIndices = (0..<count).filter { cardCenters[$0] != nil }.sorted()
             guard sortedIndices.count >= 2 else { return }
 
-            let strokeColor = lineColor.opacity(0.26)
-            let dotColor = lineColor.opacity(0.40)
-            let dashStyle = StrokeStyle(lineWidth: 2, lineCap: .round, dash: [6, 6], dashPhase: phase)
+            let strokeColor = lineColor.opacity(0.40)
+            let pinColor = lineColor.opacity(0.55)
+            let dashStyle = StrokeStyle(lineWidth: 2.5, lineCap: .round, dash: [8, 6], dashPhase: phase)
             let midX = size.width / 2
 
             var points: [CGPoint] = []
             for (i, index) in sortedIndices.enumerated() {
                 guard let y = cardCenters[index] else { continue }
-                let xOffset: CGFloat = i.isMultiple(of: 2) ? -28 : 28
+                let xOffset: CGFloat = i.isMultiple(of: 2) ? -36 : 36
                 points.append(CGPoint(x: midX + xOffset, y: y))
             }
             guard points.count >= 2 else { return }
 
+            // Draw the dashed S-curve
             var path = Path()
             path.move(to: points[0])
             for i in 1..<points.count {
@@ -695,10 +920,25 @@ private struct PolaroidTrailLine: View {
             }
             context.stroke(path, with: .color(strokeColor), style: dashStyle)
 
+            // Draw map-pin markers at each stop
             for point in points {
-                let r: CGFloat = 4
+                // Pin head (circle)
+                let r: CGFloat = 5.5
                 let dotRect = CGRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)
-                context.fill(Path(ellipseIn: dotRect), with: .color(dotColor))
+                context.fill(Path(ellipseIn: dotRect), with: .color(pinColor))
+
+                // Pin highlight
+                let hr: CGFloat = 2
+                let highlightRect = CGRect(x: point.x - r * 0.35, y: point.y - r * 0.35, width: hr, height: hr)
+                context.fill(Path(ellipseIn: highlightRect), with: .color(Color.white.opacity(0.40)))
+
+                // Pin point (small triangle below)
+                var pin = Path()
+                pin.move(to: CGPoint(x: point.x - 3.5, y: point.y + r - 1))
+                pin.addLine(to: CGPoint(x: point.x, y: point.y + r + 7))
+                pin.addLine(to: CGPoint(x: point.x + 3.5, y: point.y + r - 1))
+                pin.closeSubpath()
+                context.fill(pin, with: .color(pinColor))
             }
         }
         .allowsHitTesting(false)

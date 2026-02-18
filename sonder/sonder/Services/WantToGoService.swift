@@ -9,10 +9,12 @@ import Foundation
 import SwiftData
 import Supabase
 import CoreLocation
+import os
 
 @MainActor
 @Observable
 final class WantToGoService {
+    private let logger = Logger(subsystem: "com.sonder.app", category: "WantToGoService")
     private let modelContext: ModelContext
     private let supabase = SupabaseConfig.client
 
@@ -82,7 +84,7 @@ final class WantToGoService {
                 .upsert(item)
                 .execute()
         } catch {
-            print("WTG remote add deferred: \(error)")
+            logger.warning("WTG remote add deferred: \(error.localizedDescription)")
         }
     }
 
@@ -106,7 +108,7 @@ final class WantToGoService {
                 .execute()
             removePendingDeletion(placeID)
         } catch {
-            print("WTG remote delete deferred: \(error)")
+            logger.warning("WTG remote delete deferred: \(error.localizedDescription)")
         }
     }
 
@@ -181,7 +183,7 @@ final class WantToGoService {
                 .execute()
             removePendingDeletion(placeID)
         } catch {
-            print("WTG auto-remove remote delete deferred: \(error)")
+            logger.warning("WTG auto-remove remote delete deferred: \(error.localizedDescription)")
         }
     }
 
@@ -253,7 +255,7 @@ final class WantToGoService {
             try modelContext.save()
             items = getWantToGoList(for: userID)
         } catch {
-            print("Error syncing want to go: \(error)")
+            logger.error("Error syncing want to go: \(error.localizedDescription)")
             // Offline: use whatever is in local SwiftData
             items = getWantToGoList(for: userID)
         }

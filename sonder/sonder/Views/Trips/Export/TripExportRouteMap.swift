@@ -39,7 +39,7 @@ struct TripExportRouteMap: View {
                     // Trip name
                     Text(data.tripName)
                         .font(.system(size: 72 * s, weight: .bold, design: .serif))
-                        .foregroundColor(theme.textPrimary)
+                        .foregroundStyle(theme.textPrimary)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
 
@@ -47,7 +47,7 @@ struct TripExportRouteMap: View {
                     if let dateText = data.dateRangeText {
                         Text(dateText)
                             .font(.system(size: 28 * s))
-                            .foregroundColor(theme.textSecondary)
+                            .foregroundStyle(theme.textSecondary)
                     }
 
                     // Field notes list
@@ -66,14 +66,14 @@ struct TripExportRouteMap: View {
                         }
                     }
                     .font(.system(size: 34 * s))
-                    .foregroundColor(theme.textSecondary.opacity(0.85))
+                    .foregroundStyle(theme.textSecondary.opacity(0.85))
 
                     // Caption
                     if let caption = data.customCaption, !caption.isEmpty {
                         Text(caption)
                             .font(.system(size: 26 * s, design: .serif))
                             .italic()
-                            .foregroundColor(theme.textSecondary)
+                            .foregroundStyle(theme.textSecondary)
                             .lineLimit(2)
                     }
 
@@ -82,10 +82,10 @@ struct TripExportRouteMap: View {
                         Spacer()
                         Text("sonder")
                             .font(.system(size: 22 * s, weight: .semibold, design: .rounded))
-                            .foregroundColor(theme.textTertiary) +
+                            .foregroundStyle(theme.textTertiary) +
                         Text("  \u{00B7}  your travel story")
                             .font(.system(size: 22 * s))
-                            .foregroundColor(theme.textTertiary)
+                            .foregroundStyle(theme.textTertiary)
                         Spacer()
                     }
                     .padding(.top, 4 * s)
@@ -127,10 +127,10 @@ struct TripExportRouteMap: View {
                     VStack(spacing: 12 * s) {
                         Image(systemName: "map")
                             .font(.system(size: 64 * s))
-                            .foregroundColor(theme.textTertiary)
+                            .foregroundStyle(theme.textTertiary)
                         Text("Map unavailable")
                             .font(.system(size: 24 * s))
-                            .foregroundColor(theme.textTertiary)
+                            .foregroundStyle(theme.textTertiary)
                     }
                 }
             }
@@ -150,7 +150,7 @@ struct TripExportRouteMap: View {
             if data.stops.count > maxFieldNotes {
                 Text("+\(data.stops.count - maxFieldNotes) more stops")
                     .font(.system(size: 22 * s))
-                    .foregroundColor(theme.textTertiary)
+                    .foregroundStyle(theme.textTertiary)
                     .padding(.leading, 44 * s)
             }
         }
@@ -162,7 +162,7 @@ struct TripExportRouteMap: View {
             // Number badge
             Text("\(index)")
                 .font(.system(size: 18 * s, weight: .bold, design: .rounded))
-                .foregroundColor(theme.background)
+                .foregroundStyle(theme.background)
                 .frame(width: 30 * s, height: 30 * s)
                 .background(theme.accent)
                 .clipShape(Circle())
@@ -173,7 +173,7 @@ struct TripExportRouteMap: View {
                 HStack(spacing: 8 * s) {
                     Text(stop.placeName)
                         .font(.system(size: 26 * s, weight: .semibold))
-                        .foregroundColor(theme.textPrimary)
+                        .foregroundStyle(theme.textPrimary)
                         .lineLimit(1)
                     Text(stop.rating.emoji)
                         .font(.system(size: 24 * s))
@@ -184,7 +184,7 @@ struct TripExportRouteMap: View {
                     Text("\u{201C}\(note)\u{201D}")
                         .font(.system(size: 22 * s, design: .serif))
                         .italic()
-                        .foregroundColor(theme.textSecondary)
+                        .foregroundStyle(theme.textSecondary)
                         .lineLimit(1)
                 }
 
@@ -194,7 +194,7 @@ struct TripExportRouteMap: View {
                         ForEach(Array(stop.tags.prefix(3)), id: \.self) { tag in
                             Text("#\(tag)")
                                 .font(.system(size: 18 * s, weight: .medium))
-                                .foregroundColor(theme.accent)
+                                .foregroundStyle(theme.accent)
                                 .padding(.horizontal, 8 * s)
                                 .padding(.vertical, 3 * s)
                                 .background(theme.accent.opacity(0.12))
@@ -245,7 +245,7 @@ enum TripMapSnapshotGenerator {
 
         do {
             let snapshot = try await snapshotter.start()
-            return drawOverlay(on: snapshot, stops: stops, markerSize: markerSize, tintColor: tintColor)
+            return drawOverlay(on: snapshot, stops: stops, logPhotos: logPhotos, markerSize: markerSize, tintColor: tintColor)
         } catch {
             return nil
         }
@@ -254,11 +254,14 @@ enum TripMapSnapshotGenerator {
     private static func drawOverlay(
         on snapshot: MKMapSnapshotter.Snapshot,
         stops: [ExportStop],
+        logPhotos: [LogPhotoData],
         markerSize: CGFloat,
         tintColor: UIColor
     ) -> UIImage {
         let image = snapshot.image
         let size = image.size
+        let pinSize: CGFloat = markerSize * 1.4
+        let borderWidth: CGFloat = 4
 
         let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { ctx in
@@ -281,45 +284,78 @@ enum TripMapSnapshotGenerator {
                 context.strokePath()
             }
 
-            // Numbered colored dots at each stop
-            let circleSize: CGFloat = markerSize
+            // Photo pins at each stop
+            context.setLineDash(phase: 0, lengths: [])
             for (index, point) in points.enumerated() {
+                let photo: UIImage? = index < logPhotos.count ? logPhotos[index].image : nil
+                let hasPhoto = photo != nil && photo!.size.width > 1
+
                 let rect = CGRect(
-                    x: point.x - circleSize / 2,
-                    y: point.y - circleSize / 2,
-                    width: circleSize,
-                    height: circleSize
+                    x: point.x - pinSize / 2,
+                    y: point.y - pinSize / 2,
+                    width: pinSize,
+                    height: pinSize
                 )
 
-                // White border
+                // Drop shadow
+                context.saveGState()
+                context.setShadow(offset: CGSize(width: 0, height: 3), blur: 8, color: UIColor.black.withAlphaComponent(0.3).cgColor)
                 context.setFillColor(UIColor.white.cgColor)
-                context.fillEllipse(in: rect.insetBy(dx: -4, dy: -4))
-
-                // Colored fill
-                context.setFillColor(tintColor.cgColor)
                 context.fillEllipse(in: rect)
+                context.restoreGState()
 
-                // White border stroke
-                context.setStrokeColor(UIColor.white.cgColor)
-                context.setLineWidth(4)
-                context.setLineDash(phase: 0, lengths: [])
-                context.strokeEllipse(in: rect)
+                if hasPhoto, let photo {
+                    // White border circle
+                    context.setFillColor(UIColor.white.cgColor)
+                    context.fillEllipse(in: rect)
 
-                // Number text
-                let numberStr = "\(index + 1)" as NSString
-                let fontSize: CGFloat = circleSize * 0.5
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: fontSize, weight: .bold),
-                    .foregroundColor: UIColor.white
-                ]
-                let strSize = numberStr.size(withAttributes: attrs)
-                let strRect = CGRect(
-                    x: rect.midX - strSize.width / 2,
-                    y: rect.midY - strSize.height / 2,
-                    width: strSize.width,
-                    height: strSize.height
-                )
-                numberStr.draw(in: strRect, withAttributes: attrs)
+                    // Clip to circle and draw photo
+                    let photoRect = rect.insetBy(dx: borderWidth, dy: borderWidth)
+                    context.saveGState()
+                    context.addEllipse(in: photoRect)
+                    context.clip()
+
+                    // Scale photo to fill the circle (aspect fill)
+                    let imgW = photo.size.width
+                    let imgH = photo.size.height
+                    let scale = max(photoRect.width / imgW, photoRect.height / imgH)
+                    let drawW = imgW * scale
+                    let drawH = imgH * scale
+                    let drawRect = CGRect(
+                        x: photoRect.midX - drawW / 2,
+                        y: photoRect.midY - drawH / 2,
+                        width: drawW,
+                        height: drawH
+                    )
+                    photo.draw(in: drawRect)
+                    context.restoreGState()
+
+                    // White border stroke
+                    context.setStrokeColor(UIColor.white.cgColor)
+                    context.setLineWidth(borderWidth)
+                    context.strokeEllipse(in: rect.insetBy(dx: borderWidth / 2, dy: borderWidth / 2))
+                } else {
+                    // Fallback: numbered colored dot
+                    context.setFillColor(UIColor.white.cgColor)
+                    context.fillEllipse(in: rect)
+                    context.setFillColor(tintColor.cgColor)
+                    context.fillEllipse(in: rect.insetBy(dx: borderWidth, dy: borderWidth))
+
+                    let numberStr = "\(index + 1)" as NSString
+                    let fontSize: CGFloat = pinSize * 0.38
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .font: UIFont.systemFont(ofSize: fontSize, weight: .bold),
+                        .foregroundColor: UIColor.white
+                    ]
+                    let strSize = numberStr.size(withAttributes: attrs)
+                    let strRect = CGRect(
+                        x: rect.midX - strSize.width / 2,
+                        y: rect.midY - strSize.height / 2,
+                        width: strSize.width,
+                        height: strSize.height
+                    )
+                    numberStr.draw(in: strRect, withAttributes: attrs)
+                }
             }
         }
     }

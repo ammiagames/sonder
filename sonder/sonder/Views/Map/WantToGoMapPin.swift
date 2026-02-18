@@ -17,7 +17,7 @@ struct WantToGoMapPin: View {
 
             Image(systemName: "bookmark.fill")
                 .font(.system(size: 18))
-                .foregroundColor(SonderColors.wantToGoPin)
+                .foregroundStyle(SonderColors.wantToGoPin)
         }
         .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
     }

@@ -39,7 +39,7 @@ struct PlacePhotoView: View {
             )
             .overlay {
                 Image(systemName: "photo")
-                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
+                    .foregroundStyle(SonderColors.terracotta.opacity(0.5))
             }
     }
 }

@@ -77,7 +77,7 @@ struct OnboardingView: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }

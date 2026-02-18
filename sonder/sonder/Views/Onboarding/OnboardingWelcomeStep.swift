@@ -21,7 +21,7 @@ struct OnboardingWelcomeStep: View {
                 // Brand title
                 Text("sonder")
                     .font(SonderTypography.largeTitle)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .opacity(showTitle ? 1 : 0)
                     .offset(y: showTitle ? 0 : 10)
 
@@ -34,7 +34,7 @@ struct OnboardingWelcomeStep: View {
                 // Tagline
                 Text("Your places. Your people. Your story.")
                     .font(SonderTypography.body)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
                     .opacity(showTagline ? 1 : 0)
                     .offset(y: showTagline ? 0 : 8)

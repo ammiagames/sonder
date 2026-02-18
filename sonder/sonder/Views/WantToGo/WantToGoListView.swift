@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "WantToGoListView")
 
 /// Grouping mode for Want to Go list
 enum WantToGoGrouping: String, CaseIterable {
@@ -111,7 +114,7 @@ struct WantToGoListView: View {
                     .padding(.horizontal, SonderSpacing.sm)
                     .padding(.vertical, SonderSpacing.xs)
                     .background(grouping == mode ? SonderColors.terracotta : SonderColors.warmGray)
-                    .foregroundColor(grouping == mode ? .white : SonderColors.inkDark)
+                    .foregroundStyle(grouping == mode ? .white : SonderColors.inkDark)
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -127,15 +130,15 @@ struct WantToGoListView: View {
         VStack(spacing: SonderSpacing.md) {
             Image(systemName: "bookmark")
                 .font(.system(size: 48))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
 
             Text("No Saved Places")
                 .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             Text("Save places from your friends' logs to remember for later")
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -229,7 +232,7 @@ struct WantToGoListView: View {
                             .textCase(.uppercase)
                             .tracking(0.5)
                     }
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .id(city)
                     .onAppear { visibleCitySections.insert(city) }
                     .onDisappear { visibleCitySections.remove(city) }
@@ -266,33 +269,7 @@ struct WantToGoListView: View {
     // MARK: - City Extraction
 
     private func extractCity(from address: String) -> String {
-        let components = address.components(separatedBy: ", ")
-
-        // Try to extract city from address format like:
-        // "123 Main St, City, State ZIP, Country" or "City, Country"
-        guard components.count >= 2 else {
-            return "Unknown"
-        }
-
-        // For US addresses: "Street, City, State ZIP, Country" - city is index 1
-        // For international: "Street, City, Country" - city is index 1
-        // If only 2 components, first is likely the city
-        if components.count == 2 {
-            return components[0].trimmingCharacters(in: .whitespaces)
-        }
-
-        // Get second-to-last component that isn't a state/zip pattern
-        let potentialCity = components[components.count - 3]
-        let trimmed = potentialCity.trimmingCharacters(in: .whitespaces)
-
-        // If it looks like a state abbreviation (2 chars) or contains numbers, try previous
-        if trimmed.count <= 2 || trimmed.contains(where: { $0.isNumber }) {
-            if components.count >= 4 {
-                return components[components.count - 4].trimmingCharacters(in: .whitespaces)
-            }
-        }
-
-        return trimmed.isEmpty ? "Unknown" : trimmed
+        ProfileStatsService.extractCity(from: address) ?? "Unknown"
     }
 
     // MARK: - Actions
@@ -318,7 +295,7 @@ struct WantToGoListView: View {
         do {
             items = try await wantToGoService.fetchWantToGoWithPlaces(for: userID)
         } catch {
-            print("Error loading want to go: \(error)")
+            logger.error("Error loading want to go: \(error.localizedDescription)")
         }
         isLoading = false
     }
@@ -367,7 +344,7 @@ struct WantToGoListView: View {
                     items.removeAll { $0.id == item.id }
                 }
             } catch {
-                print("Error removing item: \(error)")
+                logger.error("Error removing item: \(error.localizedDescription)")
             }
         }
     }
@@ -380,7 +357,7 @@ struct WantToGoListView: View {
                 try await wantToGoService.removeFromWantToGo(placeID: placeID, userID: userID)
                 items.removeAll { $0.place.id == placeID }
             } catch {
-                print("Error removing from want to go: \(error)")
+                logger.error("Error removing from want to go: \(error.localizedDescription)")
             }
         }
     }
@@ -411,11 +388,11 @@ struct WantToGoRow: View {
                 Text(item.place.name)
                     .font(SonderTypography.headline)
                     .lineLimit(1)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
 
                 Text(item.place.address)
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .lineLimit(1)
 
                 // Source info
@@ -423,14 +400,14 @@ struct WantToGoRow: View {
                     if let sourceUser = item.sourceUser {
                         Text("from @\(sourceUser.username)")
                             .font(.system(size: 11))
-                            .foregroundColor(SonderColors.terracotta)
+                            .foregroundStyle(SonderColors.terracotta)
                     }
                     Text("•")
                         .font(.system(size: 11))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                     Text(item.createdAt.formatted(date: .abbreviated, time: .omitted))
                         .font(.system(size: 11))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
             }
 
@@ -442,14 +419,14 @@ struct WantToGoRow: View {
             } label: {
                 Image(systemName: "bookmark.fill")
                     .font(.system(size: 18))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
             .buttonStyle(.plain)
 
             // Chevron to indicate tappable
             Image(systemName: "chevron.right")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
         }
         .padding(.vertical, SonderSpacing.xxs)
     }
@@ -466,7 +443,7 @@ struct WantToGoRow: View {
             .frame(width: 60, height: 60)
             .overlay {
                 Image(systemName: "photo")
-                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
+                    .foregroundStyle(SonderColors.terracotta.opacity(0.5))
             }
     }
 }
@@ -497,7 +474,7 @@ struct CitySectionIndex: View {
                 let isHighlighted = highlightedCity == city
                 Text(Self.abbreviate(city))
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundColor(isHighlighted ? .white : SonderColors.terracotta)
+                    .foregroundStyle(isHighlighted ? .white : SonderColors.terracotta)
                     .frame(width: 28, height: max(18, 140 / CGFloat(cities.count)))
                     .background(
                         isHighlighted

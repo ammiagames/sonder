@@ -8,11 +8,13 @@
 import Foundation
 import UIKit
 import Supabase
+import os
 
 /// Service for handling photo compression and upload to Supabase Storage
 @Observable
 @MainActor
 final class PhotoService {
+    private let logger = Logger(subsystem: "com.sonder.app", category: "PhotoService")
     private let storageBucket = "photos"
     private let maxRetries = 3
     private let maxDimension: CGFloat = 1200
@@ -118,7 +120,7 @@ final class PhotoService {
                 return publicURL.absoluteString
             } catch {
                 lastError = error
-                print("Upload attempt \(attempt) failed: \(error)")
+                logger.warning("Upload attempt \(attempt) failed: \(error.localizedDescription)")
 
                 if attempt < maxRetries {
                     try? await Task.sleep(for: .seconds(Double(attempt)))
@@ -226,14 +228,14 @@ final class PhotoService {
                 return publicURL.absoluteString
             } catch {
                 lastError = error
-                print("Upload attempt \(attempt) failed: \(error)")
+                logger.warning("Upload attempt \(attempt) failed: \(error.localizedDescription)")
                 if attempt < maxRetries {
                     try? await Task.sleep(for: .seconds(Double(attempt)))
                 }
             }
         }
 
-        print("Photo upload failed after \(maxRetries) retries: \(lastError?.localizedDescription ?? "unknown")")
+        logger.error("Photo upload failed after \(self.maxRetries) retries: \(lastError?.localizedDescription ?? "unknown")")
         return nil
     }
 

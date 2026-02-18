@@ -43,7 +43,7 @@ struct TripCard: View {
                 HStack {
                     Text(trip.name)
                         .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(1)
 
                     Spacer()
@@ -54,7 +54,7 @@ struct TripCard: View {
                             .padding(.horizontal, SonderSpacing.xs)
                             .padding(.vertical, 3)
                             .background(SonderColors.terracotta.opacity(0.15))
-                            .foregroundColor(SonderColors.terracotta)
+                            .foregroundStyle(SonderColors.terracotta)
                             .clipShape(Capsule())
                     }
                 }
@@ -63,7 +63,7 @@ struct TripCard: View {
                 if let description = trip.tripDescription, !description.isEmpty {
                     Text(description)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .lineLimit(2)
                 }
 
@@ -75,7 +75,7 @@ struct TripCard: View {
                         Text(dateText)
                             .font(SonderTypography.caption)
                     }
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 // Stats row
@@ -87,7 +87,7 @@ struct TripCard: View {
                         Text("\(logCount) \(logCount == 1 ? "place" : "places")")
                             .font(SonderTypography.caption)
                     }
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
 
                     // Collaborators indicator
                     if !trip.collaboratorIDs.isEmpty {
@@ -97,7 +97,7 @@ struct TripCard: View {
                             Text("\(trip.collaboratorIDs.count + 1) travelers")
                                 .font(SonderTypography.caption)
                         }
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                     }
 
                     Spacer()

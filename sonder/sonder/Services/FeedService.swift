@@ -8,10 +8,12 @@
 import Foundation
 import SwiftData
 import Supabase
+import os
 
 @MainActor
 @Observable
 final class FeedService {
+    private let logger = Logger(subsystem: "com.sonder.app", category: "FeedService")
     private let modelContext: ModelContext
     private let supabase = SupabaseConfig.client
 
@@ -29,6 +31,8 @@ final class FeedService {
 
     // Realtime
     private var realtimeChannel: RealtimeChannelV2?
+    private var realtimeLogTask: Task<Void, Never>?
+    private var realtimeTripTask: Task<Void, Never>?
 
     // Cached following IDs to avoid repeated network calls
     private var cachedFollowingIDs: [String]?
@@ -66,7 +70,7 @@ final class FeedService {
             do {
                 trips = try await fetchTripFeedItems(followingIDs: followingIDs)
             } catch {
-                print("Error loading trip feed items (non-fatal): \(error)")
+                logger.warning("Error loading trip feed items (non-fatal): \(error.localizedDescription)")
                 trips = []
             }
 
@@ -92,7 +96,7 @@ final class FeedService {
                 )
                 tripCreatedEntries = tripCreated.map { FeedEntry.tripCreated($0) }
             } catch {
-                print("Error loading trip created entries (non-fatal): \(error)")
+                logger.warning("Error loading trip created entries (non-fatal): \(error.localizedDescription)")
                 tripCreatedEntries = []
             }
 
@@ -103,7 +107,7 @@ final class FeedService {
             lastFetchedDate = logResponses.last?.createdAt
             hasMore = logResponses.count >= pageSize
         } catch {
-            print("Error loading feed: \(error)")
+            logger.error("Error loading feed: \(error.localizedDescription)")
         }
 
         isLoading = false
@@ -141,7 +145,7 @@ final class FeedService {
             lastFetchedDate = logResponses.last?.createdAt
             hasMore = logResponses.count >= pageSize
         } catch {
-            print("Error loading more feed: \(error)")
+            logger.error("Error loading more feed: \(error.localizedDescription)")
         }
 
         isLoading = false
@@ -237,7 +241,7 @@ final class FeedService {
                 .execute()
                 .value
         } catch {
-            print("Error fetching trip activities (non-fatal): \(error)")
+            logger.warning("Error fetching trip activities (non-fatal): \(error.localizedDescription)")
             activities = []
         }
 
@@ -381,35 +385,35 @@ final class FeedService {
 
             await channel.subscribe()
 
-            Task {
+            realtimeLogTask = Task {
                 for await change in logChanges {
                     if let userID = change.record["user_id"]?.stringValue,
                        followingIDs.contains(userID) {
-                        await MainActor.run {
-                            self.newPostsAvailable = true
-                        }
+                        self.newPostsAvailable = true
                     }
                 }
             }
 
-            Task {
+            realtimeTripTask = Task {
                 for await change in tripActivityChanges {
                     if let userID = change.record["user_id"]?.stringValue,
                        followingIDs.contains(userID) {
-                        await MainActor.run {
-                            self.newPostsAvailable = true
-                        }
+                        self.newPostsAvailable = true
                     }
                 }
             }
 
             realtimeChannel = channel
         } catch {
-            print("Error subscribing to realtime: \(error)")
+            logger.error("Error subscribing to realtime: \(error.localizedDescription)")
         }
     }
 
     func unsubscribeFromRealtimeUpdates() async {
+        realtimeLogTask?.cancel()
+        realtimeLogTask = nil
+        realtimeTripTask?.cancel()
+        realtimeTripTask = nil
         if let channel = realtimeChannel {
             await supabase.removeChannel(channel)
             realtimeChannel = nil

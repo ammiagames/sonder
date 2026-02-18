@@ -8,6 +8,9 @@
 import SwiftUI
 import SwiftData
 import CoreLocation
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "SearchPlaceView")
 
 /// Screen 1: Search for a place to log
 struct SearchPlaceView: View {
@@ -77,7 +80,7 @@ struct SearchPlaceView: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 ToolbarItem(placement: .primaryAction) {
@@ -85,21 +88,20 @@ struct SearchPlaceView: View {
                         showCustomPlace = true
                     } label: {
                         Image(systemName: "mappin.circle")
-                            .foregroundColor(SonderColors.terracotta)
+                            .foregroundStyle(SonderColors.terracotta)
                     }
                 }
             }
             .navigationDestination(isPresented: $showPreview) {
                 if let details = selectedDetails {
                     PlacePreviewView(details: details) {
-                        // Cache place and navigate to rating
-                        let place = cacheService.cachePlace(from: details)
-                        cacheService.addRecentSearch(
-                            placeId: place.id,
-                            name: place.name,
-                            address: place.address
-                        )
-                        placeToLog = place
+                        // Place is already cached from selectPlace(byID:)
+                        if let place = cacheService.getPlace(by: details.placeId) {
+                            placeToLog = place
+                        } else {
+                            // Fallback: cache now (shouldn't normally happen)
+                            placeToLog = cacheService.cachePlace(from: details)
+                        }
                     }
                 }
             }
@@ -137,7 +139,7 @@ struct SearchPlaceView: View {
     private var searchBar: some View {
         HStack {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
 
             TextField("Search for a place...", text: $searchText)
                 .font(SonderTypography.body)
@@ -155,7 +157,7 @@ struct SearchPlaceView: View {
             if !searchText.isEmpty {
                 Button(action: { searchText = "" }) {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
             }
         }
@@ -181,15 +183,15 @@ struct SearchPlaceView: View {
                     VStack(spacing: SonderSpacing.md) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 48))
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
 
                         Text("No Results")
                             .font(SonderTypography.title)
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
 
                         Text("Try a different search term")
                             .font(SonderTypography.body)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                     }
 
                     Button {
@@ -203,7 +205,7 @@ struct SearchPlaceView: View {
                         .padding(.horizontal, SonderSpacing.lg)
                         .padding(.vertical, SonderSpacing.sm)
                         .background(SonderColors.terracotta)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .clipShape(Capsule())
                     }
                 }
@@ -211,7 +213,7 @@ struct SearchPlaceView: View {
                 sectionHeader("Cached Places")
                 ForEach(cachedResults, id: \.id) { place in
                     Button {
-                        selectPlace(place)
+                        selectPlace(byID: place.id)
                     } label: {
                         PlaceSearchRow(
                             name: place.name,
@@ -228,7 +230,7 @@ struct SearchPlaceView: View {
         } else {
             ForEach(predictions) { prediction in
                 Button {
-                    selectPrediction(prediction)
+                    selectPlace(byID: prediction.placeId)
                 } label: {
                     PlaceSearchRow(
                         name: prediction.mainText,
@@ -268,7 +270,7 @@ struct SearchPlaceView: View {
             sectionHeader("Nearby")
             ForEach(filteredNearby) { place in
                 Button {
-                    selectNearbyPlace(place)
+                    selectPlace(byID: place.placeId)
                 } label: {
                     PlaceSearchRow(
                         name: place.name,
@@ -292,22 +294,22 @@ struct SearchPlaceView: View {
         VStack(spacing: SonderSpacing.sm) {
             Image(systemName: "location.fill")
                 .font(.system(size: 32))
-                .foregroundColor(SonderColors.terracotta)
+                .foregroundStyle(SonderColors.terracotta)
 
             Text("Enable Location")
                 .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             Text("See places near you for quick logging")
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .multilineTextAlignment(.center)
 
             Button("Enable Location") {
                 locationService.requestPermission()
             }
             .font(SonderTypography.headline)
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .padding(.horizontal, SonderSpacing.lg)
             .padding(.vertical, SonderSpacing.sm)
             .background(SonderColors.terracotta)
@@ -352,7 +354,7 @@ struct SearchPlaceView: View {
 
                 VStack(spacing: 0) {
                     Button {
-                        selectRecentSearch(search)
+                        selectPlace(byID: search.placeId)
                     } label: {
                         RecentSearchRow(
                             name: search.name,
@@ -393,7 +395,7 @@ struct SearchPlaceView: View {
             Text(title)
                 .font(SonderTypography.caption)
                 .fontWeight(.semibold)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .textCase(.uppercase)
                 .tracking(0.5)
             Spacer()
@@ -406,10 +408,10 @@ struct SearchPlaceView: View {
     private func errorBanner(message: String) -> some View {
         HStack(spacing: SonderSpacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(SonderColors.ochre)
+                .foregroundStyle(SonderColors.ochre)
             Text(message)
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
             Spacer()
         }
         .padding(SonderSpacing.md)
@@ -419,9 +421,9 @@ struct SearchPlaceView: View {
     // MARK: - Actions
 
     private func loadNearbyPlaces() {
-        print("[Nearby] isAuthorized: \(locationService.isAuthorized), currentLocation: \(String(describing: locationService.currentLocation))")
+        logger.debug("[Nearby] isAuthorized: \(locationService.isAuthorized), currentLocation: \(String(describing: locationService.currentLocation))")
         guard locationService.isAuthorized else {
-            print("[Nearby] Not authorized — skipping")
+            logger.debug("[Nearby] Not authorized — skipping")
             return
         }
 
@@ -437,21 +439,21 @@ struct SearchPlaceView: View {
             // Wait for location (max 5 seconds)
             for i in 0..<10 {
                 if locationService.currentLocation != nil { break }
-                print("[Nearby] Waiting for location... attempt \(i + 1)")
+                logger.debug("[Nearby] Waiting for location... attempt \(i + 1)")
                 try? await Task.sleep(for: .milliseconds(500))
             }
 
             guard let location = locationService.currentLocation else {
-                print("[Nearby] Location never resolved — giving up")
+                logger.warning("[Nearby] Location never resolved — giving up")
                 isLoadingNearby = false
                 return
             }
 
-            print("[Nearby] Got location: \(location.latitude), \(location.longitude)")
+            logger.debug("[Nearby] Got location: \(location.latitude), \(location.longitude)")
 
             // Check cache first to avoid redundant API calls
             if let cached = cacheService.getCachedNearby(for: location) {
-                print("[Nearby] Using cached results (\(cached.count) places)")
+                logger.debug("[Nearby] Using cached results (\(cached.count) places)")
                 nearbyPlaces = cached
                 isLoadingNearby = false
                 return
@@ -459,74 +461,31 @@ struct SearchPlaceView: View {
 
             nearbyPlaces = await placesService.nearbySearch(location: location)
             cacheService.cacheNearbyResults(nearbyPlaces, location: location)
-            print("[Nearby] Got \(nearbyPlaces.count) nearby places")
+            logger.debug("[Nearby] Got \(nearbyPlaces.count) nearby places")
             isLoadingNearby = false
         }
     }
 
-    private func selectPrediction(_ prediction: PlacePrediction) {
+    /// Fetches full place details by ID and navigates to the preview screen.
+    private func selectPlace(byID placeId: String) {
         Task {
             isLoadingDetails = true
             detailsError = nil
 
-            guard let details = await placesService.getPlaceDetails(placeId: prediction.placeId) else {
+            guard let details = await placesService.getPlaceDetails(placeId: placeId) else {
                 isLoadingDetails = false
                 detailsError = placesService.error?.localizedDescription ?? "Failed to load place details"
                 return
             }
 
-            isLoadingDetails = false
-            selectedDetails = details
-            showPreview = true
-        }
-    }
-
-    private func selectNearbyPlace(_ nearby: NearbyPlace) {
-        // Fetch full details for preview (nearby doesn't have rating/price/description)
-        Task {
-            isLoadingDetails = true
-            detailsError = nil
-
-            guard let details = await placesService.getPlaceDetails(placeId: nearby.placeId) else {
-                isLoadingDetails = false
-                detailsError = placesService.error?.localizedDescription ?? "Failed to load place details"
-                return
-            }
-
-            isLoadingDetails = false
-            selectedDetails = details
-            showPreview = true
-        }
-    }
-
-    private func selectRecentSearch(_ search: RecentSearch) {
-        Task {
-            isLoadingDetails = true
-            detailsError = nil
-
-            guard let details = await placesService.getPlaceDetails(placeId: search.placeId) else {
-                isLoadingDetails = false
-                detailsError = placesService.error?.localizedDescription ?? "Failed to load place details"
-                return
-            }
-
-            isLoadingDetails = false
-            selectedDetails = details
-            showPreview = true
-        }
-    }
-
-    private func selectPlace(_ place: Place) {
-        // Fetch full details for preview
-        Task {
-            isLoadingDetails = true
-            detailsError = nil
-
-            guard let details = await placesService.getPlaceDetails(placeId: place.id) else {
-                isLoadingDetails = false
-                detailsError = placesService.error?.localizedDescription ?? "Failed to load place details"
-                return
-            }
+            // Cache place locally (enables instant map pin if bookmarked)
+            // and add to recent searches immediately on tap
+            let place = cacheService.cachePlace(from: details)
+            cacheService.addRecentSearch(
+                placeId: place.id,
+                name: place.name,
+                address: place.address
+            )
 
             isLoadingDetails = false
             selectedDetails = details

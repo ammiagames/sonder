@@ -58,14 +58,14 @@ struct FeedItemCard: View {
                         HStack(alignment: .top, spacing: 0) {
                             Text("\u{201C}")
                                 .font(.system(size: 48, weight: .thin, design: .serif))
-                                .foregroundColor(SonderColors.terracotta.opacity(0.7))
+                                .foregroundStyle(SonderColors.terracotta.opacity(0.7))
                                 .offset(y: -8)
                                 .padding(.trailing, 2)
 
                             Text(note)
                                 .font(.system(size: 18, weight: .regular, design: .serif))
                                 .italic()
-                                .foregroundColor(.white)
+                                .foregroundStyle(.white)
                                 .lineLimit(3)
                                 .multilineTextAlignment(.leading)
                         }
@@ -75,7 +75,7 @@ struct FeedItemCard: View {
                     // Place name — bold, commanding
                     Text(feedItem.place.name)
                         .font(.system(size: 24, weight: .bold, design: .serif))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .lineLimit(2)
 
                     // City + rating inline
@@ -96,7 +96,7 @@ struct FeedItemCard: View {
                                 .font(.system(size: 12, weight: .semibold))
                         }
                     }
-                    .foregroundColor(.white.opacity(0.75))
+                    .foregroundStyle(.white.opacity(0.75))
                     .padding(.top, 4)
 
                     // Byline — on the photo itself
@@ -110,7 +110,7 @@ struct FeedItemCard: View {
                                 )
                                 Text("@\(feedItem.user.username)")
                                     .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.white.opacity(0.7))
+                                    .foregroundStyle(.white.opacity(0.7))
                             }
                         }
                         .buttonStyle(.plain)
@@ -119,7 +119,7 @@ struct FeedItemCard: View {
 
                         Text(feedItem.createdAt.relativeDisplay)
                             .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundStyle(.white.opacity(0.5))
 
                         FeedItemCardShared.bookmarkButton(
                             isWantToGo: isWantToGo,
@@ -151,7 +151,7 @@ struct FeedItemCard: View {
                     // Category watermark icon
                     Image(systemName: feedItem.place.categoryIcon)
                         .font(.system(size: 80, weight: .thin))
-                        .foregroundColor(.white.opacity(0.06))
+                        .foregroundStyle(.white.opacity(0.06))
                         .rotationEffect(.degrees(-15))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                         .padding(.top, 16)

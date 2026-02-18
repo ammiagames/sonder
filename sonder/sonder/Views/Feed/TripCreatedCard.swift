@@ -31,10 +31,10 @@ struct TripCreatedCard: View {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(item.user.username)
                             .font(SonderTypography.subheadline)
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                         Text("started a new trip")
                             .font(SonderTypography.caption)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                     }
 
                     Spacer()
@@ -46,14 +46,14 @@ struct TripCreatedCard: View {
             HStack {
                 Label(item.tripName, systemImage: "suitcase")
                     .font(SonderTypography.headline)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(1)
 
                 Spacer()
 
                 Text(item.createdAt.relativeDisplay)
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
         }
         .padding(.horizontal, SonderSpacing.md)
@@ -76,7 +76,7 @@ struct TripCreatedCard: View {
             .overlay {
                 Text(item.user.username.prefix(1).uppercased())
                     .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
     }
 }

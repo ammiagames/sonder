@@ -7,6 +7,9 @@
 
 import SwiftUI
 import SwiftData
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "TripsListView")
 
 enum LogsTripsTab: String, CaseIterable {
     case logs = "Logs"
@@ -76,7 +79,7 @@ struct TripsListView: View {
                             showCreateTrip = true
                         } label: {
                             Image(systemName: "plus")
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
                         }
                     }
                 }
@@ -151,15 +154,15 @@ struct TripsListView: View {
         VStack(spacing: SonderSpacing.md) {
             Image(systemName: "book.closed")
                 .font(.system(size: 48))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
 
             Text("No Logs Yet")
                 .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             Text("Start logging places you visit")
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -202,15 +205,15 @@ struct TripsListView: View {
         VStack(spacing: SonderSpacing.md) {
             Image(systemName: "suitcase")
                 .font(.system(size: 48))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
 
             Text("No Trips Yet")
                 .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             Text("Create a trip to organize your logs by journey")
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, SonderSpacing.xl)
 
@@ -219,7 +222,7 @@ struct TripsListView: View {
             } label: {
                 Text("Create Trip")
                     .font(SonderTypography.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, SonderSpacing.lg)
                     .padding(.vertical, SonderSpacing.sm)
                     .background(SonderColors.terracotta)
@@ -239,7 +242,7 @@ struct TripsListView: View {
             HStack(spacing: SonderSpacing.sm) {
                 Image(systemName: "envelope.badge")
                     .font(.title2)
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
                     .frame(width: 40, height: 40)
                     .background(SonderColors.terracotta.opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
@@ -247,18 +250,18 @@ struct TripsListView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Trip Invitations")
                         .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
 
                     Text("\(pendingInvitationCount) pending \(pendingInvitationCount == 1 ? "invitation" : "invitations")")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 Spacer()
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
             .padding(SonderSpacing.md)
             .background(SonderColors.warmGray)
@@ -292,7 +295,7 @@ struct TripsListView: View {
         do {
             _ = try await tripService.fetchTrips(for: userID)
         } catch {
-            print("Error loading trips: \(error)")
+            logger.error("Error loading trips: \(error.localizedDescription)")
         }
         isLoading = false
     }
@@ -302,7 +305,7 @@ struct TripsListView: View {
         do {
             pendingInvitationCount = try await tripService.getPendingInvitationCount(for: userID)
         } catch {
-            print("Error loading invitation count: \(error)")
+            logger.error("Error loading invitation count: \(error.localizedDescription)")
         }
     }
 }
@@ -328,7 +331,7 @@ struct LogListRow: View {
                     Text(place.name)
                         .font(SonderTypography.subheadline)
                         .fontWeight(.medium)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(1)
 
                     Text(log.rating.emoji)
@@ -338,7 +341,7 @@ struct LogListRow: View {
                 // Address
                 Text(place.address)
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .lineLimit(1)
 
                 // Trip + date
@@ -350,12 +353,12 @@ struct LogListRow: View {
                             Text(tripName)
                                 .font(SonderTypography.caption)
                         }
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                     }
 
                     Text(log.createdAt.formatted(date: .abbreviated, time: .omitted))
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
             }
 
@@ -363,7 +366,7 @@ struct LogListRow: View {
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
         }
         .padding(SonderSpacing.sm)
         .background(SonderColors.warmGray)
@@ -398,7 +401,7 @@ struct LogListRow: View {
             .fill(SonderColors.warmGrayDark)
             .overlay {
                 Image(systemName: "photo")
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
     }
 }

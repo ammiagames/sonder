@@ -64,23 +64,26 @@ extension TripExportData {
 // MARK: - Export Style
 
 enum ExportStyle: String, CaseIterable {
-    case cover, route, journey, filmStrip
+    case collage, receipt
+    case cover, route, journey
 
     var title: String {
         switch self {
+        case .collage: return "Collage"
+        case .receipt: return "Receipt"
         case .cover: return "Cover"
         case .route: return "Route"
         case .journey: return "Journey"
-        case .filmStrip: return "Film Strip"
         }
     }
 
     var icon: String {
         switch self {
+        case .collage: return "rectangle.split.2x2"
+        case .receipt: return "doc.text"
         case .cover: return "book.pages"
         case .route: return "map"
         case .journey: return "point.topleft.down.to.point.bottomright.curvepath"
-        case .filmStrip: return "film"
         }
     }
 }
@@ -94,7 +97,7 @@ struct ShareTripView: View {
     let tripLogs: [Log]
     let places: [Place]
 
-    @State private var selectedStyle: ExportStyle = .cover
+    @State private var selectedStyle: ExportStyle = .collage
     @State private var customization = TripExportCustomization()
     @State private var exportData: TripExportData?
     @State private var mapSnapshot: UIImage?
@@ -136,7 +139,7 @@ struct ShareTripView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
             }
             .sheet(isPresented: $showShareSheet) {
@@ -186,7 +189,7 @@ struct ShareTripView: View {
                     .tint(SonderColors.terracotta)
                 Text("Preparing photos...")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
             .frame(maxWidth: .infinity)
             Spacer()
@@ -271,7 +274,7 @@ struct ShareTripView: View {
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(SonderColors.inkMuted)
+            .foregroundStyle(SonderColors.inkMuted)
             .tracking(1.2)
     }
 
@@ -294,7 +297,7 @@ struct ShareTripView: View {
                         }
                         .frame(width: 72, height: 64)
                         .background(selectedStyle == style ? SonderColors.terracotta.opacity(0.12) : SonderColors.warmGray)
-                        .foregroundColor(selectedStyle == style ? SonderColors.terracotta : SonderColors.inkMuted)
+                        .foregroundStyle(selectedStyle == style ? SonderColors.terracotta : SonderColors.inkMuted)
                         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                         .overlay {
                             if selectedStyle == style {
@@ -342,7 +345,7 @@ struct ShareTripView: View {
 
                             Text(theme.name)
                                 .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(customization.theme.id == theme.id ? SonderColors.terracotta : SonderColors.inkMuted)
+                                .foregroundStyle(customization.theme.id == theme.id ? SonderColors.terracotta : SonderColors.inkMuted)
                         }
                     }
                 }
@@ -362,7 +365,7 @@ struct ShareTripView: View {
                 } label: {
                     Text(ratio.title)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(customization.aspectRatio == ratio ? .white : SonderColors.inkMuted)
+                        .foregroundStyle(customization.aspectRatio == ratio ? .white : SonderColors.inkMuted)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, SonderSpacing.xs)
                         .background(customization.aspectRatio == ratio ? SonderColors.terracotta : SonderColors.warmGray)
@@ -431,7 +434,7 @@ struct ShareTripView: View {
                                         .frame(width: 56, height: 56)
                                     Image(systemName: "checkmark")
                                         .font(.system(size: 16, weight: .bold))
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(.white)
                                 }
                             }
                             .overlay {
@@ -462,7 +465,7 @@ struct ShareTripView: View {
             if !customization.customCaption.isEmpty {
                 Text("\(customization.customCaption.count)/100")
                     .font(.system(size: 11))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
         }
         .padding(SonderSpacing.sm)
@@ -483,7 +486,7 @@ struct ShareTripView: View {
                     Text("Copy")
                 }
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, SonderSpacing.sm)
                 .background(SonderColors.warmGray)
@@ -499,7 +502,7 @@ struct ShareTripView: View {
                     Text("Save")
                 }
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, SonderSpacing.sm)
                 .background(SonderColors.warmGray)
@@ -515,7 +518,7 @@ struct ShareTripView: View {
                     Text("Share")
                 }
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, SonderSpacing.sm)
                 .background(SonderColors.terracotta)
@@ -538,7 +541,7 @@ struct ShareTripView: View {
                     Text(message)
                         .font(.system(size: 14, weight: .semibold))
                 }
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .padding(.horizontal, SonderSpacing.lg)
                 .padding(.vertical, SonderSpacing.sm)
                 .background(SonderColors.terracotta)
@@ -572,7 +575,7 @@ struct ShareTripView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 28))
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundStyle(.white.opacity(0.7))
                     }
                     .padding()
                 }
@@ -589,14 +592,16 @@ struct ShareTripView: View {
         let size = customization.canvasSize
 
         switch selectedStyle {
+        case .collage:
+            TripExportCollage(data: data, theme: theme, canvasSize: size)
+        case .receipt:
+            TripExportReceipt(data: data, theme: theme, canvasSize: size)
         case .cover:
             TripExportJournal(data: data, theme: theme, canvasSize: size)
         case .route:
             TripExportRouteMap(data: data, mapSnapshot: currentMapSnapshot, theme: theme, canvasSize: size)
         case .journey:
             TripExportJourney(data: data, theme: theme, canvasSize: size)
-        case .filmStrip:
-            TripExportFilmStrip(data: data, theme: theme, canvasSize: size)
         }
     }
 

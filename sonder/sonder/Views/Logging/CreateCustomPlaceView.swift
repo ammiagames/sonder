@@ -8,6 +8,9 @@
 import SwiftUI
 import SwiftData
 import MapKit
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "CreateCustomPlaceView")
 
 /// View for creating a custom place that isn't in Google Places
 struct CreateCustomPlaceView: View {
@@ -48,13 +51,13 @@ struct CreateCustomPlaceView: View {
                         // Show selected location
                         HStack {
                             Image(systemName: "mappin.circle.fill")
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
                             VStack(alignment: .leading) {
                                 Text("Location set")
                                     .font(SonderTypography.body)
                                 Text("\(coordinate.latitude, specifier: "%.4f"), \(coordinate.longitude, specifier: "%.4f")")
                                     .font(SonderTypography.caption)
-                                    .foregroundColor(SonderColors.inkMuted)
+                                    .foregroundStyle(SonderColors.inkMuted)
                             }
                             Spacer()
                             Button("Change") {
@@ -180,7 +183,7 @@ struct LocationPickerView: View {
                             Annotation("", coordinate: coordinate) {
                                 Image(systemName: "mappin.circle.fill")
                                     .font(.title)
-                                    .foregroundColor(SonderColors.terracotta)
+                                    .foregroundStyle(SonderColors.terracotta)
                             }
                         }
 
@@ -204,7 +207,7 @@ struct LocationPickerView: View {
                     Text("Tap to place pin")
                         .font(SonderTypography.body)
                         .fontWeight(.medium)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .padding(.horizontal, SonderSpacing.md)
                         .padding(.vertical, SonderSpacing.xs)
                         .background(SonderColors.cream.opacity(0.95))
@@ -237,6 +240,6 @@ struct LocationPickerView: View {
 
 #Preview {
     CreateCustomPlaceView { place in
-        print("Created place: \(place.name)")
+        logger.debug("Created place: \(place.name)")
     }
 }

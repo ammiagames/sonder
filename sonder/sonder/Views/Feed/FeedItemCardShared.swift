@@ -41,7 +41,7 @@ enum FeedItemCardShared {
             .overlay {
                 Text(username.prefix(1).uppercased())
                     .font(.system(size: size * 0.4, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
     }
 
@@ -65,7 +65,7 @@ enum FeedItemCardShared {
         } label: {
             Image(systemName: isWantToGo ? "bookmark.fill" : "bookmark")
                 .font(.system(size: 18))
-                .foregroundColor(isWantToGo ? SonderColors.terracotta : SonderColors.inkLight)
+                .foregroundStyle(isWantToGo ? SonderColors.terracotta : SonderColors.inkLight)
                 .scaleEffect(scale.wrappedValue)
         }
         .buttonStyle(.plain)
@@ -110,7 +110,7 @@ enum FeedItemCardShared {
             .overlay {
                 Text(placeName.prefix(1).uppercased())
                     .font(.system(size: size * 0.38, weight: .semibold, design: .serif))
-                    .foregroundColor(SonderColors.pinColor(for: rating))
+                    .foregroundStyle(SonderColors.pinColor(for: rating))
             }
     }
 

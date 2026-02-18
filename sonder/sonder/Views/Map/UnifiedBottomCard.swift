@@ -220,7 +220,7 @@ struct UnifiedBottomCard: View {
                     if let note = log.note, !note.isEmpty {
                         Text(note)
                             .font(SonderTypography.body)
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
                             .lineLimit(6)
                     }
 
@@ -232,7 +232,7 @@ struct UnifiedBottomCard: View {
 
                     Text(log.createdAt.formatted(date: .long, time: .omitted))
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
 
                     viewFullDetailButton { onNavigateToLog(log.id, place) }
                 }
@@ -268,11 +268,11 @@ struct UnifiedBottomCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(place.name)
                     .font(SonderTypography.headline)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(1)
                 Text(place.address)
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .lineLimit(1)
             }
 
@@ -282,7 +282,7 @@ struct UnifiedBottomCard: View {
                 Text(log.rating.emoji).font(.system(size: 22))
                 Text(log.rating.displayName)
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(SonderColors.pinColor(for: log.rating))
+                    .foregroundStyle(SonderColors.pinColor(for: log.rating))
             }
         }
     }
@@ -310,11 +310,11 @@ struct UnifiedBottomCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(place.name)
                     .font(SonderTypography.headline)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(2)
                 Text(place.address)
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .lineLimit(1)
             }
             Spacer()
@@ -332,11 +332,11 @@ struct UnifiedBottomCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(place.name)
                         .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(1)
                     Text(place.address)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .lineLimit(1)
                 }
 
@@ -347,7 +347,7 @@ struct UnifiedBottomCard: View {
                         Text(log.rating.emoji).font(.system(size: 22))
                         Text(log.rating.displayName)
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(SonderColors.pinColor(for: log.rating))
+                            .foregroundStyle(SonderColors.pinColor(for: log.rating))
                     }
                 }
             }
@@ -381,11 +381,11 @@ struct UnifiedBottomCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(place.name)
                         .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(2)
                     Text(place.address)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
@@ -400,7 +400,7 @@ struct UnifiedBottomCard: View {
                         systemImage: "mappin.circle.fill"
                     )
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
                     Spacer()
                 }
 
@@ -410,14 +410,14 @@ struct UnifiedBottomCard: View {
                             if let note = log.note, !note.isEmpty {
                                 Text(note)
                                     .font(SonderTypography.caption)
-                                    .foregroundColor(SonderColors.inkLight)
+                                    .foregroundStyle(SonderColors.inkLight)
                                     .lineLimit(2)
                             }
                             Spacer(minLength: 0)
                             Text(log.rating.emoji).font(.system(size: 22))
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(SonderColors.inkLight)
+                                .foregroundStyle(SonderColors.inkLight)
                         }
                     }
                     .buttonStyle(.plain)
@@ -449,10 +449,10 @@ struct UnifiedBottomCard: View {
         HStack(spacing: 6) {
             Image(systemName: "person.2.fill")
                 .font(.system(size: 11))
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
             Text("\(count) friend\(count == 1 ? "" : "s") logged this")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
         }
     }
 
@@ -462,12 +462,12 @@ struct UnifiedBottomCard: View {
                 HStack(spacing: SonderSpacing.sm) {
                     Text(log.createdAt.formatted(date: .abbreviated, time: .omitted))
                         .font(.system(size: 12))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                         .frame(width: 70, alignment: .leading)
                     if let note = log.note, !note.isEmpty {
                         Text(note)
                             .font(SonderTypography.caption)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .lineLimit(2)
                     }
                     Spacer(minLength: 0)
@@ -478,7 +478,7 @@ struct UnifiedBottomCard: View {
                         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
                 if !log.tags.isEmpty { tagCapsules(log.tags) }
             }
@@ -495,10 +495,10 @@ struct UnifiedBottomCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(log.rating.displayName)
                     .font(SonderTypography.headline)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                 Text(log.rating.subtitle)
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
             Spacer()
         }
@@ -516,7 +516,7 @@ struct UnifiedBottomCard: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(SonderColors.terracotta.opacity(0.1))
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                         .clipShape(Capsule())
                 }
             }
@@ -541,16 +541,16 @@ struct UnifiedBottomCard: View {
                         HStack(spacing: 4) {
                             Text(item.user.username)
                                 .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(SonderColors.inkDark)
+                                .foregroundStyle(SonderColors.inkDark)
                             Spacer()
                             Text(item.createdAt.formatted(date: .abbreviated, time: .omitted))
                                 .font(.system(size: 11))
-                                .foregroundColor(SonderColors.inkLight)
+                                .foregroundStyle(SonderColors.inkLight)
                         }
                         if let note = item.log.note, !note.isEmpty {
                             Text(note)
                                 .font(SonderTypography.caption)
-                                .foregroundColor(SonderColors.inkMuted)
+                                .foregroundStyle(SonderColors.inkMuted)
                                 .lineLimit(3)
                         }
                     }
@@ -579,7 +579,7 @@ struct UnifiedBottomCard: View {
             Text("\u{1F525}").font(.system(size: 12))
             Text("Friends Loved")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(SonderColors.ratingMustSee)
+                .foregroundStyle(SonderColors.ratingMustSee)
         }
     }
 
@@ -592,7 +592,7 @@ struct UnifiedBottomCard: View {
             .frame(maxWidth: .infinity)
             .padding(SonderSpacing.sm)
             .background(SonderColors.terracotta)
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         }
     }
@@ -630,7 +630,7 @@ struct UnifiedBottomCard: View {
             .overlay {
                 Text(user.username.prefix(1).uppercased())
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
     }
 }

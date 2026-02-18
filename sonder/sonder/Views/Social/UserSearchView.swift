@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "UserSearchView")
 
 /// Search for users by username
 struct UserSearchView: View {
@@ -47,7 +50,7 @@ struct UserSearchView: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                 }
             }
             .navigationDestination(item: $selectedUserID) { userID in
@@ -61,7 +64,7 @@ struct UserSearchView: View {
     private var searchBar: some View {
         HStack {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
 
             TextField("Search by username", text: $searchText)
                 .font(SonderTypography.body)
@@ -78,7 +81,7 @@ struct UserSearchView: View {
                     searchResults = []
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
             }
         }
@@ -102,15 +105,15 @@ struct UserSearchView: View {
         VStack(spacing: SonderSpacing.md) {
             Image(systemName: "person.2")
                 .font(.system(size: 48))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
 
             Text("Search Users")
                 .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             Text("Enter a username to find friends")
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -119,15 +122,15 @@ struct UserSearchView: View {
         VStack(spacing: SonderSpacing.md) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 48))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
 
             Text("No Results")
                 .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             Text("No users found matching \"\(searchText)\"")
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -162,7 +165,7 @@ struct UserSearchView: View {
             do {
                 searchResults = try await socialService.searchUsers(query: searchText)
             } catch {
-                print("Search error: \(error)")
+                logger.error("Search error: \(error.localizedDescription)")
                 searchResults = []
             }
             isSearching = false
@@ -202,12 +205,12 @@ struct UserSearchRow: View {
                 VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                     Text(user.username)
                         .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
 
                     if let bio = user.bio, !bio.isEmpty {
                         Text(bio)
                             .font(SonderTypography.caption)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .lineLimit(1)
                     }
                 }
@@ -239,7 +242,7 @@ struct UserSearchRow: View {
             .overlay {
                 Text(user.username.prefix(1).uppercased())
                     .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
     }
 
@@ -256,7 +259,7 @@ struct UserSearchRow: View {
                     Text("Following")
                         .font(SonderTypography.caption)
                         .fontWeight(.medium)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .padding(.horizontal, SonderSpacing.sm)
                         .padding(.vertical, SonderSpacing.xxs)
                         .background(SonderColors.warmGray)
@@ -265,7 +268,7 @@ struct UserSearchRow: View {
                     Text("Follow")
                         .font(SonderTypography.caption)
                         .fontWeight(.medium)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .padding(.horizontal, SonderSpacing.sm)
                         .padding(.vertical, SonderSpacing.xxs)
                         .background(SonderColors.terracotta)
@@ -300,7 +303,7 @@ struct UserSearchRow: View {
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
             } catch {
-                print("Follow error: \(error)")
+                logger.error("Follow error: \(error.localizedDescription)")
             }
             isLoading = false
         }

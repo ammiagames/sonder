@@ -27,18 +27,18 @@ struct OnboardingLogStep: View {
 
                     Image(systemName: "mappin.and.ellipse")
                         .font(.system(size: 48))
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                 }
 
                 // Header
                 Text("Log your first place")
                     .font(SonderTypography.title)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
 
                 // Body
                 Text("Your favorite coffee shop, a restaurant you always go back to, that one park...")
                     .font(SonderTypography.body)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, SonderSpacing.lg)
 
@@ -46,10 +46,10 @@ struct OnboardingLogStep: View {
                 if didLogPlace {
                     HStack(spacing: SonderSpacing.xs) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(SonderColors.sage)
+                            .foregroundStyle(SonderColors.sage)
                         Text("Place logged!")
                             .font(SonderTypography.headline)
-                            .foregroundColor(SonderColors.sage)
+                            .foregroundStyle(SonderColors.sage)
                     }
                     .transition(.scale.combined(with: .opacity))
                 }
@@ -71,7 +71,7 @@ struct OnboardingLogStep: View {
                     Button(action: onSkip) {
                         Text("Skip for now")
                             .font(SonderTypography.subheadline)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                     }
                     .buttonStyle(.plain)
                 }

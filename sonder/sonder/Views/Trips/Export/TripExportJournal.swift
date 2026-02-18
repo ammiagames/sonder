@@ -28,13 +28,13 @@ struct TripExportJournal: View {
                     // Brand mark
                     Text("sonder")
                         .font(.system(size: 32 * s, weight: .semibold, design: .rounded))
-                        .foregroundColor(theme.accent)
+                        .foregroundStyle(theme.accent)
                         .tracking(2)
 
                     // Trip name
                     Text(data.tripName)
                         .font(.system(size: 90 * s, weight: .bold, design: .serif))
-                        .foregroundColor(theme.textPrimary)
+                        .foregroundStyle(theme.textPrimary)
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
 
@@ -64,7 +64,7 @@ struct TripExportJournal: View {
                         Text(caption)
                             .font(.system(size: 26 * s, design: .serif))
                             .italic()
-                            .foregroundColor(theme.textSecondary)
+                            .foregroundStyle(theme.textSecondary)
                             .lineLimit(2)
                     }
 
@@ -73,10 +73,10 @@ struct TripExportJournal: View {
                         Spacer()
                         Text("sonder")
                             .font(.system(size: 22 * s, weight: .semibold, design: .rounded))
-                            .foregroundColor(theme.textTertiary) +
+                            .foregroundStyle(theme.textTertiary) +
                         Text("  \u{00B7}  your travel story")
                             .font(.system(size: 22 * s))
-                            .foregroundColor(theme.textTertiary)
+                            .foregroundStyle(theme.textTertiary)
                         Spacer()
                     }
                     .padding(.top, 4 * s)
@@ -145,7 +145,7 @@ struct TripExportJournal: View {
             Text("\(data.dayCount)d")
         }
         .font(.system(size: 32 * s))
-        .foregroundColor(theme.textSecondary)
+        .foregroundStyle(theme.textSecondary)
     }
 
     // MARK: - Pull Quote
@@ -155,12 +155,12 @@ struct TripExportJournal: View {
             Text("\u{201C}\(quote.text)\u{201D}")
                 .font(.system(size: 34 * s, design: .serif))
                 .italic()
-                .foregroundColor(theme.textPrimary)
+                .foregroundStyle(theme.textPrimary)
                 .lineLimit(3)
 
             Text("— \(quote.placeName)")
                 .font(.system(size: 24 * s, weight: .medium))
-                .foregroundColor(theme.accent)
+                .foregroundStyle(theme.accent)
         }
         .padding(.vertical, 8 * s)
     }
@@ -177,7 +177,7 @@ struct TripExportJournal: View {
                         .font(.system(size: 22 * s))
                     Text("\(cat.label) \u{00D7} \(cat.count)")
                         .font(.system(size: 22 * s, weight: .medium))
-                        .foregroundColor(theme.textPrimary)
+                        .foregroundStyle(theme.textPrimary)
                 }
                 .padding(.horizontal, 14 * s)
                 .padding(.vertical, 8 * s)
@@ -202,7 +202,7 @@ struct TripExportJournal: View {
             }
         }
         .font(.system(size: 36 * s))
-        .foregroundColor(theme.textSecondary.opacity(0.85))
+        .foregroundStyle(theme.textSecondary.opacity(0.85))
     }
 
     // MARK: - Photo Thumbnails
@@ -225,7 +225,7 @@ struct TripExportJournal: View {
 
                     Text(photos[index].placeName)
                         .font(.system(size: 20 * s))
-                        .foregroundColor(theme.textTertiary)
+                        .foregroundStyle(theme.textTertiary)
                         .lineLimit(1)
                         .frame(width: 120 * s)
                 }

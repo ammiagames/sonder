@@ -20,7 +20,7 @@ struct FriendsLovedCarousel: View {
                     .font(.system(size: 16))
                 Text("Your Friends Loved")
                     .font(SonderTypography.headline)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
             }
             .padding(.horizontal, SonderSpacing.md)
 
@@ -53,7 +53,7 @@ struct FriendsLovedCarousel: View {
             // Name
             Text(place.name)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
                 .lineLimit(1)
 
             // Friends count + rating
@@ -62,7 +62,7 @@ struct FriendsLovedCarousel: View {
                     .font(.system(size: 12))
                 Text("\(place.friendCount) friends")
                     .font(.system(size: 11))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
         }
         .frame(width: 100)

@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "PendingInvitationsView")
 
 /// View showing pending trip invitations for the current user
 struct PendingInvitationsView: View {
@@ -28,13 +31,13 @@ struct PendingInvitationsView: View {
                     VStack(spacing: SonderSpacing.md) {
                         Image(systemName: "envelope.open")
                             .font(.system(size: 48))
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
                         Text("No Invitations")
                             .font(SonderTypography.title)
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                         Text("You don't have any pending trip invitations")
                             .font(SonderTypography.body)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -86,7 +89,7 @@ struct PendingInvitationsView: View {
                 socialService: socialService
             )
         } catch {
-            print("Error loading invitations: \(error)")
+            logger.error("Error loading invitations: \(error.localizedDescription)")
         }
         isLoading = false
     }
@@ -107,7 +110,7 @@ struct PendingInvitationsView: View {
                     invitations.removeAll { $0.id == item.id }
                 }
             } catch {
-                print("Error accepting invitation: \(error)")
+                logger.error("Error accepting invitation: \(error.localizedDescription)")
             }
             processingIDs.remove(item.id)
         }
@@ -125,7 +128,7 @@ struct PendingInvitationsView: View {
                     invitations.removeAll { $0.id == item.id }
                 }
             } catch {
-                print("Error declining invitation: \(error)")
+                logger.error("Error declining invitation: \(error.localizedDescription)")
             }
             processingIDs.remove(item.id)
         }
@@ -152,22 +155,22 @@ struct InvitationCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.trip.name)
                         .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(1)
 
                     // Inviter info
                     HStack(spacing: 4) {
                         Text("from")
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                         Text("@\(item.inviter.username)")
-                            .foregroundColor(SonderColors.terracotta)
+                            .foregroundStyle(SonderColors.terracotta)
                     }
                     .font(SonderTypography.subheadline)
 
                     // Date
                     Text(item.invitation.createdAt.formatted(date: .abbreviated, time: .omitted))
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
 
                 Spacer()
@@ -184,7 +187,7 @@ struct InvitationCard: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .background(SonderColors.warmGray)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
                 }
                 .buttonStyle(.plain)
@@ -205,7 +208,7 @@ struct InvitationCard: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
                     .background(SonderColors.terracotta)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
                 }
                 .buttonStyle(.plain)

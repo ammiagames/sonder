@@ -7,6 +7,9 @@
 
 import SwiftUI
 import SwiftData
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "TripsSheetView")
 
 /// Sheet view for managing trips, accessible from Journal toolbar
 struct TripsSheetView: View {
@@ -72,7 +75,7 @@ struct TripsSheetView: View {
                     Button("Done") {
                         dismiss()
                     }
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 ToolbarItem(placement: .primaryAction) {
@@ -80,7 +83,7 @@ struct TripsSheetView: View {
                         showCreateTrip = true
                     } label: {
                         Image(systemName: "plus")
-                            .foregroundColor(SonderColors.terracotta)
+                            .foregroundStyle(SonderColors.terracotta)
                     }
                 }
             }
@@ -116,7 +119,7 @@ struct TripsSheetView: View {
             HStack(spacing: SonderSpacing.sm) {
                 Image(systemName: "envelope.badge")
                     .font(.title2)
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
                     .frame(width: 40, height: 40)
                     .background(SonderColors.terracotta.opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
@@ -124,18 +127,18 @@ struct TripsSheetView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Trip Invitations")
                         .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
 
                     Text("\(pendingInvitationCount) pending")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 Spacer()
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
             .padding(SonderSpacing.md)
             .background(SonderColors.warmGray)
@@ -154,15 +157,15 @@ struct TripsSheetView: View {
         VStack(spacing: SonderSpacing.md) {
             Image(systemName: "suitcase")
                 .font(.system(size: 48))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
 
             Text("No Trips Yet")
                 .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             Text("Create a trip to organize your logs by journey")
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .multilineTextAlignment(.center)
 
             Button {
@@ -170,7 +173,7 @@ struct TripsSheetView: View {
             } label: {
                 Text("Create Trip")
                     .font(SonderTypography.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, SonderSpacing.lg)
                     .padding(.vertical, SonderSpacing.sm)
                     .background(SonderColors.terracotta)
@@ -198,7 +201,7 @@ struct TripsSheetView: View {
         do {
             _ = try await tripService.fetchTrips(for: userID)
         } catch {
-            print("Error loading trips: \(error)")
+            logger.error("Error loading trips: \(error.localizedDescription)")
         }
         isLoading = false
     }
@@ -223,13 +226,13 @@ struct TripRowCard: View {
                 HStack {
                     Text(trip.name)
                         .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(1)
 
                     if !isOwner {
                         Image(systemName: "person.2.fill")
                             .font(.system(size: 10))
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
                     }
                 }
 
@@ -237,12 +240,12 @@ struct TripRowCard: View {
                 if let description = trip.tripDescription, !description.isEmpty {
                     Text(description)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .lineLimit(1)
                 } else if let startDate = trip.startDate {
                     Text(formatDateRange(start: startDate, end: trip.endDate))
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 // Log count
@@ -252,14 +255,14 @@ struct TripRowCard: View {
                     Text("\(logCount) \(logCount == 1 ? "place" : "places")")
                         .font(SonderTypography.caption)
                 }
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
             }
 
             Spacer()
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
         }
         .padding(SonderSpacing.sm)
         .background(SonderColors.warmGray)

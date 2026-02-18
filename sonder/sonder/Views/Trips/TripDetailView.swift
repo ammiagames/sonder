@@ -277,7 +277,7 @@ struct TripDetailView: View {
 
                 if let urlString = trip.coverPhotoURL,
                    let url = URL(string: urlString) {
-                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: geo.size.width * 2, height: geo.size.height * 2)) {
+                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: geo.size.width, height: geo.size.height)) {
                         coverGradientPlaceholder
                     }
                     .aspectRatio(contentMode: .fill)
@@ -307,13 +307,13 @@ struct TripDetailView: View {
                     Text(location.uppercased())
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .tracking(3.0)
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundStyle(.white.opacity(0.8))
                 }
 
                 // Trip name
                 Text(trip.name)
                     .font(.system(size: 36, weight: .light, design: .serif))
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
 
                 // Date stamp
@@ -321,7 +321,7 @@ struct TripDetailView: View {
                     Text(dateText.uppercased())
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .tracking(3.0)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundStyle(.white.opacity(0.7))
                 }
             }
             .padding(.horizontal, contentPadding)
@@ -337,7 +337,7 @@ struct TripDetailView: View {
                 } label: {
                     Image(systemName: "camera.fill")
                         .font(.system(size: 12))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .frame(width: 32, height: 32)
                         .background(.ultraThinMaterial)
                         .clipShape(Circle())
@@ -375,11 +375,11 @@ struct TripDetailView: View {
                 VStack(spacing: SonderSpacing.sm) {
                     Image(systemName: "suitcase.fill")
                         .font(.system(size: 40))
-                        .foregroundColor(.white.opacity(0.4))
+                        .foregroundStyle(.white.opacity(0.4))
                     if isOwner {
                         Text("Tap camera to add a cover photo")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundStyle(.white.opacity(0.5))
                     }
                 }
             }
@@ -419,7 +419,7 @@ struct TripDetailView: View {
             if let description = trip.tripDescription, !description.isEmpty {
                 Text(description)
                     .font(.system(size: 16))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .lineSpacing(7)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, narrowColumn)
@@ -439,7 +439,7 @@ struct TripDetailView: View {
                let place = placesByID[topPlace.placeID] {
                 Text("Top-rated: \(place.name)")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
                     .padding(.horizontal, SonderSpacing.md)
                     .padding(.vertical, SonderSpacing.xs)
                     .background(SonderColors.terracotta.opacity(0.1))
@@ -457,11 +457,11 @@ struct TripDetailView: View {
         VStack(spacing: 4) {
             Text(value)
                 .font(.system(size: 42, weight: .bold, design: .serif))
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
             Text(label.uppercased())
                 .font(.system(size: 11, weight: .medium))
                 .tracking(2.0)
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
         }
     }
 
@@ -526,7 +526,7 @@ struct TripDetailView: View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Route")
                 .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
                 .padding(.horizontal, SonderSpacing.md)
 
             Button { showExpandedMap = true } label: {
@@ -537,7 +537,7 @@ struct TripDetailView: View {
                     .overlay(alignment: .topTrailing) {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                             .frame(width: 28, height: 28)
                             .background(.ultraThinMaterial)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -590,7 +590,7 @@ struct TripDetailView: View {
 
                             Text("\(stop.index + 1)")
                                 .font(.system(size: 10, weight: .bold, design: .rounded))
-                                .foregroundColor(.white)
+                                .foregroundStyle(.white)
                                 .frame(width: 18, height: 18)
                                 .background(SonderColors.pinColor(for: stop.log.rating))
                                 .clipShape(Circle())
@@ -617,7 +617,7 @@ struct TripDetailView: View {
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                             .toolbarIcon()
                     }
                 }
@@ -764,23 +764,23 @@ struct TripDetailView: View {
                     if showChevrons {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
                     }
 
                     Text("Stop \(stop.index + 1) of \(totalStops)")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
 
                     Spacer()
 
                     Text(log.createdAt.formatted(.dateTime.month(.abbreviated).day()))
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
 
                     if showChevrons {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
                     }
                 }
 
@@ -788,7 +788,7 @@ struct TripDetailView: View {
                 HStack(alignment: .top) {
                     Text(place.name)
                         .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
 
@@ -803,7 +803,7 @@ struct TripDetailView: View {
                     .padding(.horizontal, SonderSpacing.xs)
                     .padding(.vertical, 3)
                     .background(SonderColors.pinColor(for: log.rating).opacity(0.15))
-                    .foregroundColor(SonderColors.pinColor(for: log.rating))
+                    .foregroundStyle(SonderColors.pinColor(for: log.rating))
                     .clipShape(Capsule())
                 }
 
@@ -815,7 +815,7 @@ struct TripDetailView: View {
                         .lineLimit(1)
                 }
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
 
                 // Note with terracotta accent bar
                 if let note = log.note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
@@ -826,7 +826,7 @@ struct TripDetailView: View {
 
                         Text(note)
                             .font(SonderTypography.body)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .lineLimit(3)
                             .multilineTextAlignment(.leading)
                     }
@@ -840,7 +840,7 @@ struct TripDetailView: View {
                             ForEach(log.tags, id: \.self) { tag in
                                 Text(tag)
                                     .font(SonderTypography.caption)
-                                    .foregroundColor(SonderColors.terracotta)
+                                    .foregroundStyle(SonderColors.terracotta)
                                     .padding(.horizontal, SonderSpacing.xs)
                                     .padding(.vertical, 4)
                                     .background(SonderColors.terracotta.opacity(0.1))
@@ -903,7 +903,7 @@ struct TripDetailView: View {
         }
     }
 
-    private static let cardPhotoPointSize = CGSize(width: 400, height: 140)
+    private static let cardPhotoPointSize = CGSize(width: 300, height: 140)
 
     private func cachedImage(for log: Log, place: Place) -> UIImage? {
         let pointSize = Self.cardPhotoPointSize
@@ -985,7 +985,7 @@ struct TripDetailView: View {
                         // Number badge
                         Text("\(stop.index + 1)")
                             .font(.system(size: 9, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                             .frame(width: 16, height: 16)
                             .background(SonderColors.pinColor(for: stop.log.rating))
                             .clipShape(Circle())
@@ -1119,11 +1119,11 @@ struct TripDetailView: View {
                 Text(date.formatted(.dateTime.month(.wide).day().year()).uppercased())
                     .font(.system(size: 11, weight: .medium))
                     .tracking(4.0)
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
 
                 Text(dayTitle(for: dayNumber))
                     .font(.system(size: 28, weight: .light, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, sectionGap)
@@ -1206,7 +1206,7 @@ struct TripDetailView: View {
                 Text("\(frames.count) moments".uppercased())
                     .font(.system(size: 10, weight: .medium))
                     .tracking(2.0)
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
             .padding(.top, SonderSpacing.md)
             .scrollTransition(.animated(.easeOut(duration: 0.4))) { content, phase in
@@ -1218,7 +1218,7 @@ struct TripDetailView: View {
 
     private func filmstripFrame(_ frame: FilmstripFrame) -> some View {
         VStack(spacing: 4) {
-            DownsampledAsyncImage(url: frame.url, targetSize: CGSize(width: 200, height: 260)) {
+            DownsampledAsyncImage(url: frame.url, targetSize: CGSize(width: 120, height: 160)) {
                 Rectangle().fill(SonderColors.warmGray)
             }
             .aspectRatio(3/4, contentMode: .fill)
@@ -1227,7 +1227,7 @@ struct TripDetailView: View {
 
             Text(frame.timeLabel)
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
         }
     }
 
@@ -1291,7 +1291,7 @@ struct TripDetailView: View {
             if minutes >= 10 {
                 Text(timeGapText(minutes: minutes))
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
                     .padding(.leading, 4)
             }
 
@@ -1308,7 +1308,7 @@ struct TripDetailView: View {
         if logs.count >= 2, !summary.isEmpty {
             Text(summary)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
                 .frame(maxWidth: .infinity)
                 .padding(.top, SonderSpacing.sm)
         }
@@ -1342,13 +1342,13 @@ struct TripDetailView: View {
                 Text("\u{201C}\(quote.note)\u{201D}")
                     .font(.system(size: 22, weight: .light, design: .serif))
                     .italic()
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineSpacing(8)
                     .multilineTextAlignment(.center)
 
                 Text("— \(quote.placeName)")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
             .padding(.horizontal, narrowColumn)
             .padding(.vertical, sectionGap)
@@ -1391,7 +1391,7 @@ struct TripDetailView: View {
                 Text(insight)
                     .font(.system(size: 15, weight: .regular, design: .serif))
                     .italic()
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
                     .lineSpacing(5)
             }
@@ -1479,7 +1479,7 @@ struct TripDetailView: View {
             Text("YOUR TRIP'S MOOD")
                 .font(.system(size: 10, weight: .medium))
                 .tracking(2.0)
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
 
             GeometryReader { geo in
                 let points = moodArcPoints(in: geo.size)
@@ -1569,11 +1569,11 @@ struct TripDetailView: View {
             VStack(spacing: 6) {
                 Text("Your trip began at")
                     .font(.system(size: 14, weight: .light, design: .serif))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
 
                 Text(place.name)
                     .font(.system(size: 20, weight: .medium, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, SonderSpacing.xxl)
@@ -1594,11 +1594,11 @@ struct TripDetailView: View {
             VStack(spacing: 6) {
                 Text("Your last stop was")
                     .font(.system(size: 14, weight: .light, design: .serif))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
 
                 Text(place.name)
                     .font(.system(size: 20, weight: .medium, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, SonderSpacing.xxl)
@@ -1621,13 +1621,13 @@ struct TripDetailView: View {
         VStack(spacing: SonderSpacing.sm) {
             Image(systemName: "book.pages")
                 .font(.system(size: 40))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
             Text("No moments yet")
                 .font(.system(size: 20, weight: .light, design: .serif))
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
             Text("Log places and add them to this trip to build your story")
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -1650,12 +1650,12 @@ struct TripDetailView: View {
                     Text(dateText.uppercased())
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .tracking(3.0)
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
                 if let location = tripLocationText {
                     Text(location)
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
             }
 
@@ -1663,11 +1663,11 @@ struct TripDetailView: View {
             VStack(spacing: SonderSpacing.lg) {
                 Text("\(tripLogs.count)")
                     .font(.system(size: 42, weight: .bold, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                 Text("places explored".uppercased())
                     .font(.system(size: 11, weight: .medium))
                     .tracking(2.0)
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
 
             // Rating breakdown
@@ -1687,14 +1687,14 @@ struct TripDetailView: View {
             Text("Until next time.")
                 .font(.system(size: 18, weight: .light, design: .serif))
                 .italic()
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .padding(.top, SonderSpacing.md)
 
             // Sonder wordmark
             Text("sonder")
                 .font(.system(size: 13, weight: .light, design: .serif))
                 .tracking(4.0)
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, breathingRoom)
@@ -1714,7 +1714,7 @@ struct TripDetailView: View {
                 .font(.system(size: 14))
             Text("\(count) \(label)")
                 .font(.system(size: 15))
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
         }
     }
 
@@ -1845,7 +1845,7 @@ private struct EditorialRailEntry: View {
                     if let num = stopNumber {
                         Text("\(num)")
                             .font(.system(size: 7, weight: .bold))
-                            .foregroundColor(log.rating == .mustSee ? .white : nodeColor)
+                            .foregroundStyle(log.rating == .mustSee ? .white : nodeColor)
                     }
                 }
                 .padding(.top, SonderSpacing.md)
@@ -1904,7 +1904,7 @@ private struct EditorialRailEntry: View {
                         HStack(alignment: .firstTextBaseline) {
                             Text(place.name)
                                 .font(.system(.title3, design: .serif).weight(.semibold))
-                                .foregroundColor(SonderColors.inkDark)
+                                .foregroundStyle(SonderColors.inkDark)
                                 .lineLimit(2)
 
                             Spacer()
@@ -1921,14 +1921,14 @@ private struct EditorialRailEntry: View {
                         Text(timeOfDayText)
                     }
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .padding(.top, hasPhoto ? SonderSpacing.xxs : 0)
 
                     // Note
                     if let note = log.note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
                         Text(note)
                             .font(.system(size: 14))
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                             .lineSpacing(4)
                     }
 
@@ -1938,7 +1938,7 @@ private struct EditorialRailEntry: View {
                             ForEach(log.tags, id: \.self) { tag in
                                 Text(tag)
                                     .font(.system(size: 11))
-                                    .foregroundColor(SonderColors.terracotta)
+                                    .foregroundStyle(SonderColors.terracotta)
                                     .padding(.horizontal, SonderSpacing.xs)
                                     .padding(.vertical, 3)
                                     .background(SonderColors.terracotta.opacity(0.1))
@@ -1960,7 +1960,7 @@ private struct EditorialRailEntry: View {
     @ViewBuilder
     private var photoView: some View {
         if let urlString = log.photoURL, let url = URL(string: urlString) {
-            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 300), contentMode: .fit) {
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 300, height: 200), contentMode: .fit) {
                 placePhotoView
             }
         } else {
@@ -1972,7 +1972,7 @@ private struct EditorialRailEntry: View {
     private var placePhotoView: some View {
         if let photoRef = place.photoReference,
            let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 600) {
-            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 300), contentMode: .fit) {
+            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 300, height: 200), contentMode: .fit) {
                 photoPlaceholder
             }
         } else {
@@ -1992,7 +1992,7 @@ private struct EditorialRailEntry: View {
                         .font(.system(size: 10, weight: .medium))
                         .lineLimit(1)
                 }
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
             }
     }
 }
@@ -2036,7 +2036,7 @@ private struct ReorderTripLogsSheet: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(placesByID[log.placeID]?.name ?? "Unknown Place")
                                 .font(SonderTypography.headline)
-                                .foregroundColor(SonderColors.inkDark)
+                                .foregroundStyle(SonderColors.inkDark)
                                 .lineLimit(1)
 
                             HStack(spacing: SonderSpacing.xs) {
@@ -2044,7 +2044,7 @@ private struct ReorderTripLogsSheet: View {
                                     .font(.system(size: 12))
                                 Text(log.visitedAt.formatted(date: .abbreviated, time: .shortened))
                                     .font(SonderTypography.caption)
-                                    .foregroundColor(SonderColors.inkMuted)
+                                    .foregroundStyle(SonderColors.inkMuted)
                             }
                         }
 
@@ -2114,7 +2114,7 @@ private struct ReorderTripLogsSheet: View {
             .overlay {
                 Image(systemName: "photo")
                     .font(.system(size: 14))
-                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
+                    .foregroundStyle(SonderColors.terracotta.opacity(0.5))
             }
     }
 

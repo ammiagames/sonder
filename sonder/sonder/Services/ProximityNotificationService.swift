@@ -9,11 +9,13 @@ import Foundation
 import CoreLocation
 import UserNotifications
 import SwiftData
+import os
 
 /// Service that monitors user location and sends notifications when near saved "Want to Go" places
 @MainActor
 @Observable
 final class ProximityNotificationService: NSObject {
+    private let logger = Logger(subsystem: "com.sonder.app", category: "ProximityNotificationService")
     private var locationManager: CLLocationManager?
     private var wantToGoService: WantToGoService?
     private var currentUserID: String?
@@ -45,7 +47,7 @@ final class ProximityNotificationService: NSObject {
             let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
             return granted
         } catch {
-            print("Error requesting notification permission: \(error)")
+            logger.error("Error requesting notification permission: \(error.localizedDescription)")
             return false
         }
     }
@@ -60,7 +62,7 @@ final class ProximityNotificationService: NSObject {
         // Request notification permission
         let notificationGranted = await requestNotificationPermission()
         guard notificationGranted else {
-            print("Notification permission not granted")
+            logger.warning("Notification permission not granted")
             return
         }
 
@@ -121,7 +123,7 @@ final class ProximityNotificationService: NSObject {
         do {
             cachedPlaces = try await service.fetchWantToGoWithPlaces(for: userID)
         } catch {
-            print("Error refreshing cached places: \(error)")
+            logger.error("Error refreshing cached places: \(error.localizedDescription)")
         }
     }
 
@@ -180,7 +182,7 @@ final class ProximityNotificationService: NSObject {
 
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
-                print("Error sending notification: \(error)")
+                self.logger.error("Error sending notification: \(error.localizedDescription)")
             } else {
                 // Record notification time
                 Task { @MainActor in
@@ -247,6 +249,8 @@ extension ProximityNotificationService: CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("Location manager error: \(error)")
+        // Logger is Sendable so safe to access from nonisolated context
+        let log = self.logger
+        log.error("Location manager error: \(error.localizedDescription)")
     }
 }

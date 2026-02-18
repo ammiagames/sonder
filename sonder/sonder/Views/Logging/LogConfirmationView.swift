@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "LogConfirmationView")
 
 /// Screen 4: Success confirmation with auto-dismiss
 struct LogConfirmationView: View {
@@ -63,7 +66,7 @@ struct LogConfirmationView: View {
 
                     Image(systemName: "mappin.circle.fill")
                         .font(.system(size: 48))
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                 }
                 .scaleEffect(contentScale)
                 .opacity(showContent ? 1 : 0)
@@ -71,11 +74,11 @@ struct LogConfirmationView: View {
                 VStack(spacing: SonderSpacing.xs) {
                     Text("Logged!")
                         .font(SonderTypography.largeTitle)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
 
                     Text(randomMessage)
                         .font(SonderTypography.subheadline)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
                 .opacity(showContent ? 1 : 0)
                 .offset(y: showContent ? 0 : 12)
@@ -88,16 +91,16 @@ struct LogConfirmationView: View {
                         HStack(spacing: SonderSpacing.sm) {
                             Image(systemName: "camera.fill")
                                 .font(.system(size: 16))
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Add a cover photo")
                                     .font(SonderTypography.caption)
                                     .fontWeight(.semibold)
-                                    .foregroundColor(SonderColors.inkDark)
+                                    .foregroundStyle(SonderColors.inkDark)
                                 Text("for \"\(name)\"")
                                     .font(SonderTypography.caption)
-                                    .foregroundColor(SonderColors.inkMuted)
+                                    .foregroundStyle(SonderColors.inkMuted)
                                     .lineLimit(1)
                             }
 
@@ -105,7 +108,7 @@ struct LogConfirmationView: View {
 
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(SonderColors.inkLight)
+                                .foregroundStyle(SonderColors.inkLight)
                         }
                         .padding(SonderSpacing.sm)
                         .background(SonderColors.warmGray.opacity(0.8))
@@ -192,14 +195,14 @@ struct LogConfirmationView: View {
 
 #Preview("Basic") {
     LogConfirmationView {
-        print("Dismissed")
+        logger.debug("Dismissed")
     }
 }
 
 #Preview("With Nudge") {
     LogConfirmationView(
-        onDismiss: { print("Dismissed") },
+        onDismiss: { logger.debug("Dismissed") },
         tripName: "Tokyo 2026",
-        onAddCover: { print("Add cover tapped") }
+        onAddCover: { logger.debug("Add cover tapped") }
     )
 }

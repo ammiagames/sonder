@@ -8,6 +8,9 @@
 import SwiftUI
 import SwiftData
 import CoreLocation
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "MainTabView")
 
 struct MainTabView: View {
     var initialTab: Int = 0
@@ -31,24 +34,28 @@ struct MainTabView: View {
         ZStack {
             if loadedTabs.contains(0) {
                 FeedView(popToRoot: feedPopTrigger)
+                    .environment(\.isTabVisible, selectedTab == 0)
                     .opacity(selectedTab == 0 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 0)
             }
 
             if loadedTabs.contains(1) {
                 ExploreMapView(focusMyPlaces: $exploreFocusMyPlaces, hasSelection: $exploreHasSelection, pendingPinDrop: $pendingPinDrop)
+                    .environment(\.isTabVisible, selectedTab == 1)
                     .opacity(selectedTab == 1 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 1)
             }
 
             if loadedTabs.contains(2) {
                 JournalContainerView(popToRoot: journalPopTrigger)
+                    .environment(\.isTabVisible, selectedTab == 2)
                     .opacity(selectedTab == 2 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 2)
             }
 
             if loadedTabs.contains(3) {
                 ProfileView(selectedTab: $selectedTab, exploreFocusMyPlaces: $exploreFocusMyPlaces, popToRoot: profilePopTrigger)
+                    .environment(\.isTabVisible, selectedTab == 3)
                     .opacity(selectedTab == 3 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 3)
             }
@@ -182,7 +189,7 @@ struct SonderTabBar: View {
                     .fontWeight(isSelected ? .semibold : .regular)
             }
             .frame(maxWidth: .infinity)
-            .foregroundColor(isSelected ? SonderColors.terracotta : SonderColors.inkLight)
+            .foregroundStyle(isSelected ? SonderColors.terracotta : SonderColors.inkLight)
         }
         .buttonStyle(.plain)
     }
@@ -209,13 +216,13 @@ struct SonderTabBar: View {
 
                     Image(systemName: "plus")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                 }
 
                 Text("Log")
                     .font(.system(size: 10, design: .rounded))
                     .fontWeight(.medium)
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
             .frame(maxWidth: .infinity)
             .offset(y: -16)
@@ -300,7 +307,7 @@ struct PhotoUploadBanner: View {
                     .rotationEffect(.degrees(-90))
                 Image(systemName: "photo")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
             .frame(width: 28, height: 28)
 
@@ -308,10 +315,10 @@ struct PhotoUploadBanner: View {
                 Text("Uploading photos...")
                     .font(SonderTypography.subheadline)
                     .fontWeight(.medium)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                 Text("\(completed) of \(total)")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
 
             Spacer()
@@ -339,6 +346,7 @@ struct SettingsView: View {
     @State private var showEditEmailAlert = false
     @State private var editedEmail = ""
     @State private var proximityAlertsEnabled = false
+    @State private var signOutError: String?
 
     var body: some View {
         NavigationStack {
@@ -366,10 +374,10 @@ struct SettingsView: View {
                         Label {
                             Text("Nearby Place Alerts")
                                 .font(SonderTypography.body)
-                                .foregroundColor(SonderColors.inkDark)
+                                .foregroundStyle(SonderColors.inkDark)
                         } icon: {
                             Image(systemName: "location.fill")
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
                         }
                     }
                     .onChange(of: proximityAlertsEnabled) { _, newValue in
@@ -386,7 +394,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("Get notified when you're near a place on your Want to Go list")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
                 .listRowBackground(SonderColors.warmGray)
 
@@ -399,10 +407,10 @@ struct SettingsView: View {
                         Label {
                             Text("Privacy Policy")
                                 .font(SonderTypography.body)
-                                .foregroundColor(SonderColors.inkDark)
+                                .foregroundStyle(SonderColors.inkDark)
                         } icon: {
                             Image(systemName: "hand.raised")
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
                         }
                     }
 
@@ -413,10 +421,10 @@ struct SettingsView: View {
                         Label {
                             Text("Terms of Service")
                                 .font(SonderTypography.body)
-                                .foregroundColor(SonderColors.inkDark)
+                                .foregroundStyle(SonderColors.inkDark)
                         } icon: {
                             Image(systemName: "doc.text")
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
                         }
                     }
                 } header: {
@@ -432,10 +440,10 @@ struct SettingsView: View {
                         Label {
                             Text("Clear Cache")
                                 .font(SonderTypography.body)
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
                         } icon: {
                             Image(systemName: "trash")
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
                         }
                     }
                 } header: {
@@ -461,7 +469,7 @@ struct SettingsView: View {
                             Spacer()
                             Text("Sign Out")
                                 .font(SonderTypography.headline)
-                                .foregroundColor(SonderColors.dustyRose)
+                                .foregroundStyle(SonderColors.dustyRose)
                             Spacer()
                         }
                     }
@@ -485,12 +493,24 @@ struct SettingsView: View {
                 Button("Cancel", role: .cancel) { }
                 Button("Sign Out", role: .destructive) {
                     Task {
-                        try? await authService.signOut()
-                        dismiss()
+                        do {
+                            try await authService.signOut()
+                            dismiss()
+                        } catch {
+                            signOutError = error.localizedDescription
+                        }
                     }
                 }
             } message: {
                 Text("Are you sure you want to sign out?")
+            }
+            .alert("Sign Out Failed", isPresented: Binding(
+                get: { signOutError != nil },
+                set: { if !$0 { signOutError = nil } }
+            )) {
+                Button("OK", role: .cancel) { signOutError = nil }
+            } message: {
+                Text(signOutError ?? "An unknown error occurred.")
             }
             .alert("Clear Cache", isPresented: $showClearCacheAlert) {
                 Button("Cancel", role: .cancel) { }
@@ -523,7 +543,7 @@ struct SettingsView: View {
     private func settingsSectionHeader(_ title: String) -> some View {
         Text(title)
             .font(SonderTypography.caption)
-            .foregroundColor(SonderColors.terracotta)
+            .foregroundStyle(SonderColors.terracotta)
             .textCase(.uppercase)
             .tracking(0.5)
     }
@@ -532,11 +552,11 @@ struct SettingsView: View {
         HStack {
             Text(label)
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
             Spacer()
             Text(value)
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
         }
     }
 
@@ -568,7 +588,7 @@ struct SettingsView: View {
             }
             try modelContext.save()
         } catch {
-            print("Failed to clear cache: \(error)")
+            logger.error("Failed to clear cache: \(error.localizedDescription)")
         }
     }
 }

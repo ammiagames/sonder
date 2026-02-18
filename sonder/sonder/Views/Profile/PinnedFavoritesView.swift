@@ -25,7 +25,7 @@ struct PinnedFavoritesView: View {
             HStack {
                 Text("Favorites")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .textCase(.uppercase)
                     .tracking(0.5)
 
@@ -36,7 +36,7 @@ struct PinnedFavoritesView: View {
                 } label: {
                     Image(systemName: "pencil")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                 }
             }
 
@@ -97,7 +97,7 @@ struct PinnedFavoritesView: View {
 
             Text(place.name)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .frame(height: 26)
@@ -112,7 +112,7 @@ struct PinnedFavoritesView: View {
         )
         .overlay {
             Image(systemName: "mappin.circle.fill")
-                .foregroundColor(SonderColors.terracotta.opacity(0.4))
+                .foregroundStyle(SonderColors.terracotta.opacity(0.4))
         }
     }
 
@@ -125,7 +125,7 @@ struct PinnedFavoritesView: View {
                 .overlay {
                     Image(systemName: "plus")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(SonderColors.inkLight.opacity(0.5))
+                        .foregroundStyle(SonderColors.inkLight.opacity(0.5))
                 }
 
             Text(" ")
@@ -185,11 +185,11 @@ struct PinnedFavoritesEditorSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(place.name)
                                     .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(SonderColors.inkDark)
+                                    .foregroundStyle(SonderColors.inkDark)
                                     .lineLimit(1)
                                 Text(place.address)
                                     .font(SonderTypography.caption)
-                                    .foregroundColor(SonderColors.inkMuted)
+                                    .foregroundStyle(SonderColors.inkMuted)
                                     .lineLimit(1)
                             }
 
@@ -199,7 +199,7 @@ struct PinnedFavoritesEditorSheet: View {
                                 if let idx = selectedIDs.firstIndex(of: place.id) {
                                     Text("\(idx + 1)")
                                         .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(.white)
                                         .frame(width: 24, height: 24)
                                         .background(SonderColors.terracotta)
                                         .clipShape(Circle())

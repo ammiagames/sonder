@@ -62,7 +62,7 @@ struct TripStoryPageView: View {
                 Text(tripName)
                     .font(SonderTypography.caption)
                     .fontWeight(.medium)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(1)
 
                 Spacer()
@@ -70,7 +70,7 @@ struct TripStoryPageView: View {
                 // Page counter
                 Text("\(currentIndex + 1) / \(logs.count)")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
 
                 // Close button
                 Button {
@@ -78,7 +78,7 @@ struct TripStoryPageView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .frame(width: 32, height: 32)
                         .background(SonderColors.warmGray)
                         .clipShape(Circle())
@@ -128,7 +128,7 @@ private struct StoryPage: View {
                     // Place name
                     Text(place?.name ?? "Unknown Place")
                         .font(SonderTypography.largeTitle)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
 
                     // Address
                     if let address = place?.address {
@@ -138,7 +138,7 @@ private struct StoryPage: View {
                             Text(address)
                         }
                         .font(SonderTypography.subheadline)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                     }
 
                     // Rating pill
@@ -147,13 +147,13 @@ private struct StoryPage: View {
                     // Date
                     Text(log.createdAt.formatted(date: .long, time: .shortened))
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
 
                     // Note
                     if let note = log.note, !note.isEmpty {
                         Text(note)
                             .font(SonderTypography.body)
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -164,7 +164,7 @@ private struct StoryPage: View {
                                 ForEach(log.tags, id: \.self) { tag in
                                     Text(tag)
                                         .font(SonderTypography.caption)
-                                        .foregroundColor(SonderColors.terracotta)
+                                        .foregroundStyle(SonderColors.terracotta)
                                         .padding(.horizontal, SonderSpacing.xs)
                                         .padding(.vertical, 4)
                                         .background(SonderColors.terracotta.opacity(0.1))
@@ -192,7 +192,7 @@ private struct StoryPage: View {
         .padding(.horizontal, SonderSpacing.sm)
         .padding(.vertical, SonderSpacing.xs)
         .background(SonderColors.pinColor(for: log.rating).opacity(0.15))
-        .foregroundColor(SonderColors.pinColor(for: log.rating))
+        .foregroundStyle(SonderColors.pinColor(for: log.rating))
         .clipShape(Capsule())
     }
 
@@ -233,7 +233,7 @@ private struct StoryPage: View {
             .overlay {
                 Image(systemName: "photo")
                     .font(.system(size: 40))
-                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
+                    .foregroundStyle(SonderColors.terracotta.opacity(0.5))
             }
     }
 }

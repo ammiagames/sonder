@@ -20,7 +20,7 @@ struct PendingSyncBadge: View {
                 Text("\(count) pending")
                     .font(.caption)
             }
-            .foregroundColor(SonderColors.ochre)
+            .foregroundStyle(SonderColors.ochre)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(SonderColors.ochre.opacity(0.15))

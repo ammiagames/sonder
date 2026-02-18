@@ -50,10 +50,10 @@ struct TripFeedCard: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(tripItem.user.username)
                         .font(SonderTypography.headline)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                     Text(tripItem.activitySubtitle)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .lineLimit(1)
                 }
 
@@ -78,7 +78,7 @@ struct TripFeedCard: View {
             .overlay {
                 Text(tripItem.user.username.prefix(1).uppercased())
                     .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
     }
 
@@ -174,7 +174,7 @@ struct TripFeedCard: View {
             .overlay {
                 Image(systemName: "mappin")
                     .font(.caption)
-                    .foregroundColor(SonderColors.terracotta.opacity(0.4))
+                    .foregroundStyle(SonderColors.terracotta.opacity(0.4))
             }
     }
 
@@ -184,19 +184,19 @@ struct TripFeedCard: View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text(tripItem.name)
                 .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
                 .lineLimit(2)
 
             HStack(spacing: SonderSpacing.sm) {
                 if let dateRange = tripItem.dateRangeDisplay {
                     Label(dateRange, systemImage: "calendar")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 Label("\(tripItem.logs.count) \(tripItem.logs.count == 1 ? "log" : "logs")", systemImage: "list.bullet")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
         }
         .padding(.horizontal, SonderSpacing.md)
@@ -209,7 +209,7 @@ struct TripFeedCard: View {
         HStack {
             Text(tripItem.latestActivityAt.relativeDisplay)
                 .font(SonderTypography.caption)
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
             Spacer()
         }
         .padding(.horizontal, SonderSpacing.md)

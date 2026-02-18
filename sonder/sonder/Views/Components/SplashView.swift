@@ -23,7 +23,7 @@ struct SplashView: View {
                     ForEach(0..<letters.count, id: \.self) { i in
                         Text(String(letters[i]))
                             .font(.system(size: 52, weight: .bold, design: .serif))
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                             .opacity(i < visibleCount ? 1 : 0)
                             .offset(y: i < visibleCount ? 0 : -8)
                     }
@@ -39,12 +39,12 @@ struct SplashView: View {
                 Text("/\u{02C8}s\u{0252}n.d\u{0259}r/")
                     .font(.system(size: 15, design: .serif))
                     .italic()
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .opacity(showSubtitle ? 1 : 0)
 
                 Text("the realization that each passerby\nhas a life as vivid as your own")
                     .font(.system(size: 13, design: .serif))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
                     .multilineTextAlignment(.center)
                     .opacity(showSubtitle ? 1 : 0)
                     .offset(y: showSubtitle ? 0 : 8)

@@ -73,7 +73,7 @@ struct OtherUserMapView: View {
                         Text(item.place.name)
                             .font(SonderTypography.headline)
                             .lineLimit(1)
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
 
                         Spacer()
 
@@ -82,19 +82,19 @@ struct OtherUserMapView: View {
 
                     Text(item.place.address)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .lineLimit(1)
 
                     if let note = item.log.note, !note.isEmpty {
                         Text(note)
                             .font(SonderTypography.caption)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .lineLimit(1)
                     }
                 }
 
                 Image(systemName: "chevron.right")
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
             .padding(SonderSpacing.md)
             .background(SonderColors.cream.opacity(0.95))
@@ -117,7 +117,7 @@ struct OtherUserMapView: View {
             .frame(width: 60, height: 60)
             .overlay {
                 Image(systemName: "photo")
-                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
+                    .foregroundStyle(SonderColors.terracotta.opacity(0.5))
             }
     }
 

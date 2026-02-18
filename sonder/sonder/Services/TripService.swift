@@ -8,10 +8,12 @@
 import Foundation
 import SwiftData
 import Supabase
+import os
 
 @MainActor
 @Observable
 final class TripService {
+    private let logger = Logger(subsystem: "com.sonder.app", category: "TripService")
     private let modelContext: ModelContext
     private let supabase = SupabaseConfig.client
 
@@ -54,7 +56,7 @@ final class TripService {
             trip.syncStatus = .synced
             try? modelContext.save()
         } catch {
-            print("Trip created locally, Supabase sync will retry: \(error)")
+            logger.warning("Trip created locally, Supabase sync will retry: \(error.localizedDescription)")
         }
 
         return trip
@@ -77,7 +79,7 @@ final class TripService {
             trip.syncStatus = .synced
             try? modelContext.save()
         } catch {
-            print("Trip updated locally, Supabase sync will retry: \(error)")
+            logger.warning("Trip updated locally, Supabase sync will retry: \(error.localizedDescription)")
         }
     }
 
@@ -450,7 +452,7 @@ final class TripService {
                     .execute()
             } catch {
                 log.syncStatus = .pending
-                print("Log \(log.id) trip association will retry: \(error)")
+                logger.warning("Log \(log.id) trip association will retry: \(error.localizedDescription)")
             }
         }
 

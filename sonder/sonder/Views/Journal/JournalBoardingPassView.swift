@@ -194,7 +194,7 @@ struct JournalBoardingPassView: View {
     private func coverPhotoStrip(trip: Trip) -> some View {
         ZStack(alignment: .bottomLeading) {
             if let urlString = trip.coverPhotoURL, let url = URL(string: urlString) {
-                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 600, height: 300)) {
+                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 150)) {
                     coverPlaceholder(trip: trip)
                 }
                 .aspectRatio(contentMode: .fill)
@@ -229,7 +229,7 @@ struct JournalBoardingPassView: View {
         .overlay {
             Image(systemName: "airplane.departure")
                 .font(.system(size: 28))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundStyle(.white.opacity(0.4))
         }
     }
 
@@ -241,7 +241,7 @@ struct JournalBoardingPassView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(trip.name)
                     .font(.system(size: 20, weight: .bold, design: .serif))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(1)
             }
 
@@ -260,12 +260,12 @@ struct JournalBoardingPassView: View {
                     .overlay(
                         Rectangle()
                             .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                            .foregroundColor(SonderColors.inkLight.opacity(0.4))
+                            .foregroundStyle(SonderColors.inkLight.opacity(0.4))
                     )
 
                 Image(systemName: "airplane")
                     .font(.system(size: 14))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
 
                 Rectangle()
                     .fill(.clear)
@@ -273,7 +273,7 @@ struct JournalBoardingPassView: View {
                     .overlay(
                         Rectangle()
                             .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                            .foregroundColor(SonderColors.inkLight.opacity(0.4))
+                            .foregroundStyle(SonderColors.inkLight.opacity(0.4))
                     )
 
                 Circle()
@@ -287,7 +287,7 @@ struct JournalBoardingPassView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(destinationCity(for: trip))
                     .font(.system(size: 15, weight: .bold, design: .monospaced))
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
             }
@@ -314,7 +314,7 @@ struct JournalBoardingPassView: View {
                 .overlay(
                     Rectangle()
                         .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                        .foregroundColor(SonderColors.inkLight.opacity(0.25))
+                        .foregroundStyle(SonderColors.inkLight.opacity(0.25))
                 )
                 .padding(.horizontal, 4)
 
@@ -352,7 +352,7 @@ struct JournalBoardingPassView: View {
             // Right side: trip number in a rounded badge
             Text("\(String(format: "%03d", trips.count - index))")
                 .font(.system(size: 24, weight: .bold, design: .monospaced))
-                .foregroundColor(SonderColors.terracotta.opacity(0.2))
+                .foregroundStyle(SonderColors.terracotta.opacity(0.2))
                 .padding(.top, 4)
         }
         .padding(.horizontal, 20)
@@ -371,7 +371,7 @@ struct JournalBoardingPassView: View {
                 .font(.system(size: 13))
                 .opacity(0.5)
         }
-        .foregroundColor(Color(red: 0.45, green: 0.50, blue: 0.58))
+        .foregroundStyle(Color(red: 0.45, green: 0.50, blue: 0.58))
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 12)
     }
@@ -389,10 +389,10 @@ struct JournalBoardingPassView: View {
                         Text("DESTINATION")
                             .font(.system(size: 9, weight: .medium))
                             .tracking(1.2)
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
                         Text((place?.name ?? "Unknown Place").uppercased())
                             .font(.system(size: 14, weight: .bold, design: .monospaced))
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
@@ -410,11 +410,11 @@ struct JournalBoardingPassView: View {
                             .overlay(
                                 Rectangle()
                                     .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                                    .foregroundColor(SonderColors.inkLight.opacity(0.3))
+                                    .foregroundStyle(SonderColors.inkLight.opacity(0.3))
                             )
                         Image(systemName: "mappin")
                             .font(.system(size: 10))
-                            .foregroundColor(SonderColors.terracotta)
+                            .foregroundStyle(SonderColors.terracotta)
                     }
 
                     Spacer()
@@ -425,7 +425,7 @@ struct JournalBoardingPassView: View {
                             .font(.system(size: 16))
                         Text(log.visitedAt.formatted(.dateTime.month(.abbreviated).day()))
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundColor(SonderColors.inkLight)
+                            .foregroundStyle(SonderColors.inkLight)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -447,10 +447,10 @@ struct JournalBoardingPassView: View {
             Text(label)
                 .font(.system(size: 9, weight: .medium))
                 .tracking(1.2)
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
             Text(value)
                 .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundColor(accent ? SonderColors.terracotta : SonderColors.inkDark)
+                .foregroundStyle(accent ? SonderColors.terracotta : SonderColors.inkDark)
         }
     }
 }

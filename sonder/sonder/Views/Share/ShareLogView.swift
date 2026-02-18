@@ -64,7 +64,7 @@ struct ShareLogView: View {
                             .tint(SonderColors.terracotta)
                         Text("Preparing card...")
                             .font(SonderTypography.caption)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                     }
                     .frame(maxWidth: .infinity)
                     Spacer()
@@ -87,7 +87,7 @@ struct ShareLogView: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                 }
             }
             .sheet(isPresented: $showShareSheet) {
@@ -143,7 +143,7 @@ struct ShareLogView: View {
             VStack(alignment: .leading, spacing: SonderSpacing.xs) {
                 Text("Choose a style")
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .padding(.horizontal, SonderSpacing.lg)
 
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -165,7 +165,7 @@ struct ShareLogView: View {
                     Text("Share Image")
                 }
                 .font(SonderTypography.headline)
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, SonderSpacing.md)
                 .background(SonderColors.terracotta)
@@ -192,7 +192,7 @@ struct ShareLogView: View {
             .frame(width: 72)
             .padding(.vertical, SonderSpacing.sm)
             .background(selectedStyle == style ? SonderColors.terracotta.opacity(0.12) : SonderColors.warmGray)
-            .foregroundColor(selectedStyle == style ? SonderColors.terracotta : SonderColors.inkMuted)
+            .foregroundStyle(selectedStyle == style ? SonderColors.terracotta : SonderColors.inkMuted)
             .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
             .overlay {
                 if selectedStyle == style {
@@ -262,15 +262,8 @@ struct ShareLogView: View {
         }
     }
 
-    /// Extracts a city name from an address string.
-    /// e.g. "123 Main St, San Francisco, CA 94103" → "San Francisco"
     private func extractCity(from address: String) -> String {
-        let parts = address.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-        if parts.count >= 2 {
-            // Second component is typically the city
-            return parts[1]
-        }
-        return parts.first ?? address
+        ProfileStatsService.extractCity(from: address) ?? address
     }
 
     // MARK: - Preview & Export Image Generation

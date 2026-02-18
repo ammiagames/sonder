@@ -7,6 +7,9 @@
 
 import SwiftUI
 import SwiftData
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "FeedView")
 
 /// Main feed showing trips and standalone logs from followed users
 struct FeedView: View {
@@ -61,7 +64,7 @@ struct FeedView: View {
                         showUserSearch = true
                     } label: {
                         Image(systemName: "magnifyingglass")
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .toolbarIcon()
                     }
                 }
@@ -94,7 +97,7 @@ struct FeedView: View {
     private var greetingHeader: some View {
         Text(greetingText)
             .font(SonderTypography.largeTitle)
-            .foregroundColor(SonderColors.inkDark)
+            .foregroundStyle(SonderColors.inkDark)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.bottom, SonderSpacing.sm)
     }
@@ -145,11 +148,11 @@ struct FeedView: View {
             VStack(spacing: SonderSpacing.xs) {
                 Text("Your feed is waiting")
                     .font(SonderTypography.title)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
 
                 Text("Follow friends to see their discoveries, favorite spots, and travel stories")
                     .font(SonderTypography.body)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, SonderSpacing.xl)
             }
@@ -283,7 +286,7 @@ struct FeedView: View {
         }
         .padding(SonderSpacing.md)
         .background(SonderColors.ochre.opacity(0.15))
-        .foregroundColor(SonderColors.ochre)
+        .foregroundStyle(SonderColors.ochre)
         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
     }
 
@@ -305,7 +308,7 @@ struct FeedView: View {
             .padding(.horizontal, SonderSpacing.md)
             .padding(.vertical, SonderSpacing.sm)
             .background(SonderColors.terracotta)
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .clipShape(Capsule())
             .shadow(color: SonderColors.terracotta.opacity(0.3), radius: 8, y: 4)
         }
@@ -346,7 +349,7 @@ struct FeedView: View {
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
             } catch {
-                print("Error toggling want to go: \(error)")
+                logger.error("Error toggling want to go: \(error.localizedDescription)")
             }
         }
     }

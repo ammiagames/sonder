@@ -262,7 +262,9 @@ enum ProfileStatsService {
         // Check if the current streak is still active (includes today or yesterday)
         let today = calendar.startOfDay(for: Date())
         let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
-        let lastLogDay = sortedDays.last!
+        guard let lastLogDay = sortedDays.last else {
+            return StreakData(currentStreak: 0, longestStreak: 0, longestStreakStartDate: nil)
+        }
 
         let activeCurrentStreak: Int
         if lastLogDay == today || lastLogDay == yesterday {
@@ -359,10 +361,22 @@ enum ProfileStatsService {
     static func extractCity(from address: String) -> String? {
         let components = address.components(separatedBy: ", ")
         guard components.count >= 2 else { return nil }
-        if components.count >= 3 {
-            return components[components.count - 3]
+
+        if components.count == 2 {
+            return components[0].trimmingCharacters(in: .whitespaces)
         }
-        return components[0]
+
+        // City is typically third-from-last: "Street, City, State ZIP, Country"
+        let potentialCity = components[components.count - 3].trimmingCharacters(in: .whitespaces)
+
+        // If it looks like a state abbreviation or contains numbers, try one earlier
+        if potentialCity.count <= 2 || potentialCity.contains(where: { $0.isNumber }) {
+            if components.count >= 4 {
+                return components[components.count - 4].trimmingCharacters(in: .whitespaces)
+            }
+        }
+
+        return potentialCity.isEmpty ? nil : potentialCity
     }
 
     static func extractCountry(from address: String) -> String? {

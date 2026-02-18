@@ -9,6 +9,7 @@ import Foundation
 import UIKit
 import CoreLocation
 import GooglePlacesSwift
+import os
 
 // MARK: - DTO Models
 
@@ -76,6 +77,7 @@ struct NearbyPlace: Identifiable {
 @Observable
 @MainActor
 final class GooglePlacesService {
+    private let logger = Logger(subsystem: "com.sonder.app", category: "GooglePlacesService")
     private let session: URLSession
     private var debounceTask: Task<Void, Never>?
 
@@ -325,7 +327,7 @@ final class GooglePlacesService {
 
         guard case .success(let place) = await PlacesClient.shared.fetchPlace(with: request),
               let photo = place.photos?.first else {
-            print("[Photos] No SDK photos for \(placeId)")
+            logger.debug("[Photos] No SDK photos for \(placeId)")
             return nil
         }
 
@@ -334,7 +336,7 @@ final class GooglePlacesService {
         case .success(let image):
             return image
         case .failure(let error):
-            print("[Photos] SDK fetchPhoto failed for \(placeId): \(error)")
+            logger.error("[Photos] SDK fetchPhoto failed for \(placeId): \(error.localizedDescription)")
             return nil
         }
     }
@@ -350,7 +352,7 @@ final class GooglePlacesService {
             return cached
         }
 
-        let url = URL(string: "\(GooglePlacesConfig.baseURL)/places/\(placeId)")!
+        guard let url = URL(string: "\(GooglePlacesConfig.baseURL)/places/\(placeId)") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue(GooglePlacesConfig.apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
@@ -365,12 +367,12 @@ final class GooglePlacesService {
                   let firstPhoto = photos.first,
                   let photoName = firstPhoto["name"] as? String else {
                 let body = String(data: data.prefix(500), encoding: .utf8) ?? "nil"
-                print("[Photos] No photo reference for \(placeId) (HTTP \(statusCode)): \(body)")
+                logger.debug("[Photos] No photo reference for \(placeId) (HTTP \(statusCode)): \(body)")
                 return nil
             }
             return photoName
         } catch {
-            print("[Photos] fetchPhotoReference failed for \(placeId): \(error)")
+            logger.error("[Photos] fetchPhotoReference failed for \(placeId): \(error.localizedDescription)")
             return nil
         }
     }

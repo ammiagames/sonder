@@ -8,10 +8,12 @@
 import Foundation
 import SwiftData
 import Supabase
+import os
 
 @MainActor
 @Observable
 final class SocialService {
+    private let logger = Logger(subsystem: "com.sonder.app", category: "SocialService")
     private let modelContext: ModelContext
     private let supabase = SupabaseConfig.client
 
@@ -115,7 +117,7 @@ final class SocialService {
                 return true
             }
         } catch {
-            print("Error checking follow status: \(error)")
+            logger.error("Error checking follow status: \(error.localizedDescription)")
         }
 
         return false
@@ -178,7 +180,7 @@ final class SocialService {
 
             return response.count ?? 0
         } catch {
-            print("Error fetching follower count: \(error)")
+            logger.error("Error fetching follower count: \(error.localizedDescription)")
             return 0
         }
     }
@@ -194,7 +196,7 @@ final class SocialService {
 
             return response.count ?? 0
         } catch {
-            print("Error fetching following count: \(error)")
+            logger.error("Error fetching following count: \(error.localizedDescription)")
             return 0
         }
     }
@@ -286,7 +288,7 @@ final class SocialService {
             // Update counts
             await refreshCounts(for: userID)
         } catch {
-            print("Error syncing follows: \(error)")
+            logger.error("Error syncing follows: \(error.localizedDescription)")
         }
     }
 }

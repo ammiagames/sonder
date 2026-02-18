@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "PlaceSearchRow")
 
 /// Row component for displaying a place search result
 struct PlaceSearchRow: View {
@@ -34,13 +37,13 @@ struct PlaceSearchRow: View {
                 Text(name)
                     .font(SonderTypography.body)
                     .fontWeight(.medium)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(1)
 
                 if !address.isEmpty {
                     Text(address)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .lineLimit(1)
                 }
             }
@@ -50,7 +53,7 @@ struct PlaceSearchRow: View {
             if let distanceText {
                 Text(distanceText)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
 
             // Bookmark button (if provided)
@@ -60,7 +63,7 @@ struct PlaceSearchRow: View {
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
         }
         .padding(.vertical, SonderSpacing.xs)
         .padding(.horizontal, SonderSpacing.md)
@@ -102,7 +105,7 @@ struct BookmarkButton: View {
                 } else {
                     Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                         .font(.system(size: 18))
-                        .foregroundColor(isBookmarked ? SonderColors.terracotta : SonderColors.inkLight)
+                        .foregroundStyle(isBookmarked ? SonderColors.terracotta : SonderColors.inkLight)
                 }
             }
         }
@@ -145,7 +148,7 @@ struct BookmarkButton: View {
                     await ensurePlaceCached()
                 }
             } catch {
-                print("Error toggling bookmark: \(error)")
+                logger.error("Error toggling bookmark: \(error.localizedDescription)")
             }
             isLoading = false
         }
@@ -182,20 +185,20 @@ struct RecentSearchRow: View {
             // Clock icon for recent search
             Image(systemName: "clock")
                 .font(.system(size: 16))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
 
             // Place info
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
                     .font(SonderTypography.body)
                     .fontWeight(.medium)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
                     .lineLimit(1)
 
                 if !address.isEmpty {
                     Text(address)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .lineLimit(1)
                 }
             }
@@ -215,7 +218,7 @@ struct RecentSearchRow: View {
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 20))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
             .buttonStyle(ScaleButtonStyle(scale: 0.8))
         }
@@ -246,7 +249,7 @@ struct RecentSearchRow: View {
         name: "Philz Coffee",
         address: "748 Van Ness Ave"
     ) {
-        print("Delete tapped")
+        logger.debug("Delete tapped")
     }
     .background(Color(.systemBackground))
 }

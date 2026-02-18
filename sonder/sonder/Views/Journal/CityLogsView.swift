@@ -86,13 +86,13 @@ struct CityLogsView: View {
     private var statsHeader: some View {
         HStack(spacing: SonderSpacing.xs) {
             Text("\(uniquePlaces.count) places")
-            Text("·").foregroundColor(SonderColors.inkLight)
+            Text("·").foregroundStyle(SonderColors.inkLight)
             Text("\(lovedCount) must-see")
-            Text("·").foregroundColor(SonderColors.inkLight)
+            Text("·").foregroundStyle(SonderColors.inkLight)
             Text(dateRange)
         }
         .font(SonderTypography.caption)
-        .foregroundColor(SonderColors.inkMuted)
+        .foregroundStyle(SonderColors.inkMuted)
         .padding(.horizontal, SonderSpacing.sm)
         .padding(.vertical, SonderSpacing.xs)
         .background(SonderColors.warmGray)
@@ -136,17 +136,17 @@ struct CityLogsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(trip.name)
                             .font(SonderTypography.headline)
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
 
                         HStack(spacing: SonderSpacing.xxs) {
                             if let start = trip.startDate {
                                 Text(tripDateRange(start: start, end: trip.endDate))
                                     .font(SonderTypography.caption)
-                                    .foregroundColor(SonderColors.inkMuted)
+                                    .foregroundStyle(SonderColors.inkMuted)
                             }
                             Text("· \(logCount) log\(logCount == 1 ? "" : "s")")
                                 .font(SonderTypography.caption)
-                                .foregroundColor(SonderColors.inkMuted)
+                                .foregroundStyle(SonderColors.inkMuted)
                         }
                     }
 
@@ -154,7 +154,7 @@ struct CityLogsView: View {
 
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
                 .padding(.bottom, SonderSpacing.xs)
             }
@@ -162,7 +162,7 @@ struct CityLogsView: View {
         } else {
             Text("No Trip")
                 .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
                 .padding(.bottom, SonderSpacing.xs)
         }
     }
@@ -196,13 +196,13 @@ struct CityLogsView: View {
             VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                 Text(placeName)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .lineLimit(1)
 
                     // Rating pill
                     Text(log.rating.emoji + " " + log.rating.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(SonderColors.pinColor(for: log.rating))
+                        .foregroundStyle(SonderColors.pinColor(for: log.rating))
                         .padding(.horizontal, SonderSpacing.xs)
                         .padding(.vertical, 2)
                         .background(SonderColors.pinColor(for: log.rating).opacity(0.15))
@@ -211,13 +211,13 @@ struct CityLogsView: View {
                     if let note = log.note, !note.isEmpty {
                         Text(note)
                             .font(SonderTypography.caption)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .lineLimit(2)
                     }
 
                     Text(log.createdAt.formatted(date: .abbreviated, time: .omitted))
                         .font(.system(size: 12))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
 
                 Spacer()

@@ -8,6 +8,9 @@
 import SwiftUI
 import UIKit
 import CoreLocation
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "PlacePreviewView")
 
 /// Preview screen showing place details before logging
 struct PlacePreviewView: View {
@@ -71,7 +74,7 @@ struct PlacePreviewView: View {
                         ProgressView()
                     } else {
                         Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                            .foregroundColor(isBookmarked ? SonderColors.terracotta : SonderColors.inkDark)
+                            .foregroundStyle(isBookmarked ? SonderColors.terracotta : SonderColors.inkDark)
                     }
                 }
                 .disabled(isTogglingBookmark)
@@ -110,7 +113,7 @@ struct PlacePreviewView: View {
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
             } catch {
-                print("Error toggling bookmark: \(error)")
+                logger.error("Error toggling bookmark: \(error.localizedDescription)")
             }
             isTogglingBookmark = false
         }
@@ -213,11 +216,11 @@ struct PlacePreviewView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(details.name)
                 .font(SonderTypography.title)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             Text(details.formattedAddress)
                 .font(SonderTypography.subheadline)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
         }
     }
 
@@ -229,13 +232,13 @@ struct PlacePreviewView: View {
             if let rating = details.rating {
                 HStack(spacing: 4) {
                     Image(systemName: "star.fill")
-                        .foregroundColor(SonderColors.ochre)
+                        .foregroundStyle(SonderColors.ochre)
                     Text(String(format: "%.1f", rating))
                         .fontWeight(.medium)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                     if let count = details.userRatingCount {
                         Text("(\(count))")
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                     }
                 }
             }
@@ -244,16 +247,16 @@ struct PlacePreviewView: View {
             if let priceLevel = details.priceLevel {
                 Text(priceLevel.displayString)
                     .fontWeight(.medium)
-                    .foregroundColor(SonderColors.sage)
+                    .foregroundStyle(SonderColors.sage)
             }
 
             // Distance
             if let distance = distanceFromUser {
                 HStack(spacing: 4) {
                     Image(systemName: "location.fill")
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                     Text(formatDistance(distance))
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                 }
             }
 
@@ -268,11 +271,11 @@ struct PlacePreviewView: View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("About")
                 .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             Text(summary)
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
         }
     }
 
@@ -282,7 +285,7 @@ struct PlacePreviewView: View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Category")
                 .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             TagFlowLayout(spacing: SonderSpacing.xs) {
                 ForEach(displayTypes, id: \.self) { type in
@@ -291,7 +294,7 @@ struct PlacePreviewView: View {
                         .padding(.horizontal, SonderSpacing.sm)
                         .padding(.vertical, SonderSpacing.xs)
                         .background(SonderColors.warmGray)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .clipShape(Capsule())
                 }
             }
@@ -307,7 +310,7 @@ struct PlacePreviewView: View {
                 .frame(maxWidth: .infinity)
                 .padding(SonderSpacing.md)
                 .background(SonderColors.terracotta)
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         }
     }
@@ -403,7 +406,7 @@ struct TagFlowLayout: Layout {
                 editorialSummary: "Trendy coffee shop known for slow-drip coffee and minimalist aesthetic. Popular spot for remote workers and coffee enthusiasts."
             )
         ) {
-            print("Log tapped")
+            logger.debug("Log tapped")
         }
     }
 }

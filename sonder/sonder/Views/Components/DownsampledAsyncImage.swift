@@ -8,6 +8,23 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Tab Visibility Environment
+
+/// Environment key so parent views (e.g. MainTabView) can signal when a tab
+/// is hidden. DownsampledAsyncImage uses this to nil out decoded bitmaps on
+/// invisible tabs, reclaiming memory while the image stays in NSCache for
+/// instant reload when the tab becomes visible again.
+private struct TabVisibleKey: EnvironmentKey {
+    static let defaultValue: Bool = true
+}
+
+extension EnvironmentValues {
+    var isTabVisible: Bool {
+        get { self[TabVisibleKey.self] }
+        set { self[TabVisibleKey.self] = newValue }
+    }
+}
+
 /// Controls whether an image load should participate in shared caches.
 enum ImageCacheMode {
     /// Read/write shared memory + disk caches.
@@ -28,6 +45,7 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
     let cacheMode: ImageCacheMode
     @ViewBuilder let placeholder: () -> Placeholder
 
+    @Environment(\.isTabVisible) private var isTabVisible
     @State private var image: UIImage?
     @State private var failed = false
     @State private var shimmerPhase: CGFloat = -1
@@ -67,6 +85,16 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
             failed = false
             guard let url else { image = nil; return }
             await loadImage(from: url)
+        }
+        .onChange(of: isTabVisible) { _, visible in
+            if !visible {
+                // Tab hidden — release the decoded bitmap to free memory.
+                // The image stays in NSCache for instant reload.
+                image = nil
+            } else if image == nil, let url {
+                // Tab visible again — reload the image.
+                Task { await loadImage(from: url) }
+            }
         }
     }
 

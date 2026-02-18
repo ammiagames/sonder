@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "FollowListView")
 
 /// View showing followers or following list with tabs
 struct FollowListView: View {
@@ -79,15 +82,15 @@ struct FollowListView: View {
                 VStack(spacing: SonderSpacing.md) {
                     Image(systemName: "person.2")
                         .font(.system(size: 48))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
 
                     Text("No Followers")
                         .font(SonderTypography.title)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
 
                     Text("No one is following \(username) yet")
                         .font(SonderTypography.body)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -120,15 +123,15 @@ struct FollowListView: View {
                 VStack(spacing: SonderSpacing.md) {
                     Image(systemName: "person.2")
                         .font(.system(size: 48))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
 
                     Text("Not Following Anyone")
                         .font(SonderTypography.title)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
 
                     Text("\(username) isn't following anyone yet")
                         .font(SonderTypography.body)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -167,7 +170,7 @@ struct FollowListView: View {
         do {
             followers = try await socialService.getFollowers(for: userID)
         } catch {
-            print("Error loading followers: \(error)")
+            logger.error("Error loading followers: \(error.localizedDescription)")
         }
         isLoadingFollowers = false
     }
@@ -177,7 +180,7 @@ struct FollowListView: View {
         do {
             following = try await socialService.getFollowing(for: userID)
         } catch {
-            print("Error loading following: \(error)")
+            logger.error("Error loading following: \(error.localizedDescription)")
         }
         isLoadingFollowing = false
     }

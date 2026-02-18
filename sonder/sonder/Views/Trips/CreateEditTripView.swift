@@ -7,6 +7,9 @@
 
 import SwiftUI
 import SwiftData
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "CreateEditTripView")
 
 enum TripFormMode {
     case create
@@ -98,13 +101,13 @@ struct CreateEditTripView: View {
                             Button(start.formatted(date: .abbreviated, time: .omitted)) {
                                 showStartDatePicker.toggle()
                             }
-                            .foregroundColor(.accentColor)
+                            .foregroundStyle(Color.accentColor)
 
                             Button {
                                 startDate = nil
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
                         } else {
@@ -112,7 +115,7 @@ struct CreateEditTripView: View {
                                 startDate = Date()
                                 showStartDatePicker = true
                             }
-                            .foregroundColor(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                         }
                     }
 
@@ -136,13 +139,13 @@ struct CreateEditTripView: View {
                             Button(end.formatted(date: .abbreviated, time: .omitted)) {
                                 showEndDatePicker.toggle()
                             }
-                            .foregroundColor(.accentColor)
+                            .foregroundStyle(Color.accentColor)
 
                             Button {
                                 endDate = nil
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
                         } else {
@@ -150,7 +153,7 @@ struct CreateEditTripView: View {
                                 endDate = Date()
                                 showEndDatePicker = true
                             }
-                            .foregroundColor(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                         }
                     }
 
@@ -186,7 +189,7 @@ struct CreateEditTripView: View {
                                 }
                                 .font(SonderTypography.caption)
                                 .fontWeight(.medium)
-                                .foregroundColor(SonderColors.terracotta)
+                                .foregroundStyle(SonderColors.terracotta)
                             }
 
                             ForEach(orphanedLogs, id: \.id) { log in
@@ -200,7 +203,7 @@ struct CreateEditTripView: View {
                                 if !selectedLogIDs.isEmpty {
                                     Text("\(selectedLogIDs.count)")
                                         .font(.system(size: 11, weight: .semibold))
-                                        .foregroundColor(.white)
+                                        .foregroundStyle(.white)
                                         .frame(width: 20, height: 20)
                                         .background(SonderColors.terracotta)
                                         .clipShape(Circle())
@@ -248,10 +251,10 @@ struct CreateEditTripView: View {
                 if showSavedToast {
                     HStack(spacing: SonderSpacing.xs) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(SonderColors.sage)
+                            .foregroundStyle(SonderColors.sage)
                         Text("Saved")
                             .font(SonderTypography.headline)
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                     }
                     .padding(.horizontal, SonderSpacing.md)
                     .padding(.vertical, SonderSpacing.sm)
@@ -433,7 +436,7 @@ struct CreateEditTripView: View {
                     dismiss()
                 }
             } catch {
-                print("Error saving trip: \(error)")
+                logger.error("Error saving trip: \(error.localizedDescription)")
             }
 
             isSaving = false
@@ -458,7 +461,7 @@ struct CreateEditTripView: View {
             HStack(spacing: SonderSpacing.sm) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 20))
-                    .foregroundColor(isSelected ? SonderColors.terracotta : SonderColors.inkLight)
+                    .foregroundStyle(isSelected ? SonderColors.terracotta : SonderColors.inkLight)
 
                 logPickerPhoto(log: log, place: place)
                     .frame(width: 44, height: 44)
@@ -469,7 +472,7 @@ struct CreateEditTripView: View {
                         Text(place.name)
                             .font(SonderTypography.caption)
                             .fontWeight(.medium)
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                             .lineLimit(1)
 
                         Spacer()
@@ -480,7 +483,7 @@ struct CreateEditTripView: View {
 
                     Text(log.visitedAt.formatted(date: .abbreviated, time: .omitted))
                         .font(.system(size: 11))
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
             }
         }
@@ -516,7 +519,7 @@ struct CreateEditTripView: View {
             .overlay {
                 Image(systemName: "photo")
                     .font(.system(size: 12))
-                    .foregroundColor(SonderColors.inkLight)
+                    .foregroundStyle(SonderColors.inkLight)
             }
     }
 
@@ -548,7 +551,7 @@ struct CreateEditTripView: View {
                 dismiss()
                 onDelete?()
             } catch {
-                print("Error deleting trip: \(error)")
+                logger.error("Error deleting trip: \(error.localizedDescription)")
             }
         }
     }

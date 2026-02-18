@@ -7,6 +7,9 @@
 
 import SwiftUI
 import SwiftData
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "LogDetailView")
 
 /// Editable detail view for a single log
 struct LogDetailView: View {
@@ -181,7 +184,7 @@ struct LogDetailView: View {
                     } label: {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .toolbarIcon()
                     }
                 }
@@ -194,10 +197,10 @@ struct LogDetailView: View {
                     // Saved confirmation toast
                     HStack(spacing: SonderSpacing.xs) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(SonderColors.sage)
+                            .foregroundStyle(SonderColors.sage)
                         Text("Saved")
                             .font(SonderTypography.headline)
-                            .foregroundColor(SonderColors.inkDark)
+                            .foregroundStyle(SonderColors.inkDark)
                     }
                     .padding(.horizontal, SonderSpacing.md)
                     .padding(.vertical, SonderSpacing.sm)
@@ -218,7 +221,7 @@ struct LogDetailView: View {
                             .padding(.horizontal, SonderSpacing.lg)
                             .padding(.vertical, SonderSpacing.sm)
                             .background(SonderColors.terracotta)
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                             .clipShape(Capsule())
                             .shadow(color: SonderColors.terracotta.opacity(0.3), radius: 8, y: 4)
                         }
@@ -338,7 +341,7 @@ struct LogDetailView: View {
                                             .tint(SonderColors.terracotta)
                                         Text("Uploading...")
                                             .font(SonderTypography.caption)
-                                            .foregroundColor(SonderColors.inkMuted)
+                                            .foregroundStyle(SonderColors.inkMuted)
                                     }
                                 }
                         } else if let url = URL(string: urlString) {
@@ -376,7 +379,7 @@ struct LogDetailView: View {
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                             .padding(10)
                             .background(Color.black.opacity(0.6))
                             .clipShape(Circle())
@@ -390,7 +393,7 @@ struct LogDetailView: View {
                     } label: {
                         Image(systemName: "camera")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundStyle(.white)
                             .padding(10)
                             .background(Color.black.opacity(0.6))
                             .clipShape(Circle())
@@ -423,7 +426,7 @@ struct LogDetailView: View {
                     Text("Tap camera to add photo")
                         .font(SonderTypography.caption)
                 }
-                .foregroundColor(SonderColors.terracotta.opacity(0.6))
+                .foregroundStyle(SonderColors.terracotta.opacity(0.6))
             }
     }
 
@@ -434,10 +437,10 @@ struct LogDetailView: View {
             HStack(spacing: SonderSpacing.xs) {
                 Image(systemName: "mappin")
                     .font(.system(size: 12))
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                 Text(place.address)
                     .font(SonderTypography.caption)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
         }
     }
@@ -448,7 +451,7 @@ struct LogDetailView: View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Rating")
                 .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             HStack(spacing: SonderSpacing.sm) {
                 ForEach(Rating.allCases, id: \.self) { ratingOption in
@@ -468,7 +471,7 @@ struct LogDetailView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, SonderSpacing.sm)
                         .background(rating == ratingOption ? SonderColors.terracotta.opacity(0.15) : SonderColors.warmGray)
-                        .foregroundColor(rating == ratingOption ? SonderColors.terracotta : SonderColors.inkDark)
+                        .foregroundStyle(rating == ratingOption ? SonderColors.terracotta : SonderColors.inkDark)
                         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                         .overlay(
                             RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
@@ -488,19 +491,19 @@ struct LogDetailView: View {
             HStack {
                 Text("Note")
                     .font(SonderTypography.headline)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
 
                 Spacer()
 
                 Text("\(note.count)/\(maxNoteLength)")
                     .font(SonderTypography.caption)
-                    .foregroundColor(note.count > maxNoteLength ? .red : SonderColors.inkLight)
+                    .foregroundStyle(note.count > maxNoteLength ? .red : SonderColors.inkLight)
                     .opacity(isNoteFocused ? 1 : 0)
             }
 
             TextField("Add a note...", text: $note, axis: .vertical)
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
                 .lineLimit(3...10)
                 .padding(SonderSpacing.sm)
                 .background(SonderColors.warmGray)
@@ -520,7 +523,7 @@ struct LogDetailView: View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             Text("Tags")
                 .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             TagInputView(selectedTags: $tags)
         }
@@ -532,7 +535,7 @@ struct LogDetailView: View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Text("Trip")
                 .font(SonderTypography.headline)
-                .foregroundColor(SonderColors.inkDark)
+                .foregroundStyle(SonderColors.inkDark)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: SonderSpacing.xs) {
@@ -554,7 +557,7 @@ struct LogDetailView: View {
                             .padding(.horizontal, SonderSpacing.sm)
                             .padding(.vertical, SonderSpacing.xs)
                             .background(SonderColors.warmGray)
-                            .foregroundColor(SonderColors.inkMuted)
+                            .foregroundStyle(SonderColors.inkMuted)
                             .clipShape(Capsule())
                             .overlay(
                                 Capsule()
@@ -578,7 +581,7 @@ struct LogDetailView: View {
                         .padding(.horizontal, SonderSpacing.sm)
                         .padding(.vertical, SonderSpacing.xs)
                         .background(SonderColors.warmGray)
-                        .foregroundColor(SonderColors.inkDark)
+                        .foregroundStyle(SonderColors.inkDark)
                         .clipShape(Capsule())
                         .overlay(
                             Capsule()
@@ -594,10 +597,10 @@ struct LogDetailView: View {
                 HStack(spacing: SonderSpacing.xxs) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12))
-                        .foregroundColor(SonderColors.terracotta)
+                        .foregroundStyle(SonderColors.terracotta)
                     Text("Saving to \(trip.name)")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -625,7 +628,7 @@ struct LogDetailView: View {
             .padding(.horizontal, SonderSpacing.sm)
             .padding(.vertical, SonderSpacing.xs)
             .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
-            .foregroundColor(isSelected ? .white : SonderColors.inkDark)
+            .foregroundStyle(isSelected ? .white : SonderColors.inkDark)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -637,7 +640,7 @@ struct LogDetailView: View {
         HStack {
             Image(systemName: "clock")
                 .font(.system(size: 14))
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
 
             DatePicker("", selection: $visitedAt)
                 .datePickerStyle(.compact)
@@ -660,7 +663,7 @@ struct LogDetailView: View {
             }
             .padding(SonderSpacing.md)
             .background(Color.red.opacity(0.1))
-            .foregroundColor(.red)
+            .foregroundStyle(.red)
             .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         }
         .padding(.top, SonderSpacing.lg)
@@ -757,7 +760,7 @@ struct LogDetailView: View {
                 Task { await syncEngine.syncNow() }
             }
         } catch {
-            print("Failed to save log: \(error)")
+            logger.error("Failed to save log: \(error.localizedDescription)")
         }
     }
 
@@ -796,7 +799,7 @@ struct FlowLayoutTags: View {
                     .padding(.horizontal, SonderSpacing.sm)
                     .padding(.vertical, SonderSpacing.xxs)
                     .background(SonderColors.terracotta.opacity(0.1))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
                     .clipShape(Capsule())
             }
         }

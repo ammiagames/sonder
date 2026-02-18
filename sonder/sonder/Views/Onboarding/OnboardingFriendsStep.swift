@@ -4,6 +4,9 @@
 //
 
 import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.sonder.app", category: "OnboardingFriendsStep")
 
 /// Step 4: Find and follow friends (skippable)
 struct OnboardingFriendsStep: View {
@@ -23,11 +26,11 @@ struct OnboardingFriendsStep: View {
             VStack(spacing: SonderSpacing.xs) {
                 Text("Travel is better together")
                     .font(SonderTypography.title)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
 
                 Text("See where your friends go and share your discoveries")
                     .font(SonderTypography.body)
-                    .foregroundColor(SonderColors.inkMuted)
+                    .foregroundStyle(SonderColors.inkMuted)
                     .multilineTextAlignment(.center)
             }
             .padding(.top, SonderSpacing.lg)
@@ -56,7 +59,7 @@ struct OnboardingFriendsStep: View {
                 if followedCount > 0 {
                     Text("Following \(followedCount) \(followedCount == 1 ? "person" : "people")")
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.sage)
+                        .foregroundStyle(SonderColors.sage)
                 }
 
                 Button("Start Exploring", action: onComplete)
@@ -65,7 +68,7 @@ struct OnboardingFriendsStep: View {
                 Button(action: onComplete) {
                     Text("Skip")
                         .font(SonderTypography.subheadline)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
                 .buttonStyle(.plain)
             }
@@ -80,7 +83,7 @@ struct OnboardingFriendsStep: View {
     private var searchBar: some View {
         HStack {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
 
             TextField("Search by username", text: $searchText)
                 .font(SonderTypography.body)
@@ -95,7 +98,7 @@ struct OnboardingFriendsStep: View {
                     searchResults = []
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(SonderColors.inkLight)
+                        .foregroundStyle(SonderColors.inkLight)
                 }
             }
         }
@@ -118,11 +121,11 @@ struct OnboardingFriendsStep: View {
         VStack(spacing: SonderSpacing.md) {
             Image(systemName: "person.2")
                 .font(.system(size: 40))
-                .foregroundColor(SonderColors.inkLight)
+                .foregroundStyle(SonderColors.inkLight)
 
             Text("Search for friends by username")
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -131,7 +134,7 @@ struct OnboardingFriendsStep: View {
         VStack(spacing: SonderSpacing.md) {
             Text("No users found matching \"\(searchText)\"")
                 .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
+                .foregroundStyle(SonderColors.inkMuted)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -209,12 +212,12 @@ private struct OnboardingUserRow: View {
             VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                 Text(user.username)
                     .font(SonderTypography.headline)
-                    .foregroundColor(SonderColors.inkDark)
+                    .foregroundStyle(SonderColors.inkDark)
 
                 if let bio = user.bio, !bio.isEmpty {
                     Text(bio)
                         .font(SonderTypography.caption)
-                        .foregroundColor(SonderColors.inkMuted)
+                        .foregroundStyle(SonderColors.inkMuted)
                         .lineLimit(1)
                 }
             }
@@ -233,7 +236,7 @@ private struct OnboardingUserRow: View {
                             Text("Following")
                                 .font(SonderTypography.caption)
                                 .fontWeight(.medium)
-                                .foregroundColor(SonderColors.inkMuted)
+                                .foregroundStyle(SonderColors.inkMuted)
                                 .padding(.horizontal, SonderSpacing.sm)
                                 .padding(.vertical, SonderSpacing.xxs)
                                 .background(SonderColors.warmGray)
@@ -242,7 +245,7 @@ private struct OnboardingUserRow: View {
                             Text("Follow")
                                 .font(SonderTypography.caption)
                                 .fontWeight(.medium)
-                                .foregroundColor(.white)
+                                .foregroundStyle(.white)
                                 .padding(.horizontal, SonderSpacing.sm)
                                 .padding(.vertical, SonderSpacing.xxs)
                                 .background(SonderColors.terracotta)
@@ -273,7 +276,7 @@ private struct OnboardingUserRow: View {
             .overlay {
                 Text(user.username.prefix(1).uppercased())
                     .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundColor(SonderColors.terracotta)
+                    .foregroundStyle(SonderColors.terracotta)
             }
     }
 
@@ -294,7 +297,7 @@ private struct OnboardingUserRow: View {
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
             } catch {
-                print("Follow error: \(error)")
+                logger.error("Follow error: \(error.localizedDescription)")
             }
             isLoading = false
         }

@@ -81,7 +81,7 @@ struct TripExportJourney: View {
 
                                 Text("+\(data.stops.count - maxStops) more stops")
                                     .font(.system(size: 24 * s))
-                                    .foregroundColor(theme.textTertiary)
+                                    .foregroundStyle(theme.textTertiary)
                             }
                         }
                     }
@@ -106,12 +106,12 @@ struct TripExportJourney: View {
         VStack(alignment: .leading, spacing: 10 * s) {
             Text("sonder")
                 .font(.system(size: 28 * s, weight: .semibold, design: .rounded))
-                .foregroundColor(theme.accent)
+                .foregroundStyle(theme.accent)
                 .tracking(2)
 
             Text(data.tripName)
                 .font(.system(size: 56 * s, weight: .bold, design: .serif))
-                .foregroundColor(theme.textPrimary)
+                .foregroundStyle(theme.textPrimary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.5)
 
@@ -125,7 +125,7 @@ struct TripExportJourney: View {
                 }
             }
             .font(.system(size: 26 * s))
-            .foregroundColor(theme.textSecondary)
+            .foregroundStyle(theme.textSecondary)
         }
     }
 
@@ -164,7 +164,7 @@ struct TripExportJourney: View {
                             Text(stop.rating.emoji)
                                 .font(.system(size: 20 * s))
                         }
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 12 * s)
                         .padding(.vertical, 6 * s)
                         .background(.black.opacity(0.5))
@@ -176,7 +176,7 @@ struct TripExportJourney: View {
                     HStack(spacing: 6 * s) {
                         Text(stop.placeName)
                             .font(.system(size: 24 * s, weight: .semibold))
-                            .foregroundColor(theme.textPrimary)
+                            .foregroundStyle(theme.textPrimary)
                             .lineLimit(1)
                         Text(stop.rating.emoji)
                             .font(.system(size: 22 * s))
@@ -192,7 +192,7 @@ struct TripExportJourney: View {
                     Text("\u{201C}\(note)\u{201D}")
                         .font(.system(size: 20 * s, design: .serif))
                         .italic()
-                        .foregroundColor(theme.textSecondary)
+                        .foregroundStyle(theme.textSecondary)
                         .lineLimit(2)
                         .padding(.top, 6 * s)
                         .padding(.horizontal, 4 * s)
@@ -204,7 +204,7 @@ struct TripExportJourney: View {
                         ForEach(Array(stop.tags.prefix(3)), id: \.self) { tag in
                             Text("#\(tag)")
                                 .font(.system(size: 16 * s, weight: .medium))
-                                .foregroundColor(theme.accent)
+                                .foregroundStyle(theme.accent)
                                 .padding(.horizontal, 8 * s)
                                 .padding(.vertical, 3 * s)
                                 .background(theme.accent.opacity(0.12))
@@ -263,7 +263,7 @@ struct TripExportJourney: View {
                                 .font(.system(size: 20 * s))
                             Text("\(cat.label) \u{00D7} \(cat.count)")
                                 .font(.system(size: 20 * s, weight: .medium))
-                                .foregroundColor(theme.textPrimary)
+                                .foregroundStyle(theme.textPrimary)
                         }
                         .padding(.horizontal, 12 * s)
                         .padding(.vertical, 6 * s)
@@ -286,14 +286,14 @@ struct TripExportJourney: View {
                 }
             }
             .font(.system(size: 30 * s))
-            .foregroundColor(theme.textSecondary.opacity(0.85))
+            .foregroundStyle(theme.textSecondary.opacity(0.85))
 
             // Caption
             if let caption = data.customCaption, !caption.isEmpty {
                 Text(caption)
                     .font(.system(size: 24 * s, design: .serif))
                     .italic()
-                    .foregroundColor(theme.textSecondary)
+                    .foregroundStyle(theme.textSecondary)
                     .lineLimit(2)
             }
 
@@ -302,10 +302,10 @@ struct TripExportJourney: View {
                 Spacer()
                 Text("sonder")
                     .font(.system(size: 22 * s, weight: .semibold, design: .rounded))
-                    .foregroundColor(theme.textTertiary) +
+                    .foregroundStyle(theme.textTertiary) +
                 Text("  \u{00B7}  your travel story")
                     .font(.system(size: 22 * s))
-                    .foregroundColor(theme.textTertiary)
+                    .foregroundStyle(theme.textTertiary)
                 Spacer()
             }
             .padding(.top, 4 * s)
