@@ -54,7 +54,7 @@ final class ExploreMapService {
                 .select(selectQuery)
                 .in("user_id", values: followingIDs)
                 .order("created_at", ascending: false)
-                .limit(500)
+                .limit(300)
                 .execute()
                 .value
 

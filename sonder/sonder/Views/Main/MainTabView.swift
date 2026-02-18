@@ -556,6 +556,9 @@ struct SettingsView: View {
     }
 
     private func clearCache() {
+        // Clear shared image caches (memory + disk URLCache).
+        ImageDownsampler.clearCaches()
+
         // Clear recent searches
         do {
             let descriptor = FetchDescriptor<RecentSearch>()

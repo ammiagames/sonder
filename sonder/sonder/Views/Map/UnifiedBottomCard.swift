@@ -27,8 +27,8 @@ struct UnifiedBottomCard: View {
     /// Show expanded detail content during drag-up (at ~30% progress) — not just after snap.
     private var showExpandedContent: Bool { isExpandedState || dragProgress > 0.3 }
 
-    /// Edge inset: 10pt when compact, 0pt when expanded. Animated via spring on snap — NOT per-frame.
-    /// Per-frame padding changes cause full horizontal layout recalculation (text reflow, etc.) = glitchy.
+    /// Keep width stable while dragging to avoid text reflow jitter.
+    /// Inset changes only when snapped compact/expanded.
     private var edgeInset: CGFloat { isExpandedState ? 0 : 10 }
 
     private var expandedHeight: CGFloat {
@@ -75,31 +75,25 @@ struct UnifiedBottomCard: View {
                 .padding(.top, 6)
                 .padding(.bottom, 2)
 
-            if isExpanded && !isDragging {
-                ScrollView {
-                    cardContent
-                        .padding(.top, SonderSpacing.sm)
-                        .padding(.horizontal, SonderSpacing.md)
-                        .padding(.bottom, SonderSpacing.md)
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .onScrollGeometryChange(for: CGFloat.self) { geo in
-                    geo.contentOffset.y
-                } action: { _, offset in
-                    handleScrollOffset(offset)
-                }
-            } else {
+            ScrollView {
                 cardContent
                     .padding(.top, SonderSpacing.sm)
                     .padding(.horizontal, SonderSpacing.md)
                     .padding(.bottom, SonderSpacing.md)
                     .background {
-                        if compactHeight == 0 {
+                        if !isExpandedState && !isDragging {
                             GeometryReader { geo in
                                 Color.clear.preference(key: CompactHeightKey.self, value: geo.size.height + 17)
                             }
                         }
                     }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollDisabled(!isExpanded || isDragging)
+            .onScrollGeometryChange(for: CGFloat.self) { geo in
+                geo.contentOffset.y
+            } action: { _, offset in
+                handleScrollOffset(offset)
             }
         }
         .frame(maxWidth: .infinity)
@@ -115,9 +109,23 @@ struct UnifiedBottomCard: View {
         .offset(y: dismissOffset)
         .opacity(Double(dismissOffset > 100 ? max(0, 1 - (dismissOffset - 100) / 80) : 1))
         .contentShape(Rectangle())
-        .gesture(cardDragGesture)
+        // Compact: allow drag from anywhere on the card.
+        .overlay {
+            if !isExpandedState {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(cardDragGesture)
+            }
+        }
+        // Expanded: only handle-zone drag should collapse, so scrolling stays smooth.
+        .overlay(alignment: .top) {
+            Color.clear
+                .frame(height: 30)
+                .contentShape(Rectangle())
+                .gesture(cardDragGesture)
+        }
         .onPreferenceChange(CompactHeightKey.self) { value in
-            if value > 0 && compactHeight == 0 {
+            if value > 0 && !isExpandedState && !isDragging {
                 compactHeight = value
             }
         }
@@ -221,7 +229,6 @@ struct UnifiedBottomCard: View {
                     Divider()
 
                     ratingDetailRow(log: log)
-                    placeCategoryPills(types: place.types)
 
                     Text(log.createdAt.formatted(date: .long, time: .omitted))
                         .font(SonderTypography.caption)
@@ -563,27 +570,6 @@ struct UnifiedBottomCard: View {
         .contextMenu {
             Button { onFocusFriend?(item.user.id, item.user.username) } label: {
                 Label("Show only \(item.user.username)", systemImage: "person.crop.circle")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func placeCategoryPills(types: [String]) -> some View {
-        let displayTypes = types
-            .filter { !$0.starts(with: "point_of_interest") && !$0.starts(with: "establishment") }
-            .prefix(5)
-            .map { $0.replacingOccurrences(of: "_", with: " ").capitalized }
-        if !displayTypes.isEmpty {
-            TagFlowLayout(spacing: SonderSpacing.xs) {
-                ForEach(displayTypes, id: \.self) { type in
-                    Text(type)
-                        .font(SonderTypography.caption)
-                        .padding(.horizontal, SonderSpacing.sm)
-                        .padding(.vertical, SonderSpacing.xs)
-                        .background(SonderColors.warmGray)
-                        .foregroundColor(SonderColors.inkDark)
-                        .clipShape(Capsule())
-                }
             }
         }
     }

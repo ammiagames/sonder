@@ -190,7 +190,8 @@ struct ProfileView: View {
 
     private var userTrips: [Trip] {
         guard let userID = authService.currentUser?.id else { return [] }
-        return allTrips.filter { $0.createdBy == userID || $0.collaboratorIDs.contains(userID) }
+        let filtered = allTrips.filter { $0.createdBy == userID || $0.collaboratorIDs.contains(userID) }
+        return sortTripsReverseChronological(filtered)
     }
 
     private var recentTrips: [Trip] {
@@ -1140,4 +1141,3 @@ struct FilteredLogsListView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
-

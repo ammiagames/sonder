@@ -230,18 +230,7 @@ struct InvitationCard: View {
     }
 
     private var tripPlaceholder: some View {
-        RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
-            .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay {
-                Image(systemName: "suitcase.fill")
-                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
-            }
+        TripCoverPlaceholderView(seedKey: item.trip.id)
     }
 }
 

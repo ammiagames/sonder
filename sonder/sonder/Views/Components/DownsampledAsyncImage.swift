@@ -8,15 +8,24 @@
 import SwiftUI
 import UIKit
 
+/// Controls whether an image load should participate in shared caches.
+enum ImageCacheMode {
+    /// Read/write shared memory + disk caches.
+    case cached
+    /// Do not read/write shared caches (use ephemeral network fetch).
+    case transient
+}
+
 /// Loads a remote image and downsamples it to the target display size on decode,
 /// using a fraction of the memory compared to `AsyncImage`.
 ///
 /// A 1000x1000 avatar displayed at 24pt uses ~4MB with AsyncImage but only ~2KB
-/// when downsampled. Shared `NSCache` with a 30MB cap handles eviction.
+/// when downsampled. Shared `NSCache` handles memory-pressure eviction.
 struct DownsampledAsyncImage<Placeholder: View>: View {
     let url: URL?
     let targetSize: CGSize
     let contentMode: ContentMode
+    let cacheMode: ImageCacheMode
     @ViewBuilder let placeholder: () -> Placeholder
 
     @State private var image: UIImage?
@@ -27,11 +36,13 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
         url: URL?,
         targetSize: CGSize,
         contentMode: ContentMode = .fill,
+        cacheMode: ImageCacheMode = .cached,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.url = url
         self.targetSize = targetSize
         self.contentMode = contentMode
+        self.cacheMode = cacheMode
         self.placeholder = placeholder
     }
 
@@ -91,14 +102,15 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
     private func loadImage(from url: URL) async {
         // Check cache first (key includes target size to avoid serving tiny thumbnails)
         let cacheKey = ImageDownsampler.cacheKey(for: url, pointSize: targetSize)
-        if let cached = ImageDownsampler.cache.object(forKey: cacheKey) {
+        if cacheMode == .cached, let cached = ImageDownsampler.cache.object(forKey: cacheKey) {
             self.image = cached
             return
         }
 
         // Download and downsample
         do {
-            let (data, _) = try await ImageDownsampler.session.data(from: url)
+            let session = ImageDownsampler.session(for: cacheMode)
+            let (data, _) = try await session.data(from: url)
             let scale = UIScreen.main.scale
             let pixelSize = CGSize(
                 width: targetSize.width * scale,
@@ -106,7 +118,13 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
             )
 
             if let downsampled = ImageDownsampler.downsample(data: data, to: pixelSize) {
-                ImageDownsampler.cache.setObject(downsampled, forKey: cacheKey)
+                if cacheMode == .cached {
+                    ImageDownsampler.cache.setObject(
+                        downsampled,
+                        forKey: cacheKey,
+                        cost: ImageDownsampler.cacheCost(for: downsampled)
+                    )
+                }
                 await MainActor.run {
                     self.image = downsampled
                 }
@@ -122,8 +140,8 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
 // MARK: - Convenience init without placeholder
 
 extension DownsampledAsyncImage where Placeholder == Color {
-    init(url: URL?, targetSize: CGSize, contentMode: ContentMode = .fill) {
-        self.init(url: url, targetSize: targetSize, contentMode: contentMode) {
+    init(url: URL?, targetSize: CGSize, contentMode: ContentMode = .fill, cacheMode: ImageCacheMode = .cached) {
+        self.init(url: url, targetSize: targetSize, contentMode: contentMode, cacheMode: cacheMode) {
             Color.clear
         }
     }
@@ -132,7 +150,7 @@ extension DownsampledAsyncImage where Placeholder == Color {
 // MARK: - Image Downsampler
 
 enum ImageDownsampler {
-    /// Shared cache capped at 30MB
+    /// Shared in-memory bitmap cache.
     static let cache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
         cache.totalCostLimit = 30 * 1024 * 1024 // 30MB
@@ -148,28 +166,69 @@ enum ImageDownsampler {
         return NSString(string: "\(url.absoluteString)#\(pw)x\(ph)")
     }
 
-    /// URLSession with disk cache for raw responses. The NSCache above stores tiny
-    /// downsampled bitmaps in memory; this URLCache persists the original JPEG data
-    /// on disk so subsequent launches don't re-download from the network.
+    /// URLSession with disk cache for raw responses.
     static let session: URLSession = {
         let config = URLSessionConfiguration.default
         let diskCache = URLCache(
             memoryCapacity: 0,             // skip memory tier (NSCache handles that)
-            diskCapacity: 150 * 1024 * 1024 // 150MB disk
+            diskCapacity: 180 * 1024 * 1024 // 180MB disk
         )
         config.urlCache = diskCache
         config.requestCachePolicy = .returnCacheDataElseLoad
         return URLSession(configuration: config)
     }()
 
+    /// Ephemeral session used for transient image loads (e.g. one-off search previews).
+    static let transientSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCache = nil
+        return URLSession(configuration: config)
+    }()
+
+    static func session(for mode: ImageCacheMode) -> URLSession {
+        mode == .cached ? session : transientSession
+    }
+
+    /// Approximate in-memory cost of a decoded UIImage in bytes.
+    static func cacheCost(for image: UIImage) -> Int {
+        if let cgImage = image.cgImage {
+            return cgImage.bytesPerRow * cgImage.height
+        }
+        let width = Int(image.size.width * image.scale)
+        let height = Int(image.size.height * image.scale)
+        return max(1, width * height * 4)
+    }
+
+    /// Clears both memory and disk image caches.
+    static func clearCaches() {
+        cache.removeAllObjects()
+        session.configuration.urlCache?.removeAllCachedResponses()
+    }
+
     /// Downloads an image from a URL and downsamples it to the target point size.
     /// Uses the shared disk-cached session so previously-viewed photos are instant.
     /// Intended for export rendering where a synchronous UIImage is needed.
-    static func downloadImage(from url: URL, targetSize: CGSize) async -> UIImage? {
+    static func downloadImage(
+        from url: URL,
+        targetSize: CGSize,
+        cacheMode: ImageCacheMode = .cached
+    ) async -> UIImage? {
         do {
-            let (data, _) = try await session.data(from: url)
+            let cacheKey = cacheKey(for: url, pointSize: targetSize)
+            if cacheMode == .cached, let cached = cache.object(forKey: cacheKey) {
+                return cached
+            }
+
+            let (data, _) = try await session(for: cacheMode).data(from: url)
             let pixelSize = CGSize(width: targetSize.width * 2, height: targetSize.height * 2)
-            return downsample(data: data, to: pixelSize)
+            guard let image = downsample(data: data, to: pixelSize) else {
+                return nil
+            }
+            if cacheMode == .cached {
+                cache.setObject(image, forKey: cacheKey, cost: cacheCost(for: image))
+            }
+            return image
         } catch {
             return nil
         }

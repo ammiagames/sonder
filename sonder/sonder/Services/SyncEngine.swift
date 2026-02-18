@@ -191,6 +191,18 @@ final class SyncEngine {
     /// When true, another sync will run immediately after the current one finishes.
     private var needsResync = false
 
+    /// Cursor for incremental log pulls — only fetch logs updated after this timestamp.
+    @ObservationIgnored private var lastPullLogUpdatedAt: Date? {
+        get { UserDefaults.standard.object(forKey: "sonder.sync.lastPullLogUpdatedAt") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "sonder.sync.lastPullLogUpdatedAt") }
+    }
+
+    /// Cursor for incremental trip pulls — only fetch trips updated after this timestamp.
+    @ObservationIgnored private var lastPullTripUpdatedAt: Date? {
+        get { UserDefaults.standard.object(forKey: "sonder.sync.lastPullTripUpdatedAt") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "sonder.sync.lastPullTripUpdatedAt") }
+    }
+
     private let modelContext: ModelContext
     private let supabase = SupabaseConfig.client
     private var syncTask: Task<Void, Never>?
@@ -310,6 +322,8 @@ final class SyncEngine {
     /// Force a sync even if already syncing (for user-triggered refresh)
     func forceSyncNow() async {
         isSyncing = false
+        lastPullLogUpdatedAt = nil
+        lastPullTripUpdatedAt = nil
         await syncNow()
     }
 
@@ -326,7 +340,7 @@ final class SyncEngine {
             await syncNow()
 
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
+                try? await Task.sleep(for: .seconds(300))
 
                 // When offline, probe to recover from stale NWPathMonitor state
                 // (the callback may not fire reliably, e.g. in the simulator)
@@ -526,25 +540,36 @@ final class SyncEngine {
     // MARK: - Pull Sync
 
     private func pullRemoteTrips(for userID: String) async throws {
+        let isIncremental = lastPullTripUpdatedAt != nil
+
         // Fetch trips created by the user
-        let ownedTrips: [RemoteTrip] = try await supabase
+        var ownedQuery = supabase
             .from("trips")
             .select()
             .eq("created_by", value: userID)
-            .execute()
-            .value
-        print("Pull trips: \(ownedTrips.count) owned by \(userID)")
+
+        if let cursor = lastPullTripUpdatedAt {
+            let bufferDate = cursor.addingTimeInterval(-1) // 1s buffer for clock skew
+            ownedQuery = ownedQuery.gt("updated_at", value: bufferDate)
+        }
+
+        let ownedTrips: [RemoteTrip] = try await ownedQuery.execute().value
+        print("Pull trips: \(ownedTrips.count) owned\(isIncremental ? " (incremental)" : " (full)")")
 
         var allRemoteTrips = ownedTrips
 
         // Also fetch trips where user is a collaborator (best-effort)
-        if let collabTrips: [RemoteTrip] = try? await supabase
+        var collabQuery = supabase
             .from("trips")
             .select()
             .contains("collaborator_ids", value: [userID])
-            .execute()
-            .value
-        {
+
+        if let cursor = lastPullTripUpdatedAt {
+            let bufferDate = cursor.addingTimeInterval(-1)
+            collabQuery = collabQuery.gt("updated_at", value: bufferDate)
+        }
+
+        if let collabTrips: [RemoteTrip] = try? await collabQuery.execute().value {
             let ownedIDs = Set(allRemoteTrips.map(\.id))
             let newCollabs = collabTrips.filter { !ownedIDs.contains($0.id) }
             allRemoteTrips += newCollabs
@@ -554,6 +579,14 @@ final class SyncEngine {
         if !allRemoteTrips.isEmpty {
             try mergeRemoteTrips(allRemoteTrips)
             print("Pull trips: merged \(allRemoteTrips.count) total")
+
+            // Advance cursor to the latest updatedAt from this batch
+            let maxUpdatedAt = allRemoteTrips.map(\.updatedAt).max()
+            if let maxDate = maxUpdatedAt {
+                if lastPullTripUpdatedAt == nil || maxDate > lastPullTripUpdatedAt! {
+                    lastPullTripUpdatedAt = maxDate
+                }
+            }
         }
     }
 
@@ -614,12 +647,20 @@ final class SyncEngine {
     }
 
     private func pullRemoteLogs(for userID: String) async throws {
-        let remoteLogs: [RemoteLog] = try await supabase
+        let isIncremental = lastPullLogUpdatedAt != nil
+
+        var query = supabase
             .from("logs")
             .select()
             .eq("user_id", value: userID)
-            .execute()
-            .value
+
+        if let cursor = lastPullLogUpdatedAt {
+            let bufferDate = cursor.addingTimeInterval(-1) // 1s buffer for clock skew
+            query = query.gt("updated_at", value: bufferDate)
+        }
+
+        let remoteLogs: [RemoteLog] = try await query.execute().value
+        print("Pull logs: \(remoteLogs.count)\(isIncremental ? " (incremental)" : " (full)")")
 
         guard !remoteLogs.isEmpty else { return }
 
@@ -647,58 +688,57 @@ final class SyncEngine {
         }
 
         try mergeRemoteLogs(remoteLogs, remotePlaces: fetchedPlaces)
+
+        // Advance cursor to the latest updatedAt from this batch
+        let maxUpdatedAt = remoteLogs.map(\.updatedAt).max()
+        if let maxDate = maxUpdatedAt {
+            if lastPullLogUpdatedAt == nil || maxDate > lastPullLogUpdatedAt! {
+                lastPullLogUpdatedAt = maxDate
+            }
+        }
     }
 
     /// Merge remote logs into local SwiftData store.
     /// - Remote logs not found locally are inserted as `.synced`.
     /// - Local logs with `.pending` or `.failed` status are never overwritten (preserve unsynced changes).
     /// - Local `.synced` logs are updated only if the remote `updatedAt` is newer (server wins).
+    /// - For small batches (≤50, i.e. incremental sync), uses per-ID lookups instead of fetching all local logs.
     func mergeRemoteLogs(_ remoteLogs: [RemoteLog], remotePlaces: [Place]) throws {
         // Insert missing places
         for place in remotePlaces {
             modelContext.insert(place)
         }
 
-        // Build local log lookup (lowercased keys to handle UUID case mismatch
-        // between Swift's uppercase UUID().uuidString and PostgreSQL's lowercase uuid type).
-        // Use reduce to handle existing duplicates gracefully — keep the newest version.
-        let localLogs = try modelContext.fetch(FetchDescriptor<Log>())
-        var localLogsByID: [String: Log] = [:]
-        var duplicatesToRemove: [Log] = []
-        for log in localLogs {
-            let key = log.id.lowercased()
-            if let existing = localLogsByID[key] {
-                // Duplicate found — keep the one with latest updatedAt, remove the other
-                if log.updatedAt > existing.updatedAt {
-                    duplicatesToRemove.append(existing)
-                    localLogsByID[key] = log
-                } else {
-                    duplicatesToRemove.append(log)
-                }
-            } else {
-                localLogsByID[key] = log
-            }
-        }
-        // Clean up any existing duplicates from prior UUID case-mismatch bug
-        for dup in duplicatesToRemove {
-            modelContext.delete(dup)
+        if remoteLogs.count <= 50 {
+            // Incremental path: individual lookups avoid loading all local logs into memory
+            try mergeRemoteLogsIncremental(remoteLogs)
+        } else {
+            // Full sync path: dictionary-based approach with deduplication
+            try mergeRemoteLogsFull(remoteLogs)
         }
 
+        try modelContext.save()
+    }
+
+    /// Incremental merge: look up each remote log individually by ID.
+    /// Efficient for small batches — avoids fetching all local logs.
+    private func mergeRemoteLogsIncremental(_ remoteLogs: [RemoteLog]) throws {
         for remote in remoteLogs {
             let remoteID = remote.id.lowercased()
-            // Normalize empty-string tripID to nil
             let remoteTripID = (remote.tripID?.trimmingCharacters(in: .whitespaces).isEmpty == true) ? nil : remote.tripID
 
-            // Skip logs that were deleted locally but not yet confirmed on Supabase
             if pendingDeletions.contains(remoteID) { continue }
 
-            if let local = localLogsByID[remoteID] {
+            // Look up this specific log by ID
+            let rid = remote.id
+            let descriptor = FetchDescriptor<Log>(predicate: #Predicate { $0.id == rid })
+            let local = try modelContext.fetch(descriptor).first
+
+            if let local {
                 switch local.syncStatus {
                 case .pending, .failed:
-                    // Preserve unsynced local changes
                     continue
                 case .synced:
-                    // Server wins if newer
                     if remote.updatedAt > local.updatedAt {
                         local.rating = Rating(rawValue: remote.rating) ?? local.rating
                         local.photoURLs = remote.photoURLs
@@ -711,7 +751,6 @@ final class SyncEngine {
                     }
                 }
             } else {
-                // New log from server
                 let log = Log(
                     id: remote.id,
                     userID: remote.userID,
@@ -730,8 +769,72 @@ final class SyncEngine {
                 modelContext.insert(log)
             }
         }
+    }
 
-        try modelContext.save()
+    /// Full merge: fetch all local logs and build a dictionary for O(1) lookups.
+    /// Also deduplicates local logs from prior UUID case-mismatch bugs.
+    private func mergeRemoteLogsFull(_ remoteLogs: [RemoteLog]) throws {
+        let localLogs = try modelContext.fetch(FetchDescriptor<Log>())
+        var localLogsByID: [String: Log] = [:]
+        var duplicatesToRemove: [Log] = []
+        for log in localLogs {
+            let key = log.id.lowercased()
+            if let existing = localLogsByID[key] {
+                if log.updatedAt > existing.updatedAt {
+                    duplicatesToRemove.append(existing)
+                    localLogsByID[key] = log
+                } else {
+                    duplicatesToRemove.append(log)
+                }
+            } else {
+                localLogsByID[key] = log
+            }
+        }
+        for dup in duplicatesToRemove {
+            modelContext.delete(dup)
+        }
+
+        for remote in remoteLogs {
+            let remoteID = remote.id.lowercased()
+            let remoteTripID = (remote.tripID?.trimmingCharacters(in: .whitespaces).isEmpty == true) ? nil : remote.tripID
+
+            if pendingDeletions.contains(remoteID) { continue }
+
+            if let local = localLogsByID[remoteID] {
+                switch local.syncStatus {
+                case .pending, .failed:
+                    continue
+                case .synced:
+                    if remote.updatedAt > local.updatedAt {
+                        local.rating = Rating(rawValue: remote.rating) ?? local.rating
+                        local.photoURLs = remote.photoURLs
+                        local.note = remote.note
+                        local.tags = remote.tags
+                        local.tripID = remoteTripID
+                        local.tripSortOrder = remote.tripSortOrder
+                        local.visitedAt = remote.visitedAt
+                        local.updatedAt = remote.updatedAt
+                    }
+                }
+            } else {
+                let log = Log(
+                    id: remote.id,
+                    userID: remote.userID,
+                    placeID: remote.placeID,
+                    rating: Rating(rawValue: remote.rating) ?? .solid,
+                    photoURLs: remote.photoURLs,
+                    note: remote.note,
+                    tags: remote.tags,
+                    tripID: remoteTripID,
+                    tripSortOrder: remote.tripSortOrder,
+                    visitedAt: remote.visitedAt,
+                    syncStatus: .synced,
+                    createdAt: remote.createdAt,
+                    updatedAt: remote.updatedAt
+                )
+                modelContext.insert(log)
+            }
+        }
     }
 
     // MARK: - Delete Sync

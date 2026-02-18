@@ -128,19 +128,7 @@ struct TripFeedCard: View {
     }
 
     private var gradientPlaceholder: some View {
-        Rectangle()
-            .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay {
-                Image(systemName: "suitcase")
-                    .font(.largeTitle)
-                    .foregroundColor(SonderColors.terracotta.opacity(0.5))
-            }
+        TripCoverPlaceholderView(seedKey: tripItem.id, title: tripItem.name)
     }
 
     // MARK: - Thumbnail Grid

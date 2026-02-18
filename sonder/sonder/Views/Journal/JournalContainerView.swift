@@ -24,30 +24,6 @@ enum JournalDisplayStyle: String, CaseIterable {
     }
 }
 
-// MARK: - Polaroid Background Style
-
-enum PolaroidBackgroundStyle: String, CaseIterable {
-    case tripPhotos = "Trip Photos"
-    case starryNight = "Starry Night"
-    case neonCity = "Neon City"
-    case clothesline = "Clothesline"
-    case underwater = "Underwater"
-    case confetti = "Confetti"
-    case botanical = "Botanical"
-
-    var icon: String {
-        switch self {
-        case .tripPhotos: return "photo.fill"
-        case .starryNight: return "moon.stars"
-        case .neonCity: return "building.2"
-        case .clothesline: return "sun.horizon"
-        case .underwater: return "water.waves"
-        case .confetti: return "party.popper"
-        case .botanical: return "leaf"
-        }
-    }
-}
-
 /// Main journal view showing trips in a masonry grid.
 struct JournalContainerView: View {
     @Environment(AuthenticationService.self) private var authService
@@ -70,7 +46,6 @@ struct JournalContainerView: View {
     @State private var newlyCreatedTrip: Trip?
     @State private var showAssignLogs = false
     @State private var displayStyle: JournalDisplayStyle = .polaroid
-    @State private var polaroidBackground: PolaroidBackgroundStyle = .tripPhotos
 
     // MARK: - Computed Data
 
@@ -172,30 +147,6 @@ struct JournalContainerView: View {
                     }
                 }
 
-                if displayStyle == .polaroid {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Menu {
-                            ForEach(PolaroidBackgroundStyle.allCases, id: \.self) { bg in
-                                Button {
-                                    withAnimation(.easeInOut(duration: 0.8)) {
-                                        polaroidBackground = bg
-                                    }
-                                } label: {
-                                    Label {
-                                        Text(bg.rawValue)
-                                    } icon: {
-                                        Image(systemName: bg.icon)
-                                    }
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "paintpalette")
-                                .foregroundColor(SonderColors.inkMuted)
-                                .toolbarIcon()
-                        }
-                    }
-                }
-
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showCreateTrip = true
@@ -284,8 +235,7 @@ struct JournalContainerView: View {
                 places: Array(places),
                 orphanedLogs: orphanedLogs,
                 selectedTrip: $selectedTrip,
-                selectedLog: $selectedLog,
-                backgroundStyle: polaroidBackground
+                selectedLog: $selectedLog
             )
         case .boardingPass:
             JournalBoardingPassView(

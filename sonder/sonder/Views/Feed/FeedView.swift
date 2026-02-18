@@ -92,16 +92,11 @@ struct FeedView: View {
     // MARK: - Greeting Header
 
     private var greetingHeader: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
-            Text(greetingText)
-                .font(SonderTypography.largeTitle)
-                .foregroundColor(SonderColors.inkDark)
-            Text("See what your friends have been up to")
-                .font(SonderTypography.body)
-                .foregroundColor(SonderColors.inkMuted)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, SonderSpacing.sm)
+        Text(greetingText)
+            .font(SonderTypography.largeTitle)
+            .foregroundColor(SonderColors.inkDark)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, SonderSpacing.sm)
     }
 
     private var greetingText: String {
@@ -186,15 +181,6 @@ struct FeedView: View {
 
                 if feedService.newPostsAvailable {
                     newPostsBanner
-                }
-
-                if let recap = weeklyRecap {
-                    WeeklyRecapCard(
-                        spotCount: recap.spotCount,
-                        cityNames: recap.cityNames,
-                        ratingBreakdown: recap.ratingBreakdown
-                    )
-                    .feedCardEntrance(index: 0)
                 }
 
                 ForEach(Array(feedService.feedEntries.enumerated()), id: \.element.id) { index, entry in
@@ -325,47 +311,6 @@ struct FeedView: View {
         }
     }
 
-    // MARK: - Weekly Recap
-
-    private struct WeeklyRecapData {
-        let spotCount: Int
-        let cityNames: [String]
-        let ratingBreakdown: [(Rating, Int)]
-    }
-
-    private var weeklyRecap: WeeklyRecapData? {
-        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-
-        let thisWeekLogs = feedService.feedEntries.compactMap { entry -> FeedItem? in
-            if case .log(let item) = entry, item.createdAt >= sevenDaysAgo {
-                return item
-            }
-            return nil
-        }
-
-        guard !thisWeekLogs.isEmpty else { return nil }
-
-        let uniquePlaceIDs = Set(thisWeekLogs.map { $0.place.id })
-        let uniqueCities = Array(Set(thisWeekLogs.map { $0.place.cityName })).sorted()
-
-        // Rating breakdown (only include ratings with count > 0)
-        var ratingCounts: [Rating: Int] = [:]
-        for log in thisWeekLogs {
-            ratingCounts[log.rating, default: 0] += 1
-        }
-        let breakdown = Rating.allCases
-            .compactMap { rating -> (Rating, Int)? in
-                guard let count = ratingCounts[rating], count > 0 else { return nil }
-                return (rating, count)
-            }
-
-        return WeeklyRecapData(
-            spotCount: uniquePlaceIDs.count,
-            cityNames: uniqueCities,
-            ratingBreakdown: breakdown
-        )
-    }
-
     // MARK: - Data Loading
 
     private func loadInitialData() async {
@@ -404,68 +349,6 @@ struct FeedView: View {
                 print("Error toggling want to go: \(error)")
             }
         }
-    }
-}
-
-// MARK: - Weekly Recap Card
-
-struct WeeklyRecapCard: View {
-    let spotCount: Int
-    let cityNames: [String]
-    let ratingBreakdown: [(Rating, Int)]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            // Header
-            HStack(spacing: SonderSpacing.xs) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 14, weight: .semibold))
-                Text("This week")
-                    .font(.system(size: 14, weight: .semibold, design: .serif))
-            }
-            .foregroundColor(SonderColors.terracotta)
-
-            // Stats line
-            let cityCount = cityNames.count
-            let statsText = cityCount > 0
-                ? "\(spotCount) \(spotCount == 1 ? "spot" : "spots") \u{00B7} \(cityCount) \(cityCount == 1 ? "city" : "cities")"
-                : "\(spotCount) \(spotCount == 1 ? "spot" : "spots")"
-            Text(statsText)
-                .font(.system(size: 20, weight: .bold, design: .serif))
-                .foregroundColor(SonderColors.inkDark)
-
-            // Rating emoji breakdown
-            if !ratingBreakdown.isEmpty {
-                HStack(spacing: SonderSpacing.sm) {
-                    ForEach(ratingBreakdown, id: \.0) { rating, count in
-                        HStack(spacing: 3) {
-                            Text(rating.emoji)
-                                .font(.system(size: 14))
-                            Text("\(count)")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(SonderColors.inkMuted)
-                        }
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(SonderSpacing.lg)
-        .background(
-            LinearGradient(
-                colors: [
-                    SonderColors.terracotta.opacity(0.08),
-                    SonderColors.ochre.opacity(0.06)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: SonderSpacing.radiusLg)
-                .stroke(SonderColors.terracotta.opacity(0.15), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
     }
 }
 

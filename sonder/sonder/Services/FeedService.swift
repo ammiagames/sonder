@@ -221,6 +221,7 @@ final class FeedService {
             """)
             .in("trip_id", values: tripIDs)
             .order("created_at", ascending: false)
+            .limit(500)
             .execute()
             .value
 
@@ -232,6 +233,7 @@ final class FeedService {
                 .select("id, trip_id, activity_type, log_id, place_name, created_at")
                 .in("trip_id", values: tripIDs)
                 .order("created_at", ascending: false)
+                .limit(200)
                 .execute()
                 .value
         } catch {
@@ -459,6 +461,7 @@ final class FeedService {
             """)
             .eq("user_id", value: userID)
             .order("created_at", ascending: false)
+            .limit(200)
             .execute()
             .value
 

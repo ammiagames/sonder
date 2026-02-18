@@ -64,6 +64,7 @@ struct ExploreMapView: View {
     // Debounce & throttle state
     @State private var recomputeTask: Task<Void, Never>?
     @State private var prefetchTask: Task<Void, Never>?
+    @State private var activePrefetchDownloads: [Task<Void, Never>] = []
     @State private var lastFullLoadAt: Date?
     @State private var wtgGeneration: UInt64 = 0
     @State private var previousWTGPlaceIDs: Set<String> = []
@@ -706,7 +707,12 @@ struct ExploreMapView: View {
 
     /// Pre-fetch place photos for visible pins into the image cache.
     /// Only fetches up to 20 at a time to stay lightweight at scale.
+    /// Cancels any in-flight downloads from a previous batch before starting new ones.
     private func prefetchPinPhotos() {
+        // Cancel previous batch — those pins may no longer be visible
+        for task in activePrefetchDownloads { task.cancel() }
+        activePrefetchDownloads.removeAll()
+
         // Only prefetch pins in (or near) the current viewport
         let visiblePins: [UnifiedMapPin]
         if let region = visibleRegion ?? cameraPosition.region {
@@ -721,23 +727,27 @@ struct ExploreMapView: View {
         }
 
         let photoRefs = Array(Set(visiblePins.compactMap(\.photoReference)).prefix(20))
-        let pinPointSize = CGSize(width: 56, height: 56)
         let scale = UIScreen.main.scale
-        let targetPixelSize = CGSize(width: 56 * scale, height: 56 * scale)
+        let targetPixelSize = CGSize(
+            width: PinPhotoConstants.pointSize.width * scale,
+            height: PinPhotoConstants.pointSize.height * scale
+        )
 
         for ref in photoRefs {
-            guard let url = GooglePlacesService.photoURL(for: ref, maxWidth: 112) else { continue }
-            let cacheKey = ImageDownsampler.cacheKey(for: url, pointSize: pinPointSize)
+            guard let url = GooglePlacesService.photoURL(for: ref, maxWidth: PinPhotoConstants.maxWidth) else { continue }
+            let cacheKey = ImageDownsampler.cacheKey(for: url, pointSize: PinPhotoConstants.pointSize)
             guard ImageDownsampler.cache.object(forKey: cacheKey) == nil else { continue }
 
-            Task.detached(priority: .utility) {
+            let download = Task.detached(priority: .utility) {
                 do {
                     let (data, _) = try await ImageDownsampler.session.data(from: url)
+                    guard !Task.isCancelled else { return }
                     if let downsampled = ImageDownsampler.downsample(data: data, to: targetPixelSize) {
                         ImageDownsampler.cache.setObject(downsampled, forKey: cacheKey)
                     }
                 } catch { }
             }
+            activePrefetchDownloads.append(download)
         }
     }
 

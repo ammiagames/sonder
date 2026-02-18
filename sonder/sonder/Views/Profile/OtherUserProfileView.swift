@@ -364,7 +364,7 @@ struct OtherUserProfileView: View {
     // MARK: - Recent Trips (Boarding Pass)
 
     private var recentTrips: [Trip] {
-        Array(userTrips.prefix(5))
+        Array(sortTripsReverseChronological(userTrips).prefix(5))
     }
 
     private func tripDateText(_ trip: Trip) -> String? {

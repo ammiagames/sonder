@@ -126,26 +126,11 @@ struct TripCard: View {
     }
 
     private var placeholderGradient: some View {
-        LinearGradient(
-            colors: [
-                SonderColors.terracotta.opacity(0.4),
-                SonderColors.ochre.opacity(0.3),
-                SonderColors.sage.opacity(0.2)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+        TripCoverPlaceholderView(
+            seedKey: trip.id,
+            title: compact ? nil : trip.name,
+            caption: compact ? nil : "Travel journal"
         )
-        .overlay {
-            VStack(spacing: SonderSpacing.xs) {
-                Image(systemName: "suitcase.fill")
-                    .font(.system(size: compact ? 20 : 32))
-                    .foregroundColor(.white.opacity(0.6))
-
-                Text(trip.name)
-                    .font(compact ? SonderTypography.caption : SonderTypography.headline)
-                    .foregroundColor(.white.opacity(0.8))
-            }
-        }
     }
 
     // MARK: - Helpers

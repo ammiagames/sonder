@@ -176,10 +176,15 @@ struct PlacePreviewView: View {
     }
 
     private func loadHeroPhoto() async {
-        // Try REST URL first if we have a photo reference (fast, uses cache)
+        // Try REST URL first if we have a photo reference.
+        // Search preview loads are transient (no shared cache admission).
         if let photoRef = details.photoReference,
            let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 800) {
-            let image = await ImageDownsampler.downloadImage(from: url, targetSize: CGSize(width: 400, height: 250))
+            let image = await ImageDownsampler.downloadImage(
+                from: url,
+                targetSize: CGSize(width: 400, height: 250),
+                cacheMode: .transient
+            )
             if let image {
                 heroImage = image
                 return

@@ -349,23 +349,11 @@ struct CreateEditTripView: View {
     }
 
     private var coverPlaceholder: some View {
-        RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
-            .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay {
-                VStack(spacing: SonderSpacing.xs) {
-                    Image(systemName: "photo")
-                        .font(.largeTitle)
-                    Text("Add a cover photo")
-                        .font(SonderTypography.caption)
-                }
-                .foregroundColor(SonderColors.terracotta.opacity(0.6))
-            }
+        TripCoverPlaceholderView(
+            seedKey: coverPhotoURL ?? name,
+            title: name.isEmpty ? "New Trip" : name,
+            caption: "Add a cover photo"
+        )
     }
 
     // MARK: - Actions

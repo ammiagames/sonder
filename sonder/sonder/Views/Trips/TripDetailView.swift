@@ -52,13 +52,6 @@ struct TripDetailView: View {
     @State private var showReorder = false
     @State private var coverAnimating = false
 
-    // View mode states
-    @State private var showPostcards = false
-    @State private var showCinematic = false
-    @State private var showPhotoWall = false
-    @State private var showWrapped = false
-    @State private var showBook = false
-    @State private var showHighlights = false
 
     // MARK: - Capsule Spacing Constants
     private let sectionGap: CGFloat = 56
@@ -271,24 +264,6 @@ struct TripDetailView: View {
         .fullScreenCover(isPresented: $showExpandedMap) {
             expandedMapView
         }
-        .fullScreenCover(isPresented: $showPostcards) {
-            TripPostcardStack(tripName: trip.name, logs: tripLogs, places: tripPlaces)
-        }
-        .fullScreenCover(isPresented: $showCinematic) {
-            TripCinematicView(tripName: trip.name, logs: tripLogs, places: tripPlaces, coverPhotoURL: trip.coverPhotoURL)
-        }
-        .fullScreenCover(isPresented: $showPhotoWall) {
-            TripPhotoWall(tripName: trip.name, logs: tripLogs, places: tripPlaces)
-        }
-        .fullScreenCover(isPresented: $showWrapped) {
-            TripWrappedView(tripName: trip.name, logs: tripLogs, places: tripPlaces, coverPhotoURL: trip.coverPhotoURL)
-        }
-        .fullScreenCover(isPresented: $showBook) {
-            TripBookView(tripName: trip.name, logs: tripLogs, places: tripPlaces, coverPhotoURL: trip.coverPhotoURL)
-        }
-        .fullScreenCover(isPresented: $showHighlights) {
-            TripHighlightReel(tripName: trip.name, logs: tripLogs, places: tripPlaces)
-        }
     }
 
     // MARK: - Act 1: The Cover
@@ -471,64 +446,12 @@ struct TripDetailView: View {
                     .clipShape(Capsule())
             }
 
-            // Experience modes
-            VStack(spacing: SonderSpacing.sm) {
-                Text("EXPERIENCE YOUR TRIP")
-                    .font(.system(size: 10, weight: .medium))
-                    .tracking(2.0)
-                    .foregroundColor(SonderColors.inkLight)
-
-                // Primary row
-                HStack(spacing: SonderSpacing.xs) {
-                    experienceButton(icon: "play.fill", label: "Story", isPrimary: true) {
-                        storyStartIndex = 0
-                        showStoryPage = true
-                    }
-                    experienceButton(icon: "film", label: "Cinematic") {
-                        showCinematic = true
-                    }
-                    experienceButton(icon: "gift", label: "Wrapped") {
-                        showWrapped = true
-                    }
-                }
-
-                // Secondary row
-                HStack(spacing: SonderSpacing.xs) {
-                    experienceButton(icon: "square.grid.2x2", label: "Photos") {
-                        showPhotoWall = true
-                    }
-                    experienceButton(icon: "greetingcard", label: "Postcards") {
-                        showPostcards = true
-                    }
-                    experienceButton(icon: "book", label: "Book") {
-                        showBook = true
-                    }
-                    experienceButton(icon: "star.fill", label: "Highlights") {
-                        showHighlights = true
-                    }
-                }
-            }
         }
         .padding(.vertical, sectionGap)
         .padding(.horizontal, contentPadding)
         .frame(maxWidth: .infinity)
     }
 
-    private func experienceButton(icon: String, label: String, isPrimary: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: isPrimary ? 14 : 12))
-                Text(label)
-                    .font(.system(size: 10, weight: .medium))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, isPrimary ? 12 : 10)
-            .foregroundColor(isPrimary ? .white : SonderColors.inkDark)
-            .background(isPrimary ? SonderColors.terracotta : SonderColors.warmGray)
-            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-        }
-    }
 
     private func overviewStat(value: String, label: String) -> some View {
         VStack(spacing: 4) {
