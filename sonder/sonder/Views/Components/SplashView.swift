@@ -5,14 +5,20 @@
 
 import SwiftUI
 
-/// Shown briefly while restoring the user session on launch.
-/// Typewriter animation that reveals the app name letter by letter.
+/// Shown while the app initializes and the feed loads.
+///
+/// - First launch ever: full typewriter animation with pronunciation and definition.
+/// - Subsequent launches: "sonder" shown immediately, fades out as soon as content is ready.
 struct SplashView: View {
+    var isFirstLaunch: Bool = true
+
     @State private var visibleCount = 0
     @State private var showCursor = true
     @State private var showSubtitle = false
+    @State private var breatheScale: CGFloat = 1.0
 
     private let letters = Array("sonder")
+    private var entranceDuration: Double { Double(letters.count) * 0.14 + 0.55 }
 
     var body: some View {
         ZStack {
@@ -24,33 +30,40 @@ struct SplashView: View {
                         Text(String(letters[i]))
                             .font(.system(size: 52, weight: .bold, design: .serif))
                             .foregroundStyle(SonderColors.inkDark)
-                            .opacity(i < visibleCount ? 1 : 0)
-                            .offset(y: i < visibleCount ? 0 : -8)
+                            .opacity(isFirstLaunch ? (i < visibleCount ? 1 : 0) : 1)
+                            .offset(y: isFirstLaunch ? (i < visibleCount ? 0 : -8) : 0)
                     }
 
-                    // Cursor
-                    Rectangle()
-                        .fill(SonderColors.terracotta)
-                        .frame(width: 3, height: 46)
-                        .opacity(showCursor ? 1 : 0)
-                        .offset(y: 2)
+                    // Cursor — only on first launch
+                    if isFirstLaunch {
+                        Rectangle()
+                            .fill(SonderColors.terracotta)
+                            .frame(width: 3, height: 46)
+                            .opacity(showCursor ? 1 : 0)
+                            .offset(y: 2)
+                    }
                 }
 
-                Text("/\u{02C8}s\u{0252}n.d\u{0259}r/")
-                    .font(.system(size: 15, design: .serif))
-                    .italic()
-                    .foregroundStyle(SonderColors.inkMuted)
-                    .opacity(showSubtitle ? 1 : 0)
+                if isFirstLaunch {
+                    Text("/\u{02C8}s\u{0252}n.d\u{0259}r/")
+                        .font(.system(size: 15, design: .serif))
+                        .italic()
+                        .foregroundStyle(SonderColors.inkMuted)
+                        .opacity(showSubtitle ? 1 : 0)
 
-                Text("the realization that each passerby\nhas a life as vivid as your own")
-                    .font(.system(size: 13, design: .serif))
-                    .foregroundStyle(SonderColors.inkLight)
-                    .multilineTextAlignment(.center)
-                    .opacity(showSubtitle ? 1 : 0)
-                    .offset(y: showSubtitle ? 0 : 8)
+                    Text("the realization that each passerby\nhas a life as vivid as your own")
+                        .font(.system(size: 13, design: .serif))
+                        .foregroundStyle(SonderColors.inkLight)
+                        .multilineTextAlignment(.center)
+                        .opacity(showSubtitle ? 1 : 0)
+                        .offset(y: showSubtitle ? 0 : 8)
+                }
             }
+            .scaleEffect(breatheScale)
         }
         .onAppear {
+            guard isFirstLaunch else { return }
+
             // Type each letter
             for i in 0..<letters.count {
                 DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.14) {
@@ -65,14 +78,23 @@ struct SplashView: View {
                 showCursor.toggle()
             }
 
-            // Show subtitle sooner after typing finishes
+            // Show subtitle after typing finishes
             withAnimation(.easeOut(duration: 0.4).delay(Double(letters.count) * 0.14 + 0.15)) {
                 showSubtitle = true
+            }
+
+            // Gentle breathing pulse while waiting for content to load
+            withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true).delay(entranceDuration)) {
+                breatheScale = 1.02
             }
         }
     }
 }
 
-#Preview {
-    SplashView()
+#Preview("First Launch") {
+    SplashView(isFirstLaunch: true)
+}
+
+#Preview("Returning User") {
+    SplashView(isFirstLaunch: false)
 }

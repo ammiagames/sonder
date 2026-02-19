@@ -23,6 +23,8 @@ final class FeedService {
     var hasLoadedOnce = false
     var hasMore = true
     var newPostsAvailable = false
+    /// True when the user follows nobody and we're showing public discovery content.
+    var isDiscoveryMode = false
 
     // Pagination
     private var lastFetchedDate: Date?
@@ -55,12 +57,15 @@ final class FeedService {
 
         do {
             let followingIDs = try await getFollowingIDs(for: currentUserID)
-            guard !followingIDs.isEmpty else {
-                feedEntries = []
+
+            if followingIDs.isEmpty {
+                isDiscoveryMode = true
+                await loadDiscoveryFeed(currentUserID: currentUserID)
                 isLoading = false
                 hasLoadedOnce = true
                 return
             }
+            isDiscoveryMode = false
 
             // Fetch logs (required)
             let logResponses = try await fetchFeedLogs(followingIDs: followingIDs, before: nil)
@@ -383,7 +388,7 @@ final class FeedService {
                 table: "trip_activity"
             )
 
-            await channel.subscribe()
+            try await channel.subscribeWithError()
 
             realtimeLogTask = Task {
                 for await change in logChanges {
@@ -425,6 +430,31 @@ final class FeedService {
         await loadFeed(for: currentUserID)
     }
 
+    // MARK: - Discovery Feed
+
+    /// Fetch recent logs from public users for new users who don't follow anyone yet.
+    private func loadDiscoveryFeed(currentUserID: String) async {
+        do {
+            let logResponses: [FeedLogResponse] = try await supabase
+                .from("logs")
+                .select(selectQuery)
+                .neq("user_id", value: currentUserID)
+                .order("created_at", ascending: false)
+                .limit(30)
+                .execute()
+                .value
+
+            // Filter to only public users
+            let publicLogs = logResponses.filter { $0.user.isPublic }
+
+            feedEntries = publicLogs.map { FeedEntry.log($0.toFeedItem()) }
+            hasMore = false
+        } catch {
+            logger.error("Error loading discovery feed: \(error.localizedDescription)")
+            feedEntries = []
+        }
+    }
+
     // MARK: - Single Log Fetch
 
     func fetchFeedItem(logID: String) async throws -> FeedItem? {
@@ -460,6 +490,7 @@ final class FeedService {
                 note,
                 tags,
                 created_at,
+                trip_id,
                 users!logs_user_id_fkey(id, username, avatar_url, is_public),
                 places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference, types)
             """)

@@ -215,7 +215,8 @@ enum TestData {
         photoURLs: [String] = [],
         note: String? = "Great spot",
         tags: [String] = ["food"],
-        createdAt: Date = fixedDate()
+        createdAt: Date = fixedDate(),
+        tripID: String? = nil
     ) -> FeedItem.FeedLog {
         FeedItem.FeedLog(
             id: id,
@@ -223,7 +224,8 @@ enum TestData {
             photoURLs: photoURLs,
             note: note,
             tags: tags,
-            createdAt: createdAt
+            createdAt: createdAt,
+            tripID: tripID
         )
     }
 

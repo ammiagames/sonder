@@ -23,8 +23,7 @@ struct SearchPlaceView: View {
 
     var onLogComplete: ((CLLocationCoordinate2D) -> Void)?
 
-    @Query private var allLogs: [Log]
-
+    @State private var loggedPlaceIDs: Set<String> = []
     @State private var searchText = ""
     @State private var predictions: [PlacePrediction] = []
     @State private var nearbyPlaces: [NearbyPlace] = []
@@ -70,7 +69,7 @@ struct SearchPlaceView: View {
                         }
                     }
                 }
-                .scrollDismissesKeyboard(.interactively)
+                .scrollDismissesKeyboard(.immediately)
             }
             .background(SonderColors.cream)
             .navigationTitle("Log a Place")
@@ -106,7 +105,17 @@ struct SearchPlaceView: View {
                 }
             }
         }
-        .onAppear {
+        .task {
+            // Fetch logged place IDs with a targeted query instead of
+            // @Query over ALL logs (which blocks the main thread on init).
+            if let userID = authService.currentUser?.id {
+                let descriptor = FetchDescriptor<Log>(
+                    predicate: #Predicate { $0.userID == userID }
+                )
+                if let logs = try? modelContext.fetch(descriptor) {
+                    loggedPlaceIDs = Set(logs.map(\.placeID))
+                }
+            }
             loadNearbyPlaces()
         }
         .sheet(isPresented: $showCustomPlace) {
@@ -141,18 +150,19 @@ struct SearchPlaceView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(SonderColors.inkMuted)
 
-            TextField("Search for a place...", text: $searchText)
-                .font(SonderTypography.body)
-                .textFieldStyle(.plain)
-                .autocorrectionDisabled()
-                .onChange(of: searchText) { _, newValue in
-                    Task {
-                        predictions = await placesService.autocomplete(
-                            query: newValue,
-                            location: locationService.currentLocation
-                        )
-                    }
+            AutoFocusTextField(
+                text: $searchText,
+                placeholder: "Search for a place..."
+            )
+            .frame(height: 22)
+            .onChange(of: searchText) { _, newValue in
+                Task {
+                    predictions = await placesService.autocomplete(
+                        query: newValue,
+                        location: locationService.currentLocation
+                    )
                 }
+            }
 
             if !searchText.isEmpty {
                 Button(action: { searchText = "" }) {
@@ -324,12 +334,6 @@ struct SearchPlaceView: View {
 
     // MARK: - Recent Searches
 
-    /// Place IDs the current user has already logged
-    private var loggedPlaceIDs: Set<String> {
-        guard let userID = authService.currentUser?.id else { return [] }
-        return Set(allLogs.filter { $0.userID == userID }.map { $0.placeID })
-    }
-
     /// IDs of recent searches (for filtering nearby)
     private var recentPlaceIds: Set<String> {
         Set(cacheService.getRecentSearches().prefix(5).map { $0.placeId })
@@ -363,7 +367,7 @@ struct SearchPlaceView: View {
                             placeId: search.placeId
                         ) {
                             // Step 1: Animate the row out
-                            withAnimation(.easeOut(duration: 0.25)) {
+                            _ = withAnimation(.easeOut(duration: 0.25)) {
                                 removingPlaceIds.insert(search.placeId)
                             }
 
@@ -378,7 +382,7 @@ struct SearchPlaceView: View {
 
                     Divider().padding(.leading, SonderSpacing.md)
                 }
-                .offset(x: isRemoving ? UIScreen.main.bounds.width : 0)
+                .offset(x: isRemoving ? 400 : 0)
                 .opacity(isRemoving ? 0 : 1)
                 .frame(height: isRemoving ? 0 : nil, alignment: .top)
                 .clipped()
@@ -467,29 +471,54 @@ struct SearchPlaceView: View {
     }
 
     /// Fetches full place details by ID and navigates to the preview screen.
+    /// Uses cached data when offline so recent searches still work without network.
     private func selectPlace(byID placeId: String) {
         Task {
             isLoadingDetails = true
             detailsError = nil
 
-            guard let details = await placesService.getPlaceDetails(placeId: placeId) else {
+            // Try network first
+            if let details = await placesService.getPlaceDetails(placeId: placeId) {
+                // Cache place locally (enables instant map pin if bookmarked)
+                // and add to recent searches immediately on tap
+                let place = cacheService.cachePlace(from: details)
+                cacheService.addRecentSearch(
+                    placeId: place.id,
+                    name: place.name,
+                    address: place.address
+                )
+
                 isLoadingDetails = false
-                detailsError = placesService.error?.localizedDescription ?? "Failed to load place details"
+                selectedDetails = details
+                showPreview = true
                 return
             }
 
-            // Cache place locally (enables instant map pin if bookmarked)
-            // and add to recent searches immediately on tap
-            let place = cacheService.cachePlace(from: details)
-            cacheService.addRecentSearch(
-                placeId: place.id,
-                name: place.name,
-                address: place.address
-            )
+            // Offline fallback: use cached Place from SwiftData
+            if let cachedPlace = cacheService.getPlace(by: placeId) {
+                let offlineDetails = PlaceDetails(
+                    placeId: cachedPlace.id,
+                    name: cachedPlace.name,
+                    formattedAddress: cachedPlace.address,
+                    latitude: cachedPlace.latitude,
+                    longitude: cachedPlace.longitude,
+                    types: cachedPlace.types,
+                    photoReference: cachedPlace.photoReference,
+                    rating: nil,
+                    userRatingCount: nil,
+                    priceLevel: nil,
+                    editorialSummary: nil
+                )
 
+                isLoadingDetails = false
+                selectedDetails = offlineDetails
+                showPreview = true
+                return
+            }
+
+            // Neither network nor cache available
             isLoadingDetails = false
-            selectedDetails = details
-            showPreview = true
+            detailsError = placesService.error?.localizedDescription ?? "Failed to load place details"
         }
     }
 

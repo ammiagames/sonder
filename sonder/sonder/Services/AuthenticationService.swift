@@ -35,9 +35,8 @@ final class AuthenticationService {
     private let debugBypassAuth = false
 
     init() {
-        Task {
-            await checkSession()
-        }
+        // Session check is deferred until modelContext is set (called from initializeServices).
+        // This ensures the SwiftData user cache is available for offline launches.
     }
 
     // MARK: - Debug Bypass
@@ -58,22 +57,29 @@ final class AuthenticationService {
     
     func checkSession() async {
         defer { isCheckingSession = false }
-        do {
-            // Use local Keychain session (~ms) instead of network call (~2-5s).
-            // Supabase SDK auto-refreshes expired tokens on the next API call.
-            guard let session = try supabase.auth.currentSession else { return }
-            let userID = session.user.id.uuidString
+        // Use local Keychain session (~ms) instead of network call (~2-5s).
+        // Supabase SDK auto-refreshes expired tokens on the next API call.
+        guard let session = supabase.auth.currentSession else { return }
+        let userID = session.user.id.uuidString
 
-            // Try to load user from SwiftData cache first for instant UI
-            if let cached = loadCachedUser(id: userID) {
-                self.currentUser = cached
-            }
+        // Try to load user from SwiftData cache first for instant UI
+        if let cached = loadCachedUser(id: userID) {
+            self.currentUser = cached
+        }
 
-            // Then refresh from Supabase in background
-            await loadUser(id: userID)
-        } catch {
-            // No active session, user needs to sign in
-            self.currentUser = nil
+        // Then refresh from Supabase in background
+        await loadUser(id: userID)
+
+        // If both cache and network failed (e.g. offline cold start),
+        // create a minimal user from the session so we stay authenticated.
+        // Full details will refresh when connectivity returns.
+        if self.currentUser == nil {
+            self.currentUser = User(
+                id: userID,
+                username: session.user.email?.components(separatedBy: "@").first ?? "user",
+                email: session.user.email,
+                isPublic: false
+            )
         }
     }
     
@@ -193,8 +199,8 @@ final class AuthenticationService {
 
         do {
             // Get the presenting view controller
-            guard let windowScene = await UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                  let rootViewController = await windowScene.keyWindow?.rootViewController else {
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                  let rootViewController = windowScene.keyWindow?.rootViewController else {
                 throw AuthError.networkError
             }
 

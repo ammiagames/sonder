@@ -39,7 +39,6 @@ struct TripDetailView: View {
     @State private var isUploadingCoverPhoto = false
     @State private var logToRemoveFromTrip: Log?
     @State private var showExpandedMap = false
-    @State private var dashPhase: CGFloat = 0
     @State private var selectedStopIndex: Int? = nil
     @State private var expandedMapCamera: MapCameraPosition = .automatic
     @State private var cardDragOffset: CGFloat = 0
@@ -50,7 +49,6 @@ struct TripDetailView: View {
     @State private var routeDetailLog: Log?
     @State private var routeDetailPlace: Place?
     @State private var showReorder = false
-    @State private var coverAnimating = false
 
 
     // MARK: - Capsule Spacing Constants
@@ -270,21 +268,15 @@ struct TripDetailView: View {
 
     private var capsuleCover: some View {
         ZStack(alignment: .bottom) {
-            // Full-bleed hero photo with Ken Burns + scroll parallax
+            // Full-bleed hero photo sized to actual screen width
             GeometryReader { geo in
-                let scrollOffset = geo.frame(in: .global).minY
-                let parallaxOffset = scrollOffset > 0 ? -scrollOffset * 0.4 : -scrollOffset * 0.15
-
                 if let urlString = trip.coverPhotoURL,
                    let url = URL(string: urlString) {
                     DownsampledAsyncImage(url: url, targetSize: CGSize(width: geo.size.width, height: geo.size.height)) {
                         coverGradientPlaceholder
                     }
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: geo.size.width, height: geo.size.height + 60)
-                    .offset(y: parallaxOffset)
-                    .scaleEffect(coverAnimating ? 1.03 : 1.0)
-                    .animation(.easeInOut(duration: 8).repeatForever(autoreverses: true), value: coverAnimating)
+                    .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
                     .id(urlString)
                 } else {
@@ -353,7 +345,6 @@ struct TripDetailView: View {
             }
         }
         .onAppear {
-            coverAnimating = true
             UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         }
     }
@@ -566,7 +557,7 @@ struct TripDetailView: View {
                 // Background route (full, faded)
                 if curvedRouteCoordinates.count >= 2 {
                     MapPolyline(coordinates: curvedRouteCoordinates)
-                        .stroke(SonderColors.terracotta.opacity(0.2), style: StrokeStyle(lineWidth: 2.5, lineCap: .round, dash: [8, 6], dashPhase: dashPhase))
+                        .stroke(SonderColors.terracotta.opacity(0.2), style: StrokeStyle(lineWidth: 2.5, lineCap: .round, dash: [8, 6], dashPhase: 0))
                 }
 
                 // Active segment (brighter, up to selected stop)
@@ -966,7 +957,7 @@ struct TripDetailView: View {
         Map(position: $mapCameraPosition, interactionModes: []) {
             if curvedRouteCoordinates.count >= 2 {
                 MapPolyline(coordinates: curvedRouteCoordinates)
-                    .stroke(SonderColors.terracotta.opacity(0.35), style: StrokeStyle(lineWidth: 2.5, lineCap: .round, dash: [8, 6], dashPhase: dashPhase))
+                    .stroke(SonderColors.terracotta.opacity(0.35), style: StrokeStyle(lineWidth: 2.5, lineCap: .round, dash: [8, 6], dashPhase: 0))
             }
 
             ForEach(chronologicalMapStops, id: \.log.id) { stop in
@@ -997,9 +988,6 @@ struct TripDetailView: View {
         }
         .onAppear {
             updateMapRegion()
-            withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) {
-                dashPhase = -28
-            }
         }
     }
 
@@ -1070,7 +1058,7 @@ struct TripDetailView: View {
                 emptyLogsState
             } else if isCustomOrdered {
                 // Custom order: numbered stops
-                LazyVStack(spacing: 0) {
+                VStack(spacing: 0) {
                     ForEach(Array(tripLogs.enumerated()), id: \.element.id) { index, log in
                         if let place = placesByID[log.placeID] {
                             NavigationLink {
@@ -1080,11 +1068,10 @@ struct TripDetailView: View {
                             }
                             .contentShape(Rectangle())
                             .buttonStyle(.plain)
-                            .scrollTransition(.animated(.easeOut(duration: 0.4))) { content, phase in
+                            .scrollTransition(.animated(.easeOut(duration: 0.4)).threshold(.visible(0.3))) { content, phase in
                                 content
-                                    .opacity(phase.isIdentity ? 1 : 0)
-                                    .offset(y: phase.isIdentity ? 0 : 24)
-                                    .scaleEffect(phase.isIdentity ? 1 : 0.97)
+                                    .opacity(phase == .bottomTrailing ? 0 : (phase.isIdentity ? 1 : 0.85))
+                                    .offset(y: phase == .bottomTrailing ? 24 : 0)
                             }
                             .contextMenu {
                                 Button(role: .destructive) {
@@ -1098,7 +1085,7 @@ struct TripDetailView: View {
                 }
             } else {
                 // Chronological: day-grouped chapters
-                LazyVStack(spacing: sectionGap) {
+                VStack(spacing: sectionGap) {
                     ForEach(Array(logsByDay.enumerated()), id: \.element.date) { dayIndex, dayGroup in
                         capsuleDaySection(
                             dayNumber: dayIndex + 1,
@@ -1153,11 +1140,10 @@ struct TripDetailView: View {
                     }
                     .contentShape(Rectangle())
                     .buttonStyle(.plain)
-                    .scrollTransition(.animated(.easeOut(duration: 0.4))) { content, phase in
+                    .scrollTransition(.animated(.easeOut(duration: 0.4)).threshold(.visible(0.3))) { content, phase in
                         content
-                            .opacity(phase.isIdentity ? 1 : 0)
-                            .offset(y: phase.isIdentity ? 0 : 24)
-                            .scaleEffect(phase.isIdentity ? 1 : 0.97)
+                            .opacity(phase == .bottomTrailing ? 0 : (phase.isIdentity ? 1 : 0.85))
+                            .offset(y: phase == .bottomTrailing ? 24 : 0)
                     }
                     .contextMenu {
                         Button(role: .destructive) {

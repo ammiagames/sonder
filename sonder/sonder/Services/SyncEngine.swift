@@ -184,7 +184,7 @@ final class SyncEngine {
     private(set) var isSyncing = false
     @ObservationIgnored var lastSyncDate: Date?
     private(set) var pendingCount = 0
-    private(set) var isOnline = true
+    var isOnline = true
 
     /// Log IDs deleted locally but not yet confirmed deleted on Supabase.
     /// `mergeRemoteLogs` skips these so pull sync doesn't resurrect them.
@@ -252,42 +252,44 @@ final class SyncEngine {
 
     /// Sync all pending logs to Supabase and pull remote changes
     func syncNow() async {
+        logger.info("[SyncNow] called — isSyncing=\(self.isSyncing), isOnline=\(self.isOnline)")
         guard !isSyncing else {
             // A sync is already running — schedule a follow-up so new
             // pending items (e.g. a just-created log) aren't left waiting
             // for the next periodic cycle.
             needsResync = true
+            logger.info("[SyncNow] already syncing — queued resync")
             return
         }
         guard isOnline else {
             logger.info("Offline - skipping sync")
+            await updatePendingCount()
             return
         }
 
         // Check for valid Supabase session (local Keychain check, no network)
-        let userID: String
-        do {
-            guard let session = try supabase.auth.currentSession else {
-                logger.info("No Supabase session - skipping sync (debug mode)")
-                return
-            }
-            userID = session.user.id.uuidString
-        } catch {
-            logger.info("No Supabase session - skipping sync (debug mode)")
+        guard let session = supabase.auth.currentSession else {
+            logger.info("[SyncNow] No Supabase session - skipping sync")
             return
         }
+        let userID = session.user.id.uuidString
 
         isSyncing = true
 
-        do {
-            // First, process any pending photo uploads
-            await processPendingPhotoUploads()
+        // First, process any pending photo uploads
+        await processPendingPhotoUploads()
 
-            // Push: sync local changes to remote
+        // Push: sync local changes to remote (independent so one failure doesn't block the other)
+        do {
             try await syncPendingTrips()
+        } catch {
+            logger.error("Push trips error: \(error.localizedDescription)")
+        }
+
+        do {
             try await syncPendingLogs()
         } catch {
-            logger.error("Push sync error: \(error.localizedDescription)")
+            logger.error("Push logs error: \(error.localizedDescription)")
         }
 
         // Retry any remote deletions that failed previously (e.g. offline)
@@ -384,26 +386,26 @@ final class SyncEngine {
     // MARK: - Log Sync
 
     private func syncPendingLogs() async throws {
-        let pending = SyncStatus.pending
-        let failed = SyncStatus.failed
-        let descriptor = FetchDescriptor<Log>(
-            predicate: #Predicate { log in
-                log.syncStatus == pending || log.syncStatus == failed
-            }
-        )
-        let pendingLogs = try modelContext.fetch(descriptor)
+        let allLogs = try modelContext.fetch(FetchDescriptor<Log>())
+        let pendingLogs = allLogs.filter { $0.syncStatus == .pending || $0.syncStatus == .failed }
+        logger.info("[SyncLogs] Found \(pendingLogs.count) pending/failed logs (of \(allLogs.count) total)")
 
         for log in pendingLogs {
             // Skip logs that still have photos uploading in the background
-            if log.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") }) { continue }
+            if log.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") }) {
+                logger.info("[SyncLogs] Skipping log \(log.id) — pending photo upload")
+                continue
+            }
 
             do {
+                logger.info("[SyncLogs] Uploading log \(log.id) for place \(log.placeID), status=\(log.syncStatus.rawValue)")
                 try await uploadLog(log)
                 log.syncStatus = .synced
                 log.updatedAt = Date()
+                logger.info("[SyncLogs] ✓ Log \(log.id) synced successfully")
             } catch {
                 log.syncStatus = .failed
-                logger.error("Failed to sync log \(log.id): \(error.localizedDescription)")
+                logger.error("[SyncLogs] ✗ Failed to sync log \(log.id): \(error)")
             }
         }
 
@@ -478,7 +480,7 @@ final class SyncEngine {
             throw SyncError.invalidData
         }
 
-        try await supabase.database
+        try await supabase
             .from("trips")
             .upsert(trip)
             .execute()
@@ -510,21 +512,15 @@ final class SyncEngine {
     private func syncPendingTrips() async throws {
         // Only push dirty trips owned by the current user (collaborator trips are
         // managed by their owner and would be rejected by RLS anyway).
-        guard let session = try supabase.auth.currentSession else { return }
+        guard let session = supabase.auth.currentSession else { return }
         let currentUserID = session.user.id.uuidString
 
-        let ownerID = currentUserID
-        let pending = SyncStatus.pending
-        let descriptor = FetchDescriptor<Trip>(
-            predicate: #Predicate { trip in
-                trip.createdBy == ownerID && trip.syncStatus == pending
-            }
-        )
-        let dirtyTrips = try modelContext.fetch(descriptor)
+        let allTrips = try modelContext.fetch(FetchDescriptor<Trip>())
+        let dirtyTrips = allTrips.filter { $0.createdBy == currentUserID && $0.syncStatus == .pending }
 
         for trip in dirtyTrips {
             do {
-                try await supabase.database
+                try await supabase
                     .from("trips")
                     .upsert(trip)
                     .execute()
@@ -902,41 +898,26 @@ final class SyncEngine {
     // MARK: - Helpers
 
     func updatePendingCount() async {
-        let pending = SyncStatus.pending
-        let failed = SyncStatus.failed
-        let descriptor = FetchDescriptor<Log>(
-            predicate: #Predicate { log in
-                log.syncStatus == pending || log.syncStatus == failed
-            }
-        )
-        if let logs = try? modelContext.fetch(descriptor) {
-            pendingCount = logs.filter {
-                !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
+        if let allLogs = try? modelContext.fetch(FetchDescriptor<Log>()) {
+            pendingCount = allLogs.filter {
+                ($0.syncStatus == .pending || $0.syncStatus == .failed)
+                && !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
             }.count
         }
     }
 
     /// Get failed logs for retry UI
     func getFailedLogs() -> [Log] {
-        let failed = SyncStatus.failed
-        let descriptor = FetchDescriptor<Log>(
-            predicate: #Predicate { log in log.syncStatus == failed }
-        )
-        return (try? modelContext.fetch(descriptor)) ?? []
+        let allLogs = (try? modelContext.fetch(FetchDescriptor<Log>())) ?? []
+        return allLogs.filter { $0.syncStatus == .failed }
     }
 
     /// Get all logs that contribute to the pending badge (pending or failed, excluding active photo uploads)
     func getStuckLogs() -> [Log] {
-        let pending = SyncStatus.pending
-        let failed = SyncStatus.failed
-        let descriptor = FetchDescriptor<Log>(
-            predicate: #Predicate { log in
-                log.syncStatus == pending || log.syncStatus == failed
-            }
-        )
-        guard let logs = try? modelContext.fetch(descriptor) else { return [] }
-        return logs.filter {
-            !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
+        let allLogs = (try? modelContext.fetch(FetchDescriptor<Log>())) ?? []
+        return allLogs.filter {
+            ($0.syncStatus == .pending || $0.syncStatus == .failed)
+            && !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
         }
     }
 

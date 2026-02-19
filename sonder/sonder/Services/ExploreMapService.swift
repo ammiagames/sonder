@@ -245,7 +245,7 @@ final class ExploreMapService {
 
     /// Finds the unified pin closest to the given coordinate within a threshold.
     /// Extracted as a static method for testability.
-    nonisolated static func findPinByProximity(
+    static func findPinByProximity(
         coordinate: CLLocationCoordinate2D,
         in pins: [UnifiedMapPin],
         threshold: Double = 0.0005

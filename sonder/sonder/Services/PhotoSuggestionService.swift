@@ -15,67 +15,158 @@ import CoreLocation
 @MainActor
 final class PhotoSuggestionService {
     var suggestions: [PHAsset] = []
-    var isAuthorized = false
+    var isLoading = false
+
+    enum AuthorizationLevel {
+        case notDetermined
+        case full
+        case limited
+        case denied
+    }
+
+    private(set) var authorizationLevel: AuthorizationLevel = .notDetermined
+
+    var photoIndexService: PhotoIndexService?
 
     private let cachingManager = PHCachingImageManager()
     private let thumbnailSize = CGSize(width: 200, height: 200) // 2x for 100pt display
     private let radiusMeters: CLLocationDistance = 200
-    private let dayWindow: TimeInterval = 3 * 24 * 60 * 60 // ±3 days
-    private let fallbackWindow: TimeInterval = 90 * 24 * 60 * 60 // 90 days back
     private let maxSuggestions = 5
 
+    private var enumerationTask: Task<[PHAsset], Never>?
+    private var libraryObserver: LibraryChangeObserver?
+    private var debounceTask: Task<Void, Never>?
+
+    // Callback for observer-triggered re-fetches — set by the view
+    var onLibraryChange: (() async -> Void)?
+
     // MARK: - Authorization
+
+    /// Non-prompting check — reads current status without showing a dialog.
+    func checkCurrentAuthorizationStatus() {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        authorizationLevel = mapStatus(status)
+    }
 
     func requestAuthorizationIfNeeded() async {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         switch status {
         case .authorized, .limited:
-            isAuthorized = true
+            authorizationLevel = mapStatus(status)
         case .notDetermined:
             let newStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-            isAuthorized = newStatus == .authorized || newStatus == .limited
+            authorizationLevel = mapStatus(newStatus)
         default:
-            isAuthorized = false
+            authorizationLevel = .denied
+        }
+    }
+
+    private func mapStatus(_ status: PHAuthorizationStatus) -> AuthorizationLevel {
+        switch status {
+        case .authorized: return .full
+        case .limited: return .limited
+        case .denied, .restricted: return .denied
+        case .notDetermined: return .notDetermined
+        @unknown default: return .denied
         }
     }
 
     // MARK: - Trip Context
 
     struct TripContext {
-        let startDate: Date?
-        let endDate: Date?
-        let logCoordinates: [CLLocationCoordinate2D] // other logs in the trip
+        let logCoordinates: [CLLocationCoordinate2D]
     }
 
     // MARK: - Fetch Suggestions
 
     func fetchSuggestions(
         near coordinate: CLLocationCoordinate2D,
-        visitedAt: Date,
         tripContext: TripContext? = nil
     ) async {
-        guard isAuthorized else { return }
+        guard authorizationLevel == .full || authorizationLevel == .limited else { return }
+
+        // Cancel any in-flight enumeration
+        enumerationTask?.cancel()
 
         let placeLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         let allLocations = buildSearchLocations(primary: placeLocation, tripContext: tripContext)
-        let dateRange = buildDateRange(visitedAt: visitedAt, tripContext: tripContext)
 
-        // First try: narrow date range
-        var results = findNearbyPhotos(locations: allLocations, from: dateRange.narrow.start, to: dateRange.narrow.end)
+        isLoading = true
 
-        // Fallback: widen date range if no results
-        if results.isEmpty {
-            results = findNearbyPhotos(locations: allLocations, from: dateRange.wide.start, to: dateRange.wide.end)
+        // Fast path: use spatial index if available
+        if let indexService = photoIndexService,
+           indexService.hasBuiltIndex,
+           !indexService.isBuilding {
+            let identifiers = indexService.query(near: allLocations, radiusMeters: radiusMeters)
+
+            if !identifiers.isEmpty {
+                let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
+                var assets: [PHAsset] = []
+                fetchResult.enumerateObjects { asset, _, _ in
+                    assets.append(asset)
+                }
+
+                let sorted = assets.sorted { a, b in
+                    let distA = minDistance(of: a, to: placeLocation)
+                    let distB = minDistance(of: b, to: placeLocation)
+                    return distA < distB
+                }
+                suggestions = Array(sorted.prefix(maxSuggestions))
+            } else {
+                suggestions = []
+            }
+
+            isLoading = false
+            return
         }
 
-        // Sort: closest to the primary place first
-        results.sort { a, b in
+        // Fallback: full enumeration (first launch while index builds)
+        let radius = radiusMeters
+        let max = maxSuggestions
+
+        let task = Task.detached { [allLocations, radius, max] () -> [PHAsset] in
+            let fetchOptions = PHFetchOptions()
+            fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+
+            let assets = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+
+            var seen = Set<String>()
+            var candidates: [PHAsset] = []
+
+            assets.enumerateObjects { asset, _, stop in
+                if Task.isCancelled {
+                    stop.pointee = true
+                    return
+                }
+                guard let assetLocation = asset.location else { return }
+                for location in allLocations {
+                    if assetLocation.distance(from: location) <= radius {
+                        if seen.insert(asset.localIdentifier).inserted {
+                            candidates.append(asset)
+                        }
+                        break
+                    }
+                }
+                if candidates.count >= max {
+                    stop.pointee = true
+                }
+            }
+            return candidates
+        }
+
+        enumerationTask = task
+        let results = await task.value
+
+        guard !task.isCancelled else { return }
+
+        let sorted = results.sorted { a, b in
             let distA = minDistance(of: a, to: placeLocation)
             let distB = minDistance(of: b, to: placeLocation)
             return distA < distB
         }
 
-        suggestions = Array(results.prefix(maxSuggestions))
+        suggestions = Array(sorted.prefix(maxSuggestions))
+        isLoading = false
     }
 
     private func buildSearchLocations(primary: CLLocation, tripContext: TripContext?) -> [CLLocation] {
@@ -86,58 +177,40 @@ final class PhotoSuggestionService {
         return locations
     }
 
-    private func buildDateRange(visitedAt: Date, tripContext: TripContext?) -> (narrow: (start: Date, end: Date), wide: (start: Date, end: Date)) {
-        let narrowStart: Date
-        let narrowEnd: Date
-        let wideStart: Date
-        let wideEnd: Date
-
-        if let trip = tripContext, let tripStart = trip.startDate, let tripEnd = trip.endDate {
-            // Use trip date range as the narrow window
-            narrowStart = tripStart.addingTimeInterval(-dayWindow)
-            narrowEnd = tripEnd.addingTimeInterval(dayWindow)
-            wideStart = tripStart.addingTimeInterval(-fallbackWindow)
-            wideEnd = tripEnd.addingTimeInterval(dayWindow)
-        } else {
-            narrowStart = visitedAt.addingTimeInterval(-dayWindow)
-            narrowEnd = visitedAt.addingTimeInterval(dayWindow)
-            wideStart = visitedAt.addingTimeInterval(-fallbackWindow)
-            wideEnd = visitedAt
-        }
-
-        return (narrow: (narrowStart, narrowEnd), wide: (wideStart, wideEnd))
-    }
-
     private func minDistance(of asset: PHAsset, to target: CLLocation) -> CLLocationDistance {
         guard let loc = asset.location else { return .greatestFiniteMagnitude }
         return loc.distance(from: target)
     }
 
-    private func findNearbyPhotos(locations: [CLLocation], from startDate: Date, to endDate: Date) -> [PHAsset] {
-        let fetchOptions = PHFetchOptions()
-        fetchOptions.predicate = NSPredicate(
-            format: "creationDate >= %@ AND creationDate <= %@",
-            startDate as NSDate,
-            endDate as NSDate
-        )
-        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+    // MARK: - Library Change Observer
 
-        let assets = PHAsset.fetchAssets(with: .image, options: fetchOptions)
-
-        var seen = Set<String>()
-        var candidates: [PHAsset] = []
-        assets.enumerateObjects { asset, _, _ in
-            guard let assetLocation = asset.location else { return }
-            for location in locations {
-                if assetLocation.distance(from: location) <= self.radiusMeters {
-                    if seen.insert(asset.localIdentifier).inserted {
-                        candidates.append(asset)
-                    }
-                    break
-                }
+    func startObservingLibrary() {
+        guard libraryObserver == nil else { return }
+        let observer = LibraryChangeObserver { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.handleLibraryChange()
             }
         }
-        return candidates
+        libraryObserver = observer
+        PHPhotoLibrary.shared().register(observer)
+    }
+
+    func stopObservingLibrary() {
+        if let observer = libraryObserver {
+            PHPhotoLibrary.shared().unregisterChangeObserver(observer)
+            libraryObserver = nil
+        }
+        debounceTask?.cancel()
+        debounceTask = nil
+    }
+
+    private func handleLibraryChange() {
+        debounceTask?.cancel()
+        debounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await self?.onLibraryChange?()
+        }
     }
 
     // MARK: - Image Loading
@@ -181,6 +254,23 @@ final class PhotoSuggestionService {
     // MARK: - Cleanup
 
     func clearSuggestions() {
+        enumerationTask?.cancel()
         suggestions = []
+        isLoading = false
+    }
+}
+
+// MARK: - PHPhotoLibraryChangeObserver
+
+/// Separate NSObject subclass because @Observable can't inherit from NSObject.
+private final class LibraryChangeObserver: NSObject, PHPhotoLibraryChangeObserver {
+    private let onChange: () -> Void
+
+    init(onChange: @escaping () -> Void) {
+        self.onChange = onChange
+    }
+
+    func photoLibraryDidChange(_ changeInstance: PHChange) {
+        onChange()
     }
 }

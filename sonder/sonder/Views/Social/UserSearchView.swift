@@ -149,7 +149,7 @@ struct UserSearchView: View {
             }
         }
         .listStyle(.plain)
-        .scrollDismissesKeyboard(.interactively)
+        .scrollDismissesKeyboard(.immediately)
         .scrollContentBackground(.hidden)
         .background(SonderColors.cream)
     }
@@ -207,12 +207,9 @@ struct UserSearchRow: View {
                         .font(SonderTypography.headline)
                         .foregroundStyle(SonderColors.inkDark)
 
-                    if let bio = user.bio, !bio.isEmpty {
-                        Text(bio)
-                            .font(SonderTypography.caption)
-                            .foregroundStyle(SonderColors.inkMuted)
-                            .lineLimit(1)
-                    }
+                    Text("Exploring since \(user.createdAt.formatted(.dateTime.month(.wide).year()))")
+                        .font(SonderTypography.caption)
+                        .foregroundStyle(SonderColors.inkMuted)
                 }
 
                 Spacer()

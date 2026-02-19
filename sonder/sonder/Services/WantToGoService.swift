@@ -229,7 +229,7 @@ final class WantToGoService {
                 !remotePlaceIDs.contains($0.placeID) && !pendingDeletionPlaceIDs.contains($0.placeID)
             }
             for item in localOnly {
-                try? await supabase
+                _ = try? await supabase
                     .from("want_to_go")
                     .upsert(item)
                     .execute()
@@ -237,7 +237,7 @@ final class WantToGoService {
 
             // 3. Retry pending remote deletions
             for placeID in pendingDeletionPlaceIDs {
-                try? await supabase
+                _ = try? await supabase
                     .from("want_to_go")
                     .delete()
                     .eq("user_id", value: userID)

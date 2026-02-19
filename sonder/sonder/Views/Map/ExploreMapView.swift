@@ -53,6 +53,10 @@ struct ExploreMapView: View {
     @State private var isLoadingDetails = false
     @State private var hasLoadedOnce = false
     @State private var visibleRegion: MKCoordinateRegion?
+    @State private var currentCameraDistance: CLLocationDistance = 50000
+    @State private var currentCameraHeading: CLLocationDirection = 0
+    @State private var currentCameraPitch: Double = 0
+    @State private var kenBurnsTask: Task<Void, Never>?
     @State private var newPinPlaceID: String?
     @State private var pinDropSettled = true
     @State private var showPulseRings = false
@@ -72,6 +76,10 @@ struct ExploreMapView: View {
     @State private var mapSnapshot: UIImage?
     @State private var snapshotProgress: CGFloat = 0
     @State private var mapViewSize: CGSize = .zero
+
+    // Dissolve animation handle — stored to cancel on rapid tab switching
+    @State private var dissolveTask: Task<Void, Never>?
+    @State private var snapshotGeneration: UInt64 = 0
 
     // Debounce & throttle state
     @State private var recomputeTask: Task<Void, Never>?
@@ -142,52 +150,63 @@ struct ExploreMapView: View {
                     }
                 }
         }
+        .overlay(alignment: .top) { topOverlay }
         .overlay(alignment: .bottom) {
             wantToGoBottomContent
                 .animation(.easeOut(duration: 0.2), value: mapSelection != nil)
         }
         .overlay(alignment: .bottom) {
-            if let pin = sheetPin {
-                UnifiedBottomCard(
-                    pin: pin,
-                    onDismiss: {
-                        UISelectionFeedbackGenerator().selectionChanged()
-                        clearSelection()
-                    },
-                    onNavigateToLog: { logID, place in
-                        detailLogID = logID
-                        detailPlace = place
-                        withAnimation(.smooth(duration: 0.2)) { sheetPin = nil }
-                        mapSelection = nil
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                            showDetail = true
-                        }
-                    },
-                    onNavigateToFeedItem: { feedItem in
-                        withAnimation(.smooth(duration: 0.2)) { sheetPin = nil }
-                        mapSelection = nil
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                            selectedFeedItem = feedItem
-                        }
-                    },
-                    onFocusFriend: { friendID, _ in
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            filter.selectedFriendIDs = [friendID]
-                            filter.showFriendsPlaces = true
-                            sheetPin = nil
+            Group {
+                if let pin = sheetPin, !isShowingDetail {
+                    UnifiedBottomCard(
+                        pin: pin,
+                        onDismiss: {
+                            UISelectionFeedbackGenerator().selectionChanged()
                             clearSelection()
+                        },
+                        onNavigateToLog: { logID, place in
+                            detailLogID = logID
+                            detailPlace = place
+                            cardIsExpanded = false
+                            showDetail = true
+                        },
+                        onNavigateToFeedItem: { feedItem in
+                            cardIsExpanded = false
+                            selectedFeedItem = feedItem
+                        },
+                        onFocusFriend: { friendID, _ in
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                filter.selectedFriendIDs = [friendID]
+                                filter.showFriendsPlaces = true
+                                sheetPin = nil
+                                clearSelection()
+                            }
+                        },
+                        onExpandedChanged: { expanded in
+                            cardIsExpanded = expanded
+                            recenterForCardState(coordinate: pin.coordinate, expanded: expanded)
                         }
-                    },
-                    onExpandedChanged: { expanded in
-                        cardIsExpanded = expanded
-                        recenterForCardState(coordinate: pin.coordinate, expanded: expanded)
-                    }
-                )
-                .id(pin.id)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                    )
+                    .id(pin.id)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.smooth(duration: 0.25), value: sheetPin?.id)
+            .animation(.smooth(duration: 0.25), value: isShowingDetail)
+        }
+        // Snapshot overlay — placed at the outermost level so the Map's
+        // internal layout settling cannot shift it. Fully covers the screen
+        // while the live Map reloads tiles after a tab switch.
+        .overlay {
+            if let snapshot = mapSnapshot, snapshotProgress < 1 {
+                Image(uiImage: snapshot)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .ignoresSafeArea()
+                    .opacity(1 - Double(snapshotProgress))
+                    .allowsHitTesting(false)
             }
         }
-        .animation(.smooth(duration: 0.25), value: sheetPin?.id)
     }
 
     // MARK: - Core Map View (split to help type-checker)
@@ -213,22 +232,22 @@ struct ExploreMapView: View {
                         cameraPosition = .region(region)
                     }
 
-                    // Capture a static snapshot before the Map is destroyed.
-                    // Shown as overlay when the tab becomes visible again.
+                    // Capture a static snapshot before the Map is destroyed
                     snapshotProgress = 0
                     captureMapSnapshot()
                 } else if mapSnapshot != nil {
-                    // Tab visible again — show snapshot while live Map loads tiles.
-                    // After a brief delay the snapshot dissolves: blur + fade + subtle zoom.
-                    snapshotProgress = 0
-                    Task {
+                    // Tab visible again — dissolve snapshot after map has had time to load
+                    dissolveTask?.cancel()
+                    dissolveTask = Task { @MainActor in
+                        snapshotProgress = 0
                         try? await Task.sleep(for: .milliseconds(800))
+                        guard !Task.isCancelled else { return }
                         guard snapshotProgress < 1 else { return }
                         withAnimation(.easeInOut(duration: 0.6)) {
                             snapshotProgress = 1
                         }
-                        // Free snapshot memory after animation finishes
                         try? await Task.sleep(for: .milliseconds(700))
+                        guard !Task.isCancelled else { return }
                         mapSnapshot = nil
                     }
                 }
@@ -300,18 +319,19 @@ struct ExploreMapView: View {
                 ToolbarItem(placement: .topBarLeading) { filterButton }
                 ToolbarItem(placement: .topBarTrailing) { mapStyleMenu }
             }
-            .overlay(alignment: .top) { topOverlay }
             .overlay(alignment: .top) {
-                if let toast = pinDropToast {
-                    PinDropToastView(info: toast)
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .top).combined(with: .opacity),
-                            removal: .opacity
-                        ))
-                        .padding(.top, 60)
+                Group {
+                    if let toast = pinDropToast {
+                        PinDropToastView(info: toast)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .top).combined(with: .opacity),
+                                removal: .opacity
+                            ))
+                            .padding(.top, 60)
+                    }
                 }
+                .animation(.easeInOut(duration: 0.35), value: pinDropToast != nil)
             }
-            .animation(.easeInOut(duration: 0.35), value: pinDropToast != nil)
             .sheet(isPresented: $showFilterSheet) {
                 ExploreFilterSheet(filter: $filter)
                     .presentationDetents([.medium, .large])
@@ -348,16 +368,25 @@ struct ExploreMapView: View {
 
     // MARK: - Top Overlay (chips + loading)
 
+    /// Whether the NavigationStack has pushed a detail view (hides top overlay)
+    private var isShowingDetail: Bool {
+        showDetail || selectedFeedItem != nil || selectedPlaceDetails != nil
+    }
+
     private var topOverlay: some View {
         VStack(spacing: SonderSpacing.xs) {
-            layerChips
+            if !isShowingDetail {
+                layerChips
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
 
-            if exploreMapService.isLoading && !hasLoadedOnce {
+            if exploreMapService.isLoading && !hasLoadedOnce && !isShowingDetail {
                 friendsLoadingPill
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .padding(.top, SonderSpacing.xs)
+        .animation(.easeInOut(duration: 0.25), value: isShowingDetail)
         .animation(.easeInOut(duration: 0.3), value: exploreMapService.isLoading)
     }
 
@@ -380,7 +409,7 @@ struct ExploreMapView: View {
     // MARK: - Layer Chips
 
     private var layerChips: some View {
-        HStack(spacing: SonderSpacing.xs) {
+        HStack(spacing: 3) {
             layerChip(
                 label: "Mine",
                 icon: "mappin.circle.fill",
@@ -398,7 +427,6 @@ struct ExploreMapView: View {
             ) {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     if !filter.selectedFriendIDs.isEmpty {
-                        // Clear friend filter first, restore to all friends
                         filter.selectedFriendIDs = []
                     } else {
                         filter.showFriendsPlaces.toggle()
@@ -416,25 +444,32 @@ struct ExploreMapView: View {
                 }
             }
         }
-        .padding(.horizontal, SonderSpacing.md)
+        .padding(3)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
     }
 
     private func layerChip(label: String, icon: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
-                Text(label)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .font(.system(size: 10, weight: .semibold))
+                if isOn {
+                    Text(label)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
             }
-            .padding(.horizontal, SonderSpacing.sm)
-            .padding(.vertical, SonderSpacing.xxs + 2)
-            .background(isOn ? SonderColors.terracotta : SonderColors.warmGray.opacity(0.9))
+            .padding(.horizontal, isOn ? 8 : 7)
+            .padding(.vertical, isOn ? 5 : 7)
+            .background(isOn ? SonderColors.terracotta : Color.clear)
             .foregroundStyle(isOn ? .white : SonderColors.inkMuted)
             .clipShape(Capsule())
-            .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
         }
         .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.2), value: isOn)
     }
 
     // MARK: - Map
@@ -478,6 +513,9 @@ struct ExploreMapView: View {
                 .mapStyle(mapStyle.style)
                 .onMapCameraChange(frequency: .onEnd) { context in
                     visibleRegion = context.region
+                    currentCameraDistance = context.camera.distance
+                    currentCameraHeading = context.camera.heading
+                    currentCameraPitch = context.camera.pitch
                     schedulePrefetch()
                 }
                 .mapControls {
@@ -485,19 +523,6 @@ struct ExploreMapView: View {
                     MapCompass()
                     MapScaleView()
                 }
-                .background {
-                    GeometryReader { geo in
-                        Color.clear.onAppear { mapViewSize = geo.size }
-                            .onChange(of: geo.size) { _, newSize in mapViewSize = newSize }
-                    }
-                }
-            }
-
-            // Snapshot overlay — covers the map while tiles reload after a tab switch.
-            // Dissolves with blur + fade + subtle zoom driven by snapshotProgress.
-            if let snapshot = mapSnapshot, snapshotProgress < 1 {
-                MapSnapshotOverlay(image: snapshot, progress: snapshotProgress)
-                    .allowsHitTesting(false)
             }
         }
     }
@@ -516,8 +541,8 @@ struct ExploreMapView: View {
             ZStack {
                 // Pulse rings behind the pin — only for newly dropped pins
                 if isNewPin && showPulseRings {
-                    PinDropPulseRings()
-                        .offset(y: 20) // Center rings on the pin's base, not its center
+                    PinDropEffect(ratingColor: SonderColors.pinColor(for: item.pin.bestRating))
+                        .offset(y: 20)
                 }
 
                 UnifiedMapPinView(
@@ -528,6 +553,7 @@ struct ExploreMapView: View {
                 .offset(y: yOffset)
                 .scaleEffect(scale)
                 .opacity(isRemoving ? 0 : 1)
+                .animation(.spring(response: 2.0, dampingFraction: 0.45), value: pinDropSettled)
                 .animation(.easeOut(duration: 0.15), value: isSelected)
                 .animation(.easeIn(duration: 0.3), value: isRemoving)
                 .simultaneousGesture(TapGesture().onEnded {
@@ -566,11 +592,7 @@ struct ExploreMapView: View {
                 coordinate = standaloneWantToGoItems.first(where: { $0.id == id })?.coordinate
             }
             if let coordinate {
-                let currentSpan = visibleRegion?.span ?? cameraPosition.region?.span
-                    ?? MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                withAnimation(.smooth(duration: 0.5)) {
-                    cameraPosition = .region(MKCoordinateRegion(center: coordinate, span: currentSpan))
-                }
+                kenBurnsPan(to: coordinate, duration: 0.6)
             }
         }
         withAnimation(.easeInOut(duration: 0.2)) { mapSelection = nil }
@@ -838,7 +860,7 @@ struct ExploreMapView: View {
         }
 
         let photoRefs = Array(Set(visiblePins.compactMap(\.photoReference)).prefix(20))
-        let scale = UIScreen.main.scale
+        let scale = UITraitCollection.current.displayScale
         let targetPixelSize = CGSize(
             width: PinPhotoConstants.pointSize.width * scale,
             height: PinPhotoConstants.pointSize.height * scale
@@ -892,40 +914,41 @@ struct ExploreMapView: View {
         // Zoom camera to the new pin location
         zoomToSelected(coordinate: coord)
 
-        // Animate to settled on next frame (spring drop effect)
+        // Animate to settled (very slow, weighty spring drop)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.55)) {
+            withAnimation(.spring(response: 2.0, dampingFraction: 0.45)) {
                 pinDropSettled = true
             }
         }
 
-        // Trigger pulse rings right after pin lands
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+        // Trigger confetti + shadow after pin lands
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
             showPulseRings = true
         }
 
         // Show context toast with place name + rating
         if let match {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) {
                 pinDropToast = PinDropToastInfo(
                     placeName: match.placeName,
                     ratingEmoji: match.userRating?.emoji ?? "📍"
                 )
             }
             // Dismiss toast
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
                 pinDropToast = nil
             }
         }
 
         // Clear the drop animation state after it completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
             newPinPlaceID = nil
             showPulseRings = false
         }
     }
 
     private func fitAllPins() {
+        kenBurnsTask?.cancel()
         let coordinates = filteredPins.map(\.coordinate)
         if !coordinates.isEmpty {
             let region = MKCoordinateRegion(coordinates: coordinates)
@@ -942,46 +965,89 @@ struct ExploreMapView: View {
     }
 
     /// Pans/zooms the camera so a selected pin is centered on screen.
-    /// The compact sheet (90pt) is small enough that no offset is needed.
+    /// When already zoomed in, drives a Ken Burns cinematic drift frame-by-frame
+    /// (bypasses MapKit's internal animation which snaps for small panning distances).
+    /// When zoomed out, zooms in to neighborhood level.
     private func zoomToSelected(coordinate: CLLocationCoordinate2D) {
         let currentSpan = visibleRegion?.span ?? cameraPosition.region?.span
 
-        let targetSpan: MKCoordinateSpan
-
         if let span = currentSpan, span.latitudeDelta > 0.15 {
+            // Zoomed out — zoom in to neighborhood level
+            kenBurnsTask?.cancel()
             let meters = 3000.0 / 111_000.0
-            targetSpan = MKCoordinateSpan(latitudeDelta: meters, longitudeDelta: meters)
+            let targetSpan = MKCoordinateSpan(latitudeDelta: meters, longitudeDelta: meters)
+            withAnimation(.smooth(duration: 1.2)) {
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: coordinate,
+                    span: targetSpan
+                ))
+            }
         } else {
-            targetSpan = currentSpan ?? MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-        }
-
-        withAnimation(.smooth(duration: 0.5)) {
-            cameraPosition = .region(MKCoordinateRegion(
-                center: coordinate,
-                span: targetSpan
-            ))
+            // Already zoomed in — Ken Burns with subtle 3% push-in
+            kenBurnsPan(to: coordinate, duration: 1.2, pushIn: 0.97)
         }
     }
 
-    /// Recenter pin when the sheet detent changes.
+    /// Recenter pin when the bottom card expands or collapses.
     /// Expanded sheet covers ~half the screen — offset pin upward so it stays visible.
     /// Compact sheet — center pin on screen, no offset needed.
     private func recenterForCardState(coordinate: CLLocationCoordinate2D, expanded: Bool) {
-        let currentSpan = visibleRegion?.span ?? cameraPosition.region?.span
-            ?? MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-
         if expanded {
+            let currentSpan = visibleRegion?.span ?? cameraPosition.region?.span
+                ?? MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
             let latOffset = currentSpan.latitudeDelta * 0.25
             let offsetCenter = CLLocationCoordinate2D(
                 latitude: coordinate.latitude - latOffset,
                 longitude: coordinate.longitude
             )
-            withAnimation(.smooth(duration: 0.5)) {
-                cameraPosition = .region(MKCoordinateRegion(center: offsetCenter, span: currentSpan))
-            }
+            kenBurnsPan(to: offsetCenter, duration: 0.8)
         } else {
-            withAnimation(.smooth(duration: 0.5)) {
-                cameraPosition = .region(MKCoordinateRegion(center: coordinate, span: currentSpan))
+            kenBurnsPan(to: coordinate, duration: 0.8)
+        }
+    }
+
+    // MARK: - Ken Burns Camera Drift
+
+    /// Drives a cinematic camera drift from the current position to the target coordinate.
+    /// Manually interpolates frame-by-frame at ~60fps using cubic ease-in-out.
+    /// This bypasses MapKit's internal animation engine which snaps for small pan distances.
+    private func kenBurnsPan(
+        to target: CLLocationCoordinate2D,
+        duration: TimeInterval = 1.2,
+        pushIn: Double = 1.0
+    ) {
+        kenBurnsTask?.cancel()
+
+        let startCenter = visibleRegion?.center ?? target
+        let startDistance = currentCameraDistance > 0 ? currentCameraDistance : 5000
+        let targetDistance = startDistance * pushIn
+        let heading = currentCameraHeading
+        let pitch = currentCameraPitch
+
+        kenBurnsTask = Task { @MainActor in
+            let startTime = CACurrentMediaTime()
+
+            while !Task.isCancelled {
+                let elapsed = CACurrentMediaTime() - startTime
+                let t = min(elapsed / duration, 1.0)
+                // Cubic ease-in-out for film-like acceleration/deceleration
+                let eased = t < 0.5
+                    ? 4 * t * t * t
+                    : 1 - pow(-2 * t + 2, 3) / 2
+
+                let lat = startCenter.latitude + (target.latitude - startCenter.latitude) * eased
+                let lng = startCenter.longitude + (target.longitude - startCenter.longitude) * eased
+                let dist = startDistance + (targetDistance - startDistance) * eased
+
+                cameraPosition = .camera(MapCamera(
+                    centerCoordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng),
+                    distance: dist,
+                    heading: heading,
+                    pitch: pitch
+                ))
+
+                if t >= 1.0 { break }
+                try? await Task.sleep(nanoseconds: 16_000_000) // ~60fps
             }
         }
     }
@@ -1008,6 +1074,7 @@ struct ExploreMapView: View {
     }
 
     private func centerOnUser() {
+        kenBurnsTask?.cancel()
         if let location = locationService.currentLocation {
             withAnimation(.smooth(duration: 1.0)) {
                 cameraPosition = .region(MKCoordinateRegion(
@@ -1028,9 +1095,13 @@ struct ExploreMapView: View {
     /// visually matches what the user was just looking at.
     private func captureMapSnapshot() {
         guard let region = visibleRegion ?? cameraPosition.region else { return }
+        let capturedGeneration = snapshotGeneration
 
-        let size = mapViewSize.width > 0 ? mapViewSize : UIScreen.main.bounds.size
-        let snapshotScale = min(UIScreen.main.scale, 2)
+        let screenBounds = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.screen.bounds ?? CGRect(x: 0, y: 0, width: 390, height: 844)
+        let size = screenBounds.size
+        let snapshotScale = min(UITraitCollection.current.displayScale, 2)
 
         let options = MKMapSnapshotter.Options()
         options.region = region
@@ -1096,6 +1167,7 @@ struct ExploreMapView: View {
             }
 
             Task { @MainActor in
+                guard self.snapshotGeneration == capturedGeneration else { return }
                 self.mapSnapshot = composited
             }
         }
@@ -1115,56 +1187,6 @@ struct ExploreMapView: View {
         path.lineWidth = 1.5
         path.fill()
         path.stroke()
-    }
-}
-
-// MARK: - Map Snapshot Overlay
-
-/// Shows the captured map snapshot with a shimmer animation to indicate the
-/// live map is loading underneath. Dissolves with blur + fade + subtle zoom
-/// driven by `progress` (0 = fully visible, 1 = fully dissolved).
-private struct MapSnapshotOverlay: View {
-    let image: UIImage
-    let progress: CGFloat
-
-    @State private var shimmerPhase: CGFloat = -1
-
-    var body: some View {
-        Image(uiImage: image)
-            .resizable()
-            .aspectRatio(contentMode: .fill)
-            .overlay { shimmer }
-            .opacity(1 - Double(progress))
-            .blur(radius: progress * 10)
-            .scaleEffect(1 + progress * 0.02)
-    }
-
-    private var shimmer: some View {
-        GeometryReader { geo in
-            let width = geo.size.width
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: Color.white.opacity(0.15), location: 0.4),
-                    .init(color: Color.white.opacity(0.25), location: 0.5),
-                    .init(color: Color.white.opacity(0.15), location: 0.6),
-                    .init(color: .clear, location: 1),
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: width * 1.5)
-            .offset(x: shimmerPhase * width * 1.5)
-            .onAppear {
-                withAnimation(
-                    .easeInOut(duration: 1.4)
-                    .repeatForever(autoreverses: false)
-                ) {
-                    shimmerPhase = 1
-                }
-            }
-        }
-        .clipped()
     }
 }
 
@@ -1204,53 +1226,60 @@ struct PinDropToastView: View {
     }
 }
 
-// MARK: - Pin Drop Pulse Rings
+// MARK: - Pin Drop Effect
 
-/// Concentric rings that expand and fade from the pin drop point.
-struct PinDropPulseRings: View {
-    @State private var ring1Scale: CGFloat = 0.3
-    @State private var ring2Scale: CGFloat = 0.3
-    @State private var ring3Scale: CGFloat = 0.3
-    @State private var ring1Opacity: Double = 0.6
-    @State private var ring2Opacity: Double = 0.5
-    @State private var ring3Opacity: Double = 0.4
+/// Confetti burst + shadow impact when a new pin lands on the map.
+struct PinDropEffect: View {
+    let ratingColor: Color
+
+    @State private var burstOut = false
+    @State private var shadowSettled = false
+
+    private struct Particle {
+        let angle: Double
+        let distance: CGFloat
+        let size: CGFloat
+    }
+
+    private let particles: [Particle] = [
+        Particle(angle: 25, distance: 50, size: 6),
+        Particle(angle: 80, distance: 42, size: 5),
+        Particle(angle: 145, distance: 48, size: 6),
+        Particle(angle: 200, distance: 44, size: 5),
+        Particle(angle: 265, distance: 52, size: 6),
+        Particle(angle: 325, distance: 40, size: 5),
+    ]
 
     var body: some View {
         ZStack {
-            Circle()
-                .stroke(SonderColors.terracotta, lineWidth: 2)
-                .frame(width: 80, height: 80)
-                .scaleEffect(ring1Scale)
-                .opacity(ring1Opacity)
+            // Impact shadow — starts wide/diffuse, settles to tight
+            Ellipse()
+                .fill(.black)
+                .frame(width: 36, height: 10)
+                .scaleEffect(shadowSettled ? 1.0 : 2.5)
+                .opacity(shadowSettled ? 0.08 : 0.22)
+                .blur(radius: shadowSettled ? 2 : 6)
 
-            Circle()
-                .stroke(SonderColors.terracotta.opacity(0.7), lineWidth: 1.5)
-                .frame(width: 80, height: 80)
-                .scaleEffect(ring2Scale)
-                .opacity(ring2Opacity)
-
-            Circle()
-                .stroke(SonderColors.ochre.opacity(0.5), lineWidth: 1)
-                .frame(width: 80, height: 80)
-                .scaleEffect(ring3Scale)
-                .opacity(ring3Opacity)
+            // Confetti burst — dots scatter outward and fade
+            ForEach(Array(particles.enumerated()), id: \.offset) { _, p in
+                Circle()
+                    .fill(ratingColor)
+                    .frame(width: p.size, height: p.size)
+                    .offset(
+                        x: burstOut ? CGFloat(cos(p.angle * .pi / 180)) * p.distance : 0,
+                        y: burstOut ? CGFloat(sin(p.angle * .pi / 180)) * p.distance : 0
+                    )
+                    .opacity(burstOut ? 0 : 0.8)
+                    .scaleEffect(burstOut ? 0.3 : 1.0)
+            }
         }
         .allowsHitTesting(false)
         .onAppear {
-            // Ring 1: fast
-            withAnimation(.easeOut(duration: 0.8)) {
-                ring1Scale = 1.8
-                ring1Opacity = 0
+            withAnimation(.easeOut(duration: 1.8)) {
+                shadowSettled = true
             }
-            // Ring 2: medium, slightly delayed
-            withAnimation(.easeOut(duration: 1.0).delay(0.15)) {
-                ring2Scale = 2.2
-                ring2Opacity = 0
-            }
-            // Ring 3: slow, more delayed
-            withAnimation(.easeOut(duration: 1.2).delay(0.3)) {
-                ring3Scale = 2.6
-                ring3Opacity = 0
+            withAnimation(.easeOut(duration: 3.0)) {
+                burstOut = true
             }
         }
     }

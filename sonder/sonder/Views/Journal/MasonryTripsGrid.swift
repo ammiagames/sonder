@@ -82,7 +82,7 @@ struct MasonryTripsGrid: View {
             }
             .padding(.top, SonderSpacing.sm)
         }
-        .scrollDismissesKeyboard(.interactively)
+        .scrollDismissesKeyboard(.immediately)
         .onChange(of: searchText) { _, newValue in
             if !newValue.isEmpty {
                 unassignedExpanded = true

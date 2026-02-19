@@ -72,8 +72,6 @@ struct ProfileView: View {
 
                     // Journey stats (only show if has logs)
                     if !logs.isEmpty {
-                        heroStatSection
-
                         // Taste DNA radar chart (needs >= 3 logs)
                         if let stats = profileStats, stats.totalLogs >= 3, !stats.tasteDNA.isEmpty {
                             TasteDNARadarChart(tasteDNA: stats.tasteDNA)
@@ -88,15 +86,6 @@ struct ProfileView: View {
                             youLoveSection
                         }
 
-                        // Streak + insights
-                        if let stats = profileStats {
-                            ProfileInsightsSection(stats: stats)
-                        }
-
-                        // Bookends
-                        if let stats = profileStats, let bookends = stats.bookends {
-                            bookendsSection(bookends: bookends)
-                        }
 
                     }
 
@@ -526,6 +515,8 @@ struct ProfileView: View {
             Text(authService.currentUser?.username ?? "User")
                 .font(SonderTypography.largeTitle)
                 .foregroundStyle(SonderColors.inkDark)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
 
             // Archetype badge
             if let stats = profileStats, stats.totalLogs > 0 {
@@ -542,14 +533,21 @@ struct ProfileView: View {
                 .clipShape(Capsule())
             }
 
-            // Bio
-            if let bio = authService.currentUser?.bio, !bio.isEmpty {
-                Text(bio)
-                    .font(SonderTypography.body)
+            // Journey stats subtitle
+            if !logs.isEmpty {
+                let parts: [String] = {
+                    var p = ["\(logs.count) places"]
+                    if uniqueCities.count > 1 { p.append("\(uniqueCities.count) cities") }
+                    if uniqueCountries.count > 1 { p.append("\(uniqueCountries.count) countries") }
+                    return p
+                }()
+                Text(parts.joined(separator: " · "))
+                    .font(SonderTypography.subheadline)
                     .foregroundStyle(SonderColors.inkMuted)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, SonderSpacing.lg)
             }
+
+
+
 
             // Member since
             if let user = authService.currentUser {
@@ -610,55 +608,6 @@ struct ProfileView: View {
                     .font(.system(size: 36, weight: .bold, design: .rounded))
                     .foregroundStyle(SonderColors.terracotta)
             }
-    }
-
-    // MARK: - Hero Stat Section
-
-    private var heroStatSection: some View {
-        VStack(spacing: SonderSpacing.xs) {
-            Text("\(logs.count)")
-                .font(.system(size: 48, weight: .bold, design: .serif))
-                .foregroundStyle(SonderColors.inkDark)
-
-            Text("places logged")
-                .font(SonderTypography.headline)
-                .foregroundStyle(SonderColors.inkMuted)
-
-            // Breakdown line
-            let parts: [String] = {
-                var p: [String] = []
-                if uniqueCities.count > 1 {
-                    p.append("\(uniqueCities.count) cities")
-                }
-                if uniqueCountries.count > 1 {
-                    p.append("\(uniqueCountries.count) countries")
-                }
-                return p
-            }()
-
-            if !parts.isEmpty {
-                Text("across " + parts.joined(separator: " in "))
-                    .font(SonderTypography.caption)
-                    .foregroundStyle(SonderColors.inkLight)
-            }
-
-            // Momentum indicator
-            let thisMonthCount = logsThisMonth
-            if thisMonthCount > 0 {
-                Text("\(thisMonthCount) place\(thisMonthCount == 1 ? "" : "s") this month")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(SonderColors.terracotta)
-                    .padding(.horizontal, SonderSpacing.sm)
-                    .padding(.vertical, SonderSpacing.xxs)
-                    .background(SonderColors.terracotta.opacity(0.1))
-                    .clipShape(Capsule())
-                    .padding(.top, SonderSpacing.xxs)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, SonderSpacing.lg)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
     }
 
     // MARK: - Enhanced Rating Section
@@ -725,75 +674,6 @@ struct ProfileView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(SonderColors.inkDark)
         }
-    }
-
-    // MARK: - Bookends Section
-
-    private func bookendsSection(bookends: Bookends) -> some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            Text("Your journey")
-                .font(SonderTypography.caption)
-                .foregroundStyle(SonderColors.inkMuted)
-                .textCase(.uppercase)
-                .tracking(0.5)
-
-            HStack(spacing: SonderSpacing.sm) {
-                // First log
-                VStack(spacing: SonderSpacing.xxs) {
-                    Image(systemName: "flag.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(SonderColors.sage)
-                    Text(bookends.firstPlaceName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(SonderColors.inkDark)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                    if let city = bookends.firstCity {
-                        Text(city)
-                            .font(.system(size: 11))
-                            .foregroundStyle(SonderColors.inkMuted)
-                    }
-                    Text(bookends.firstDate.formatted(date: .abbreviated, time: .omitted))
-                        .font(.system(size: 10))
-                        .foregroundStyle(SonderColors.inkLight)
-                }
-                .frame(maxWidth: .infinity)
-
-                // Arrow + days
-                VStack(spacing: 2) {
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(SonderColors.terracotta)
-                    Text("\(bookends.daysBetween)d")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(SonderColors.inkMuted)
-                }
-
-                // Latest log
-                VStack(spacing: SonderSpacing.xxs) {
-                    Image(systemName: "mappin.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(SonderColors.terracotta)
-                    Text(bookends.latestPlaceName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(SonderColors.inkDark)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                    if let city = bookends.latestCity {
-                        Text(city)
-                            .font(.system(size: 11))
-                            .foregroundStyle(SonderColors.inkMuted)
-                    }
-                    Text(bookends.latestDate.formatted(date: .abbreviated, time: .omitted))
-                        .font(.system(size: 10))
-                        .foregroundStyle(SonderColors.inkLight)
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
     }
 
     // MARK: - You Love Section
@@ -1044,12 +924,6 @@ struct ProfileView: View {
 
     private var topTags: [String] {
         topTagsWithCounts.map(\.tag)
-    }
-
-    private var logsThisMonth: Int {
-        let now = Date()
-        let calendar = Calendar.current
-        return logs.filter { calendar.isDate($0.createdAt, equalTo: now, toGranularity: .month) }.count
     }
 
     private func logsForTag(_ tag: String) -> [Log] {

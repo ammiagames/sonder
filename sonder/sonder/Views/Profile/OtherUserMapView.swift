@@ -14,154 +14,294 @@ struct OtherUserMapView: View {
     let username: String
     let logs: [FeedItem]
 
-    @State private var cameraPosition: MapCameraPosition = .automatic
-    @State private var selectedItem: FeedItem?
+    @Environment(LocationService.self) private var locationService
+    @Environment(\.isTabVisible) private var isTabVisible
+
+    @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .camera(MapCamera(centerCoordinate: .init(latitude: 37.7749, longitude: -122.4194), distance: 50000)))
+    @State private var selectedPlaceID: String?
+    @State private var sheetPin: UnifiedMapPin?  // drives card separately from Map selection
+    @State private var mapStyle: MapStyleOption = .minimal
+    @State private var visibleRegion: MKCoordinateRegion?
+    @State private var hasSetInitialCamera = false
+    @State private var cardIsExpanded = false
+    @State private var selectedFeedItem: FeedItem?
+
+    /// All log coordinates for fit-all / recenter.
+    private var allCoordinates: [CLLocationCoordinate2D] {
+        logs.map { CLLocationCoordinate2D(latitude: $0.place.latitude, longitude: $0.place.longitude) }
+    }
+
+    /// Logs grouped by place ID, sorted most-recent-first within each group.
+    private var groupedLogs: [(placeID: String, place: FeedItem.FeedPlace, items: [FeedItem])] {
+        let grouped = Dictionary(grouping: logs) { $0.place.id }
+        return grouped.map { (placeID, items) in
+            let sorted = items.sorted { $0.log.createdAt > $1.log.createdAt }
+            return (placeID: placeID, place: sorted[0].place, items: sorted)
+        }
+    }
+
+    /// Converts a grouped log entry into a UnifiedMapPin.friends for the shared card.
+    private func makePin(for group: (placeID: String, place: FeedItem.FeedPlace, items: [FeedItem])) -> UnifiedMapPin {
+        let explorePlace = ExploreMapPlace(
+            id: group.placeID,
+            name: group.place.name,
+            address: group.place.address,
+            coordinate: CLLocationCoordinate2D(
+                latitude: group.place.latitude,
+                longitude: group.place.longitude
+            ),
+            photoReference: group.place.photoReference,
+            logs: group.items
+        )
+        return .friends(place: explorePlace)
+    }
 
     var body: some View {
-        Map(position: $cameraPosition, selection: $selectedItem) {
-            ForEach(logs) { item in
-                Marker(
-                    item.place.name,
-                    systemImage: markerIcon(for: item.rating),
-                    coordinate: CLLocationCoordinate2D(
-                        latitude: item.place.latitude,
-                        longitude: item.place.longitude
-                    )
+        ZStack {
+            if isTabVisible {
+                Map(position: $cameraPosition, selection: $selectedPlaceID) {
+                    ForEach(groupedLogs, id: \.placeID) { group in
+                        let isSelected = selectedPlaceID == group.placeID
+                        let bestItem = group.items[0]
+                        Annotation(
+                            group.place.name,
+                            coordinate: CLLocationCoordinate2D(
+                                latitude: group.place.latitude,
+                                longitude: group.place.longitude
+                            ),
+                            anchor: .center
+                        ) {
+                            LogPinView(
+                                rating: bestItem.rating,
+                                photoURLs: group.items.compactMap(\.log.photoURL),
+                                visitCount: group.items.count
+                            )
+                            .scaleEffect(isSelected ? 1.25 : 1.0)
+                            .animation(.easeOut(duration: 0.15), value: isSelected)
+                            .simultaneousGesture(TapGesture().onEnded {
+                                if isSelected {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        selectedPlaceID = nil
+                                    }
+                                }
+                            })
+                        }
+                        .tag(group.placeID)
+                    }
+                }
+                .mapStyle(mapStyle.style)
+                .onMapCameraChange(frequency: .onEnd) { context in
+                    visibleRegion = context.region
+                }
+                .mapControls {
+                    MapUserLocationButton()
+                    MapCompass()
+                    MapScaleView()
+                }
+            }
+        }
+        .safeAreaInset(edge: .top) {
+            ownerBanner
+        }
+        .overlay(alignment: .bottom) {
+            if let pin = sheetPin {
+                UnifiedBottomCard(
+                    pin: pin,
+                    onDismiss: {
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        clearSelection()
+                    },
+                    onNavigateToLog: { _, _ in },
+                    onNavigateToFeedItem: { feedItem in
+                        withAnimation(.smooth(duration: 0.2)) { sheetPin = nil }
+                        selectedPlaceID = nil
+                        cardIsExpanded = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            selectedFeedItem = feedItem
+                        }
+                    },
+                    onExpandedChanged: { expanded in
+                        cardIsExpanded = expanded
+                        recenterForCardState(coordinate: pin.coordinate, expanded: expanded)
+                    }
                 )
-                .tint(markerColor(for: item.rating))
-                .tag(item)
+                .id(pin.id)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .mapControls {
-            MapCompass()
-            MapScaleView()
-        }
-        .safeAreaInset(edge: .bottom) {
-            if let item = selectedItem {
-                selectedPlaceCard(item)
-            }
+        .animation(.smooth(duration: 0.25), value: sheetPin?.id)
+        .navigationDestination(item: $selectedFeedItem) { feedItem in
+            FeedLogDetailView(feedItem: feedItem)
         }
         .navigationTitle("\(username)'s Map")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 0) {
+                    recenterButton
+                    mapStyleMenu
+                }
+            }
+        }
         .onAppear {
-            fitMapToLogs()
-        }
-    }
-
-    // MARK: - Selected Place Card
-
-    private func selectedPlaceCard(_ item: FeedItem) -> some View {
-        NavigationLink {
-            FeedLogDetailView(feedItem: item)
-        } label: {
-            HStack(spacing: 12) {
-                // Photo
-                if let photoRef = item.place.photoReference,
-                   let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 200) {
-                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 60, height: 60)) {
-                        photoPlaceholder
-                    }
-                    .frame(width: 60, height: 60)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                } else {
-                    photoPlaceholder
-                }
-
-                // Info
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(item.place.name)
-                            .font(SonderTypography.headline)
-                            .lineLimit(1)
-                            .foregroundStyle(SonderColors.inkDark)
-
-                        Spacer()
-
-                        Text(item.rating.emoji)
-                    }
-
-                    Text(item.place.address)
-                        .font(SonderTypography.caption)
-                        .foregroundStyle(SonderColors.inkMuted)
-                        .lineLimit(1)
-
-                    if let note = item.log.note, !note.isEmpty {
-                        Text(note)
-                            .font(SonderTypography.caption)
-                            .foregroundStyle(SonderColors.inkMuted)
-                            .lineLimit(1)
-                    }
-                }
-
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(SonderColors.inkLight)
+            if !hasSetInitialCamera {
+                hasSetInitialCamera = true
+                fitAllPins()
             }
-            .padding(SonderSpacing.md)
-            .background(SonderColors.cream.opacity(0.95))
-            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
-            .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
-            .padding(SonderSpacing.md)
         }
-        .buttonStyle(.plain)
-    }
+        .onChange(of: selectedPlaceID) { _, newID in
+            // Manage card presentation — separate from Map selection
+            if let newID,
+               let group = groupedLogs.first(where: { $0.placeID == newID }) {
+                withAnimation(.smooth(duration: 0.25)) { sheetPin = makePin(for: group) }
+                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            } else {
+                // Deselected or invalid — dismiss card
+                withAnimation(.smooth(duration: 0.25)) { sheetPin = nil }
+            }
 
-    private var photoPlaceholder: some View {
-        RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
-            .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+            cardIsExpanded = false
+
+            // Zoom to selected pin
+            guard let newID else { return }
+            if let group = groupedLogs.first(where: { $0.placeID == newID }) {
+                let coord = CLLocationCoordinate2D(
+                    latitude: group.place.latitude,
+                    longitude: group.place.longitude
                 )
-            )
-            .frame(width: 60, height: 60)
-            .overlay {
-                Image(systemName: "photo")
-                    .foregroundStyle(SonderColors.terracotta.opacity(0.5))
+                zoomToSelected(coordinate: coord)
             }
-    }
-
-    // MARK: - Helpers
-
-    private func markerIcon(for rating: Rating) -> String {
-        switch rating {
-        case .mustSee: return "star.fill"
-        case .solid: return "hand.thumbsup.fill"
-        case .skip: return "hand.thumbsdown.fill"
         }
     }
 
-    private func markerColor(for rating: Rating) -> Color {
-        switch rating {
-        case .mustSee: return SonderColors.ratingMustSee
-        case .solid: return SonderColors.ratingSolid
-        case .skip: return SonderColors.ratingSkip
+    // MARK: - Selection Management
+
+    /// Recenters camera on pin (removes expansion offset), then clears selection.
+    private func clearSelection() {
+        if let pin = sheetPin {
+            let currentSpan = visibleRegion?.span ?? cameraPosition.region?.span
+                ?? MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+            withAnimation(.smooth(duration: 0.5)) {
+                cameraPosition = .region(MKCoordinateRegion(center: pin.coordinate, span: currentSpan))
+            }
+        }
+        withAnimation(.easeInOut(duration: 0.2)) { selectedPlaceID = nil }
+        cardIsExpanded = false
+    }
+
+    // MARK: - Owner Banner
+
+    private var ownerBanner: some View {
+        Text("\(username)'s Map")
+            .font(SonderTypography.caption)
+            .fontWeight(.medium)
+            .foregroundStyle(SonderColors.inkDark)
+            .padding(.horizontal, SonderSpacing.sm)
+            .padding(.vertical, SonderSpacing.xxs + 2)
+            .background(.ultraThinMaterial)
+            .background(SonderColors.cream.opacity(0.6))
+            .clipShape(Capsule())
+            .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+            .padding(.top, SonderSpacing.xxs)
+    }
+
+    // MARK: - Recenter Button
+
+    private var recenterButton: some View {
+        Button {
+            clearSelection()
+            fitAllPins()
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+            Image(systemName: "arrow.trianglehead.counterclockwise")
+                .toolbarIcon()
+        }
+        .foregroundStyle(SonderColors.terracotta)
+    }
+
+    // MARK: - Camera Helpers
+
+    private func fitAllPins() {
+        let coordinates = allCoordinates
+        if !coordinates.isEmpty {
+            let region = MKCoordinateRegion(coordinates: coordinates)
+            if region.span.latitudeDelta > 10 || region.span.longitudeDelta > 10 {
+                centerOnUser()
+            } else {
+                withAnimation(.smooth(duration: 1.5)) { cameraPosition = .region(region) }
+            }
+        } else {
+            centerOnUser()
         }
     }
 
-    private func fitMapToLogs() {
-        guard !logs.isEmpty else { return }
+    private func zoomToSelected(coordinate: CLLocationCoordinate2D) {
+        let currentSpan = visibleRegion?.span
+            ?? cameraPosition.region?.span
+            ?? MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
 
-        let coordinates = logs.map {
-            CLLocationCoordinate2D(latitude: $0.place.latitude, longitude: $0.place.longitude)
+        withAnimation(.smooth(duration: 1.0)) {
+            cameraPosition = .region(MKCoordinateRegion(
+                center: coordinate,
+                span: currentSpan
+            ))
         }
+    }
 
-        let minLat = coordinates.map { $0.latitude }.min() ?? 0
-        let maxLat = coordinates.map { $0.latitude }.max() ?? 0
-        let minLon = coordinates.map { $0.longitude }.min() ?? 0
-        let maxLon = coordinates.map { $0.longitude }.max() ?? 0
+    private func recenterForCardState(coordinate: CLLocationCoordinate2D, expanded: Bool) {
+        let currentSpan = visibleRegion?.span ?? cameraPosition.region?.span
+            ?? MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
 
-        let center = CLLocationCoordinate2D(
-            latitude: (minLat + maxLat) / 2,
-            longitude: (minLon + maxLon) / 2
-        )
+        if expanded {
+            let latOffset = currentSpan.latitudeDelta * 0.25
+            let offsetCenter = CLLocationCoordinate2D(
+                latitude: coordinate.latitude - latOffset,
+                longitude: coordinate.longitude
+            )
+            withAnimation(.smooth(duration: 0.8)) {
+                cameraPosition = .region(MKCoordinateRegion(center: offsetCenter, span: currentSpan))
+            }
+        } else {
+            withAnimation(.smooth(duration: 0.8)) {
+                cameraPosition = .region(MKCoordinateRegion(center: coordinate, span: currentSpan))
+            }
+        }
+    }
 
-        let span = MKCoordinateSpan(
-            latitudeDelta: max(0.01, (maxLat - minLat) * 1.5),
-            longitudeDelta: max(0.01, (maxLon - minLon) * 1.5)
-        )
+    private func centerOnUser() {
+        if let location = locationService.currentLocation {
+            withAnimation(.smooth(duration: 1.5)) {
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: location, latitudinalMeters: 5000, longitudinalMeters: 5000
+                ))
+            }
+        } else {
+            withAnimation(.smooth(duration: 1.5)) {
+                cameraPosition = .userLocation(fallback: .camera(MapCamera(centerCoordinate: .init(latitude: 37.7749, longitude: -122.4194), distance: 50000)))
+            }
+        }
+    }
 
-        cameraPosition = .region(MKCoordinateRegion(center: center, span: span))
+    // MARK: - Map Style Menu
+
+    private var mapStyleMenu: some View {
+        Menu {
+            Section("Map Style") {
+                ForEach(MapStyleOption.allCases, id: \.self) { style in
+                    Button {
+                        withAnimation { mapStyle = style }
+                    } label: {
+                        HStack {
+                            Label(style.name, systemImage: style.icon)
+                            if mapStyle == style { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .toolbarIcon()
+        }
     }
 }
 

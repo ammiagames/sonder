@@ -118,15 +118,6 @@ enum ProfileStatsService {
     static func computeCategoryBreakdown(logs: [Log], placeMap: [String: Place]) -> [CategoryStat] {
         guard !logs.isEmpty else { return [] }
 
-        let categoryColors: [ExploreMapFilter.CategoryFilter: Color] = [
-            .food: SonderColors.terracotta,
-            .coffee: SonderColors.sage,
-            .nightlife: SonderColors.ochre,
-            .outdoors: SonderColors.dustyRose,
-            .shopping: SonderColors.warmBlue,
-            .attractions: SonderColors.inkMuted,
-        ]
-
         var counts: [ExploreMapFilter.CategoryFilter: Int] = [:]
         var categorizedCount = 0
 
@@ -153,7 +144,7 @@ enum ProfileStatsService {
                 icon: category.icon,
                 count: count,
                 percentage: Double(count) / Double(categorizedCount),
-                color: categoryColors[category] ?? SonderColors.inkMuted
+                color: category.color
             )
         }
         .sorted { $0.count > $1.count }
@@ -313,7 +304,6 @@ enum ProfileStatsService {
         let total = counts.reduce(0, +)
 
         let weekdaySum = counts[1] + counts[2] + counts[3] + counts[4] + counts[5] // Mon-Fri
-        let weekendSum = counts[0] + counts[6] // Sun+Sat
         let isWeekday = total > 0 ? Double(weekdaySum) / Double(total) > 0.7 : false
 
         return DayOfWeekPattern(

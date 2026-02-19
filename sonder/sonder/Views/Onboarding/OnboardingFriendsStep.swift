@@ -160,7 +160,7 @@ struct OnboardingFriendsStep: View {
                 }
             }
         }
-        .scrollDismissesKeyboard(.interactively)
+        .scrollDismissesKeyboard(.immediately)
     }
 
     // MARK: - Search

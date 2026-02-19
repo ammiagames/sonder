@@ -71,10 +71,7 @@ struct TripExportJournal: View {
                     // Footer
                     HStack {
                         Spacer()
-                        Text("sonder")
-                            .font(.system(size: 22 * s, weight: .semibold, design: .rounded))
-                            .foregroundStyle(theme.textTertiary) +
-                        Text("  \u{00B7}  your travel story")
+                        Text("\(Text("sonder").font(.system(size: 22 * s, weight: .semibold, design: .rounded)))  \u{00B7}  your travel story")
                             .font(.system(size: 22 * s))
                             .foregroundStyle(theme.textTertiary)
                         Spacer()

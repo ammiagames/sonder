@@ -28,6 +28,7 @@ struct SonderApp: App {
     @State private var proximityService = ProximityNotificationService()
     @State private var exploreMapService = ExploreMapService()
     @State private var photoSuggestionService = PhotoSuggestionService()
+    @State private var photoIndexService: PhotoIndexService?
 
     init() {
         // Configure Google Places SDK
@@ -73,7 +74,8 @@ struct SonderApp: App {
                 TripInvitation.self,
                 RecentSearch.self,
                 Follow.self,
-                WantToGo.self
+                WantToGo.self,
+                PhotoLocationIndex.self
             ])
 
             let modelConfiguration = ModelConfiguration(
@@ -93,36 +95,93 @@ struct SonderApp: App {
     /// Services that need ModelContext are initialized lazily on first body evaluation
     /// (not in init, because modelContainer.mainContext requires the main actor).
     @State private var servicesInitialized = false
+    @State private var showSplash = true
+
+    /// True only on the very first launch after install.
+    private var isFirstLaunchEver: Bool {
+        !UserDefaults.standard.bool(forKey: "hasLaunchedBefore")
+    }
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                if servicesInitialized,
-                   let syncEngine, let placesCacheService,
-                   let socialService, let feedService,
-                   let wantToGoService, let tripService {
-                    RootView(
-                        authService: authService,
-                        locationService: locationService,
-                        googlePlacesService: googlePlacesService,
-                        photoService: photoService,
-                        syncEngine: syncEngine,
-                        placesCacheService: placesCacheService,
-                        socialService: socialService,
-                        feedService: feedService,
-                        wantToGoService: wantToGoService,
-                        tripService: tripService,
-                        proximityService: proximityService,
-                        exploreMapService: exploreMapService,
-                        photoSuggestionService: photoSuggestionService
-                    )
-                } else {
-                    SplashView()
-                        .onAppear { initializeServices() }
+            ZStack {
+                Group {
+                    if servicesInitialized,
+                       let syncEngine, let placesCacheService,
+                       let socialService, let feedService,
+                       let wantToGoService, let tripService {
+                        RootView(
+                            authService: authService,
+                            locationService: locationService,
+                            googlePlacesService: googlePlacesService,
+                            photoService: photoService,
+                            syncEngine: syncEngine,
+                            placesCacheService: placesCacheService,
+                            socialService: socialService,
+                            feedService: feedService,
+                            wantToGoService: wantToGoService,
+                            tripService: tripService,
+                            proximityService: proximityService,
+                            exploreMapService: exploreMapService,
+                            photoSuggestionService: photoSuggestionService
+                        )
+                    } else {
+                        SonderColors.cream.ignoresSafeArea()
+                            .onAppear { initializeServices() }
+                    }
+                }
+
+                // Splash overlay — stays until feed is ready or user needs to log in
+                if showSplash {
+                    SplashView(isFirstLaunch: isFirstLaunchEver)
+                        .transition(
+                            .asymmetric(
+                                insertion: .identity,
+                                removal: .opacity.combined(with: .scale(scale: 1.05))
+                            )
+                        )
+                        .zIndex(1)
                 }
             }
+            .tint(SonderColors.terracotta)
+            .task { await dismissSplashWhenReady() }
         }
         .modelContainer(modelContainer)
+    }
+
+    // MARK: - Splash Dismissal
+
+    /// First launch: waits for the full typewriter animation, then dismisses
+    /// when content is ready. Subsequent launches: dismisses immediately when
+    /// content is ready — no minimum wait.
+    private func dismissSplashWhenReady() async {
+        let firstLaunch = isFirstLaunchEver
+
+        if firstLaunch {
+            // Let the typewriter + subtitle animation complete
+            try? await Task.sleep(for: .seconds(1.8))
+            // Mark so future launches skip the animation
+            UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
+        }
+
+        // Poll until content is ready (max 7s safety timeout)
+        for _ in 0..<70 {
+            if contentReadyForReveal { break }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+
+        guard showSplash else { return }
+        withAnimation(.easeInOut(duration: 0.4)) {
+            showSplash = false
+        }
+    }
+
+    /// True when the screen behind the splash has meaningful content.
+    private var contentReadyForReveal: Bool {
+        guard servicesInitialized else { return false }
+        if authService.isCheckingSession { return false }
+        if !authService.isAuthenticated { return true }
+        return feedService?.hasLoadedOnce ?? false
     }
 
     // MARK: - Service Initialization
@@ -150,13 +209,37 @@ struct SonderApp: App {
         // Pass ModelContext to AuthenticationService for user caching
         authService.modelContext = ctx
 
+        // Read current photo permission state (non-prompting)
+        photoSuggestionService.checkCurrentAuthorizationStatus()
+
+        // Wire photo spatial index
+        let photoIndex = PhotoIndexService(modelContainer: modelContainer)
+        photoIndexService = photoIndex
+        photoSuggestionService.photoIndexService = photoIndex
+
         // Mark initialized — this triggers the RootView to appear
         servicesInitialized = true
+
+        // Check session now that modelContext is available for caching.
+        // Previously this ran in AuthenticationService.init() before modelContext
+        // was set, so the SwiftData cache always missed on cold start.
+        Task {
+            await authService.checkSession()
+        }
 
         // Start sync after a short delay so the first frame renders first
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(500))
             engine.resumePeriodicSync()
+        }
+
+        // Build photo spatial index in background (deferred 1s)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            let level = photoSuggestionService.authorizationLevel
+            if level == .full || level == .limited {
+                photoIndex.buildIndexIfNeeded(accessLevel: level == .full ? "full" : "limited")
+            }
         }
     }
 }
@@ -234,8 +317,8 @@ struct RootView: View {
     @ViewBuilder
     private var contentView: some View {
         if authService.isCheckingSession {
-            // Show splash while restoring session to avoid flashing the auth screen
-            SplashView()
+            // App-level splash overlay covers this
+            SonderColors.cream.ignoresSafeArea()
         } else if authService.isAuthenticated {
             if hasCompletedOnboarding {
                 MainTabView(initialTab: initialTab)

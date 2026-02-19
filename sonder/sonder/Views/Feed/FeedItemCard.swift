@@ -178,7 +178,8 @@ private let previewPhotoItem = FeedItem(
         ],
         note: "Amazing coffee! The pour-over was exceptional and the staff was super friendly. Definitely coming back next time I'm in the city.",
         tags: ["coffee", "cafe", "pour-over"],
-        createdAt: Date()
+        createdAt: Date(),
+        tripID: nil
     ),
     user: FeedItem.FeedUser(
         id: "user1",
@@ -204,7 +205,8 @@ private let previewCompactItem = FeedItem(
         photoURLs: [],
         note: "Not great, wouldn't recommend.",
         tags: [],
-        createdAt: Date().addingTimeInterval(-86400 * 3)
+        createdAt: Date().addingTimeInterval(-86400 * 3),
+        tripID: nil
     ),
     user: FeedItem.FeedUser(
         id: "user2",

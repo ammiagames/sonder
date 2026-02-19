@@ -31,10 +31,22 @@ struct FeedView: View {
         NavigationStack {
             Group {
                 if !feedService.hasLoadedOnce {
-                    ProgressView()
-                        .tint(SonderColors.terracotta)
+                    // Splash overlay covers this — just show blank cream
+                    Color.clear
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if feedService.feedEntries.isEmpty && feedService.isDiscoveryMode {
+                    // Not following anyone and no public content to show
+                    ScrollView {
+                        discoveryEmptyState
+                            .frame(maxWidth: .infinity, minHeight: 400)
+                    }
+                    .refreshable {
+                        if let userID = authService.currentUser?.id {
+                            await feedService.refreshFeed(for: userID)
+                        }
+                    }
                 } else if feedService.feedEntries.isEmpty {
+                    // Following people but they haven't posted
                     ScrollView {
                         emptyState
                             .frame(maxWidth: .infinity, minHeight: 400)
@@ -53,7 +65,7 @@ struct FeedView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    if syncEngine.isSyncing || feedService.isLoading {
+                    if feedService.hasLoadedOnce && (syncEngine.isSyncing || feedService.isLoading) {
                         ProgressView()
                             .tint(SonderColors.terracotta)
                     }
@@ -113,11 +125,57 @@ struct FeedView: View {
         }
     }
 
-    // MARK: - Empty State
+    // MARK: - Empty State (following people but they haven't posted)
 
     private var emptyState: some View {
         VStack(spacing: SonderSpacing.lg) {
-            // Globe illustration with breathing animation
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [SonderColors.terracotta.opacity(0.15), SonderColors.ochre.opacity(0.1)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 160, height: 160)
+                .overlay {
+                    Image(systemName: "globe.europe.africa")
+                        .font(.system(size: 56))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [SonderColors.terracotta, SonderColors.ochre],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                .scaleEffect(emptyIconScale)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
+                        emptyIconScale = 1.08
+                    }
+                }
+
+            VStack(spacing: SonderSpacing.xs) {
+                Text("Nothing here yet")
+                    .font(SonderTypography.title)
+                    .foregroundStyle(SonderColors.inkDark)
+
+                Text("The people you follow haven't posted yet. Check back soon!")
+                    .font(SonderTypography.body)
+                    .foregroundStyle(SonderColors.inkMuted)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, SonderSpacing.xl)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, SonderSpacing.xxl)
+    }
+
+    // MARK: - Discovery Empty State (no followers and no public content)
+
+    private var discoveryEmptyState: some View {
+        VStack(spacing: SonderSpacing.lg) {
             Circle()
                 .fill(
                     LinearGradient(
@@ -169,6 +227,38 @@ struct FeedView: View {
         .padding(.top, SonderSpacing.xxl)
     }
 
+    // MARK: - Discovery Banner
+
+    private var discoveryBanner: some View {
+        HStack(spacing: SonderSpacing.sm) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 16, weight: .medium))
+
+            Text("Explore what travelers are sharing")
+                .font(SonderTypography.caption)
+                .fontWeight(.medium)
+
+            Spacer()
+
+            Button {
+                showUserSearch = true
+            } label: {
+                Text("Find Friends")
+                    .font(SonderTypography.caption)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(SonderColors.terracotta)
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+            }
+        }
+        .padding(SonderSpacing.md)
+        .background(SonderColors.terracotta.opacity(0.1))
+        .foregroundStyle(SonderColors.terracotta)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+    }
+
     // MARK: - Feed Content
 
     private var feedContent: some View {
@@ -177,6 +267,10 @@ struct FeedView: View {
             LazyVStack(spacing: SonderSpacing.md) {
                 greetingHeader
                     .id("feedTop")
+
+                if feedService.isDiscoveryMode {
+                    discoveryBanner
+                }
 
                 if !syncEngine.isOnline {
                     offlineBanner

@@ -157,12 +157,22 @@ struct AddDetailsView: View {
         }
         .task {
             await photoSuggestionService.requestAuthorizationIfNeeded()
-            await fetchPhotoSuggestions()
+            if photoSuggestionService.authorizationLevel == .full ||
+               photoSuggestionService.authorizationLevel == .limited {
+                photoSuggestionService.onLibraryChange = { [weak photoSuggestionService] in
+                    guard let service = photoSuggestionService else { return }
+                    await service.fetchSuggestions(near: place.coordinate)
+                }
+                photoSuggestionService.startObservingLibrary()
+                await fetchPhotoSuggestions()
+            }
         }
         .onChange(of: selectedTrip?.id) { _, _ in
             Task { await fetchPhotoSuggestions() }
         }
         .onDisappear {
+            photoSuggestionService.stopObservingLibrary()
+            photoSuggestionService.onLibraryChange = nil
             photoSuggestionService.clearSuggestions()
         }
         .sheet(isPresented: $showImagePicker) {
@@ -294,7 +304,51 @@ struct AddDetailsView: View {
     @ViewBuilder
     private var photoSuggestionsRow: some View {
         let suggestions = photoSuggestionService.suggestions
-        if !suggestions.isEmpty && selectedImages.count < maxPhotos {
+        let authLevel = photoSuggestionService.authorizationLevel
+
+        // Denied state: prompt to open Settings
+        if authLevel == .denied {
+            photoAccessPrompt(
+                icon: "photo.on.rectangle.angled",
+                message: "Allow photo access for nearby suggestions",
+                buttonLabel: "Settings"
+            )
+        }
+        // Limited + no results: hint to upgrade
+        else if authLevel == .limited && suggestions.isEmpty && !photoSuggestionService.isLoading {
+            photoAccessPrompt(
+                icon: "photo.badge.exclamationmark",
+                message: "Allow full access for better suggestions",
+                buttonLabel: "Settings"
+            )
+        }
+        // Loading shimmer
+        else if photoSuggestionService.isLoading && suggestions.isEmpty {
+            VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11))
+                        .foregroundStyle(SonderColors.terracotta)
+                    Text("Finding nearby photos…")
+                        .font(SonderTypography.caption)
+                        .foregroundStyle(SonderColors.inkMuted)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: SonderSpacing.xs) {
+                        ForEach(0..<3, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
+                                .fill(SonderColors.warmGray)
+                                .frame(width: 100, height: 100)
+                                .overlay(ShimmerOverlay())
+                                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                        }
+                    }
+                }
+            }
+        }
+        // Actual suggestions
+        else if !suggestions.isEmpty && selectedImages.count < maxPhotos {
             VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
                 HStack(spacing: 4) {
                     Image(systemName: "sparkles")
@@ -358,25 +412,47 @@ struct AddDetailsView: View {
         }
     }
 
+    private func photoAccessPrompt(icon: String, message: String, buttonLabel: String) -> some View {
+        HStack(spacing: SonderSpacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundStyle(SonderColors.inkMuted)
+
+            Text(message)
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkMuted)
+
+            Spacer()
+
+            Button {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            } label: {
+                Text(buttonLabel)
+                    .font(SonderTypography.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(SonderColors.terracotta)
+            }
+        }
+        .padding(SonderSpacing.sm)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+    }
+
     private func fetchPhotoSuggestions() async {
         var tripContext: PhotoSuggestionService.TripContext?
         if let trip = selectedTrip {
             let tripID = trip.id
             let tripLogs = allLogs.filter { $0.tripID == tripID }
             let logPlaceIDs = tripLogs.map(\.placeID)
-            // Look up coordinates for places in this trip
             let logCoords: [CLLocationCoordinate2D] = allPlaces
                 .filter { logPlaceIDs.contains($0.id) }
                 .map(\.coordinate)
-            tripContext = .init(
-                startDate: trip.startDate,
-                endDate: trip.endDate,
-                logCoordinates: logCoords
-            )
+            tripContext = .init(logCoordinates: logCoords)
         }
         await photoSuggestionService.fetchSuggestions(
             near: place.coordinate,
-            visitedAt: visitedAt,
             tripContext: tripContext
         )
     }
@@ -759,6 +835,13 @@ struct AddDetailsView: View {
             }
         }
 
+        // Strip whitespace before persisting
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTags = tags.compactMap { tag -> String? in
+            let t = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+
         // Create log immediately with placeholder URLs
         let log = Log(
             id: logID,
@@ -766,8 +849,8 @@ struct AddDetailsView: View {
             placeID: place.id,
             rating: rating,
             photoURLs: photoURLs,
-            note: note.isEmpty ? nil : note,
-            tags: tags,
+            note: trimmedNote.isEmpty ? nil : trimmedNote,
+            tags: trimmedTags,
             tripID: selectedTrip?.id,
             visitedAt: visitedAt,
             syncStatus: .pending
@@ -889,6 +972,40 @@ struct AllTripsPickerSheet: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Shimmer Overlay
+
+private struct ShimmerOverlay: View {
+    @State private var phase: CGFloat = -1
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: Color.white.opacity(0.25), location: 0.4),
+                    .init(color: Color.white.opacity(0.35), location: 0.5),
+                    .init(color: Color.white.opacity(0.25), location: 0.6),
+                    .init(color: .clear, location: 1),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: width * 1.5)
+            .offset(x: phase * width * 1.5)
+            .onAppear {
+                withAnimation(
+                    .easeInOut(duration: 1.2)
+                    .repeatForever(autoreverses: false)
+                ) {
+                    phase = 1
+                }
+            }
+        }
+        .clipped()
     }
 }
 

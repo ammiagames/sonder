@@ -80,10 +80,7 @@ struct TripExportRouteMap: View {
                     // Footer
                     HStack {
                         Spacer()
-                        Text("sonder")
-                            .font(.system(size: 22 * s, weight: .semibold, design: .rounded))
-                            .foregroundStyle(theme.textTertiary) +
-                        Text("  \u{00B7}  your travel story")
+                        Text("\(Text("sonder").font(.system(size: 22 * s, weight: .semibold, design: .rounded)))  \u{00B7}  your travel story")
                             .font(.system(size: 22 * s))
                             .foregroundStyle(theme.textTertiary)
                         Spacer()
@@ -216,7 +213,7 @@ enum TripMapSnapshotGenerator {
         logPhotos: [LogPhotoData],
         size: CGSize = CGSize(width: 1080, height: 1920),
         markerSize: CGFloat = 48,
-        tintColor: UIColor = UIColor(SonderColors.terracotta)
+        tintColor: UIColor = UIColor(red: 0.80, green: 0.45, blue: 0.35, alpha: 1.0)
     ) async -> UIImage? {
         guard !stops.isEmpty else { return nil }
 

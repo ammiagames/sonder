@@ -8,6 +8,7 @@
 import Foundation
 import SwiftData
 import CoreLocation
+import UIKit
 
 /// Service for caching places and managing recent searches
 @Observable
@@ -72,6 +73,7 @@ final class PlacesCacheService {
         )
 
         if let search = try? modelContext.fetch(descriptor).first {
+            removeCachedPhoto(for: search.placeId)
             modelContext.delete(search)
             try? modelContext.save()
             recentSearchesVersion += 1
@@ -84,6 +86,7 @@ final class PlacesCacheService {
 
         if let searches = try? modelContext.fetch(descriptor) {
             for search in searches {
+                removeCachedPhoto(for: search.placeId)
                 modelContext.delete(search)
             }
             try? modelContext.save()
@@ -101,9 +104,40 @@ final class PlacesCacheService {
         let maxSearches = GooglePlacesConfig.maxRecentSearches
         if searches.count > maxSearches {
             for search in searches.dropFirst(maxSearches) {
+                removeCachedPhoto(for: search.placeId)
                 modelContext.delete(search)
             }
         }
+    }
+
+    // MARK: - Photo File Cache
+
+    /// Directory for cached place photos.
+    private static let photoCacheDir: URL = {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let dir = caches.appendingPathComponent("place-photos", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    /// Saves a photo to the file cache for a given place ID.
+    func cachePhoto(_ image: UIImage, for placeId: String) {
+        guard let data = image.jpegData(compressionQuality: 0.8) else { return }
+        let fileURL = Self.photoCacheDir.appendingPathComponent("\(placeId).jpg")
+        try? data.write(to: fileURL, options: .atomic)
+    }
+
+    /// Loads a cached photo from disk for a given place ID.
+    func getCachedPhoto(for placeId: String) -> UIImage? {
+        let fileURL = Self.photoCacheDir.appendingPathComponent("\(placeId).jpg")
+        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        return UIImage(data: data)
+    }
+
+    /// Removes a cached photo for a given place ID.
+    private func removeCachedPhoto(for placeId: String) {
+        let fileURL = Self.photoCacheDir.appendingPathComponent("\(placeId).jpg")
+        try? FileManager.default.removeItem(at: fileURL)
     }
 
     // MARK: - Nearby Cache

@@ -727,11 +727,18 @@ struct LogDetailView: View {
         // Final photoURLs = existing URLs + placeholder/new URLs
         let finalPhotoURLs = currentPhotoURLs + newURLs
 
+        // Strip whitespace before persisting
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTags = tags.compactMap { tag -> String? in
+            let t = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+
         // Update log properties immediately
         log.rating = rating
         log.photoURLs = finalPhotoURLs
-        log.note = note.isEmpty ? nil : note
-        log.tags = tags
+        log.note = trimmedNote.isEmpty ? nil : trimmedNote
+        log.tags = trimmedTags
         log.tripID = selectedTripID
         log.visitedAt = visitedAt
         log.updatedAt = Date()

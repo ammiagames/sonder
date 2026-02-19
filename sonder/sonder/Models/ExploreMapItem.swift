@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreLocation
+import SwiftUI
 
 // MARK: - LogSnapshot
 
@@ -288,6 +289,22 @@ struct ExploreMapFilter: Equatable {
             case .shopping: return ["shopping_mall", "store", "clothing_store", "shoe_store", "jewelry_store", "book_store"]
             case .attractions: return ["museum", "art_gallery", "tourist_attraction", "amusement_park", "aquarium", "zoo"]
             }
+        }
+
+        var color: Color {
+            switch self {
+            case .food:        return SonderColors.terracotta
+            case .coffee:      return SonderColors.sage
+            case .nightlife:   return SonderColors.ochre
+            case .outdoors:    return SonderColors.dustyRose
+            case .shopping:    return SonderColors.warmBlue
+            case .attractions: return SonderColors.inkMuted
+            }
+        }
+
+        static func category(for placeTypes: [String]) -> CategoryFilter? {
+            let typeSet = Set(placeTypes)
+            return allCases.first { !typeSet.isDisjoint(with: $0.placeTypes) }
         }
 
         /// Keywords for name-based matching (used for filtering pins)

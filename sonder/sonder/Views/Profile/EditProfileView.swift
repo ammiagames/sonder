@@ -43,8 +43,8 @@ struct EditProfileView: View {
                     // Username section
                     usernameSection
 
-                    // Bio section
-                    bioSection
+
+
                 }
                 .padding(SonderSpacing.lg)
             }
@@ -188,6 +188,9 @@ struct EditProfileView: View {
                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
+                .onChange(of: username) { _, newValue in
+                    if newValue.count > 24 { username = String(newValue.prefix(24)) }
+                }
         }
     }
 

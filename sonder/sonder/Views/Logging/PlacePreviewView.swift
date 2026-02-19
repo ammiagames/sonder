@@ -8,6 +8,7 @@
 import SwiftUI
 import UIKit
 import CoreLocation
+import MapKit
 import os
 
 private let logger = Logger(subsystem: "com.sonder.app", category: "PlacePreviewView")
@@ -19,6 +20,7 @@ struct PlacePreviewView: View {
     @Environment(LocationService.self) private var locationService
     @Environment(AuthenticationService.self) private var authService
     @Environment(WantToGoService.self) private var wantToGoService
+    @Environment(PlacesCacheService.self) private var cacheService
 
     let details: PlaceDetails
     let onLog: () -> Void
@@ -30,39 +32,56 @@ struct PlacePreviewView: View {
     @State private var shimmerPhase: CGFloat = -1
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // Hero photo
-                heroPhoto
+        ZStack(alignment: .bottom) {
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Hero photo
+                    heroPhoto
 
-                // Content
-                VStack(alignment: .leading, spacing: SonderSpacing.md) {
-                    // Name and address
-                    nameSection
+                    // Content
+                    VStack(alignment: .leading, spacing: SonderSpacing.md) {
+                        // Name and address
+                        nameSection
 
-                    // Stats row: rating, price, distance
-                    statsRow
+                        // Stats row: rating, price, distance
+                        statsRow
 
-                    // Editorial summary
-                    if let summary = details.editorialSummary {
-                        summarySection(summary)
+                        // Mini map
+                        miniMapSection
+
+                        // Editorial summary
+                        if let summary = details.editorialSummary {
+                            summarySection(summary)
+                        }
+
+                        // Place type tags
+                        if !details.types.isEmpty {
+                            typeTags
+                        }
                     }
-
-                    // Place type tags
-                    if !details.types.isEmpty {
-                        typeTags
-                    }
-
-                    // Log button
-                    logButton
-                        .padding(.top, SonderSpacing.sm)
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.vertical, SonderSpacing.md)
+                    .padding(.bottom, 80)
                 }
-                .padding(.horizontal, SonderSpacing.md)
-                .padding(.vertical, SonderSpacing.md)
+            }
+            .scrollContentBackground(.hidden)
+
+            // Sticky bottom button
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [SonderColors.cream.opacity(0), SonderColors.cream],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 24)
+
+                logButton
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.bottom, SonderSpacing.md)
+                    .background(SonderColors.cream)
             }
         }
         .background(SonderColors.cream)
-        .scrollContentBackground(.hidden)
         .navigationTitle("Place Details")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -179,8 +198,13 @@ struct PlacePreviewView: View {
     }
 
     private func loadHeroPhoto() async {
+        // Check file cache first (instant offline display)
+        if let cached = cacheService.getCachedPhoto(for: details.placeId) {
+            heroImage = cached
+            return
+        }
+
         // Try REST URL first if we have a photo reference.
-        // Search preview loads are transient (no shared cache admission).
         if let photoRef = details.photoReference,
            let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 800) {
             let image = await ImageDownsampler.downloadImage(
@@ -190,6 +214,7 @@ struct PlacePreviewView: View {
             )
             if let image {
                 heroImage = image
+                cacheService.cachePhoto(image, for: details.placeId)
                 return
             }
         }
@@ -202,6 +227,7 @@ struct PlacePreviewView: View {
 
         if let image {
             heroImage = image
+            cacheService.cachePhoto(image, for: details.placeId)
         } else {
             // No photo available — smoothly collapse the placeholder
             withAnimation(.easeInOut(duration: 0.3)) {
@@ -263,6 +289,54 @@ struct PlacePreviewView: View {
             Spacer()
         }
         .font(SonderTypography.subheadline)
+    }
+
+    // MARK: - Mini Map
+
+    private var placeCoordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: details.latitude, longitude: details.longitude)
+    }
+
+    private var miniMapSection: some View {
+        Button {
+            let placemark = MKPlacemark(coordinate: placeCoordinate)
+            let mapItem = MKMapItem(placemark: placemark)
+            mapItem.name = details.name
+            mapItem.openInMaps(launchOptions: [
+                MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
+            ])
+        } label: {
+            ZStack(alignment: .bottomTrailing) {
+                Map(initialPosition: .region(MKCoordinateRegion(
+                    center: placeCoordinate,
+                    latitudinalMeters: 800,
+                    longitudinalMeters: 800
+                ))) {
+                    Marker(details.name, coordinate: placeCoordinate)
+                        .tint(SonderColors.terracotta)
+                }
+                .mapStyle(.standard(pointsOfInterest: .excludingAll))
+                .frame(height: 150)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                .allowsHitTesting(false)
+
+                // "Open in Maps" pill
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Directions")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, SonderSpacing.sm)
+                .padding(.vertical, 6)
+                .background(SonderColors.terracotta)
+                .clipShape(Capsule())
+                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                .padding(SonderSpacing.sm)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Summary Section

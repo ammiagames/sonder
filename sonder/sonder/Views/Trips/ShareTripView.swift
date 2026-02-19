@@ -228,6 +228,7 @@ struct ShareTripView: View {
             .padding(.vertical, SonderSpacing.md)
             .animation(.easeInOut(duration: 0.2), value: previewImage == nil)
         }
+        .scrollDismissesKeyboard(.immediately)
         .frame(maxHeight: .infinity)
     }
 

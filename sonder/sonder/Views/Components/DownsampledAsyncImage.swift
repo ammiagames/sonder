@@ -49,6 +49,7 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
     @State private var image: UIImage?
     @State private var failed = false
     @State private var shimmerPhase: CGFloat = -1
+    @State private var teardownTask: Task<Void, Never>?
 
     init(
         url: URL?,
@@ -88,12 +89,21 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
         }
         .onChange(of: isTabVisible) { _, visible in
             if !visible {
-                // Tab hidden — release the decoded bitmap to free memory.
-                // The image stays in NSCache for instant reload.
-                image = nil
-            } else if image == nil, let url {
-                // Tab visible again — reload the image.
-                Task { await loadImage(from: url) }
+                // Tab hidden — release the decoded bitmap to free memory after
+                // the tab transition completes so placeholders don't flash.
+                teardownTask?.cancel()
+                teardownTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+                    guard !Task.isCancelled, !isTabVisible else { return }
+                    image = nil
+                }
+            } else {
+                // Tab visible again — cancel any pending teardown and reload.
+                teardownTask?.cancel()
+                teardownTask = nil
+                if image == nil, let url {
+                    Task { await loadImage(from: url) }
+                }
             }
         }
     }
@@ -138,8 +148,15 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
         // Download and downsample
         do {
             let session = ImageDownsampler.session(for: cacheMode)
-            let (data, _) = try await session.data(from: url)
-            let scale = UIScreen.main.scale
+            let (data, response) = try await session.data(from: url)
+
+            // Skip processing if we got an error HTTP status
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                await MainActor.run { self.failed = true }
+                return
+            }
+
+            let scale = UITraitCollection.current.displayScale
             let pixelSize = CGSize(
                 width: targetSize.width * scale,
                 height: targetSize.height * scale
@@ -179,7 +196,7 @@ extension DownsampledAsyncImage where Placeholder == Color {
 
 enum ImageDownsampler {
     /// Shared in-memory bitmap cache.
-    static let cache: NSCache<NSString, UIImage> = {
+    nonisolated(unsafe) static let cache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
         cache.totalCostLimit = 30 * 1024 * 1024 // 30MB
         return cache
@@ -188,7 +205,7 @@ enum ImageDownsampler {
     /// Builds a cache key that includes the target pixel dimensions so the same
     /// URL rendered at different display sizes gets independent cache entries.
     static func cacheKey(for url: URL, pointSize: CGSize) -> NSString {
-        let scale = UIScreen.main.scale
+        let scale = UITraitCollection.current.displayScale
         let pw = Int(pointSize.width * scale)
         let ph = Int(pointSize.height * scale)
         return NSString(string: "\(url.absoluteString)#\(pw)x\(ph)")
@@ -264,12 +281,23 @@ enum ImageDownsampler {
 
     /// Downsamples image data to the target pixel size using ImageIO.
     /// This decodes directly at the target size, never allocating the full image.
-    static func downsample(data: Data, to maxPixelSize: CGSize) -> UIImage? {
+    nonisolated static func downsample(data: Data, to maxPixelSize: CGSize) -> UIImage? {
+        // Reject obviously invalid data (empty, too small, or HTML error responses)
+        guard data.count > 100 else { return nil }
+        // Quick check: valid images start with known magic bytes, not '<' (HTML)
+        if let firstByte = data.first, firstByte == 0x3C { return nil }
+
         let options: [CFString: Any] = [
             kCGImageSourceShouldCache: false
         ]
 
         guard let source = CGImageSourceCreateWithData(data as CFData, options as CFDictionary) else {
+            return nil
+        }
+
+        // Verify the source actually contains an image before attempting thumbnail
+        guard CGImageSourceGetCount(source) > 0,
+              CGImageSourceGetStatus(source) == .statusComplete else {
             return nil
         }
 

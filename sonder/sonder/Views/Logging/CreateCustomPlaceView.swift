@@ -28,66 +28,26 @@ struct CreateCustomPlaceView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                // Name section
-                Section {
-                    TextField("Place name", text: $placeName)
-                } header: {
-                    Text("Name")
-                } footer: {
-                    Text("Required")
-                }
+            ScrollView {
+                VStack(spacing: SonderSpacing.xl) {
+                    // Name section
+                    nameSection
 
-                // Address section
-                Section {
-                    TextField("Address (optional)", text: $placeAddress)
-                } header: {
-                    Text("Address")
-                }
+                    // Address section
+                    addressSection
 
-                // Location section
-                Section {
-                    if let coordinate = selectedCoordinate {
-                        // Show selected location
-                        HStack {
-                            Image(systemName: "mappin.circle.fill")
-                                .foregroundStyle(SonderColors.terracotta)
-                            VStack(alignment: .leading) {
-                                Text("Location set")
-                                    .font(SonderTypography.body)
-                                Text("\(coordinate.latitude, specifier: "%.4f"), \(coordinate.longitude, specifier: "%.4f")")
-                                    .font(SonderTypography.caption)
-                                    .foregroundStyle(SonderColors.inkMuted)
-                            }
-                            Spacer()
-                            Button("Change") {
-                                showMap = true
-                            }
-                            .font(.subheadline)
-                        }
-                    } else {
-                        // Options to set location
-                        Button {
-                            useCurrentLocation()
-                        } label: {
-                            Label("Use Current Location", systemImage: "location.fill")
-                        }
+                    // Location section
+                    locationSection
 
-                        Button {
-                            showMap = true
-                        } label: {
-                            Label("Choose on Map", systemImage: "map")
-                        }
-                    }
-                } header: {
-                    Text("Location")
-                } footer: {
-                    if selectedCoordinate == nil {
-                        Text("Required - helps show this place on the map")
-                    }
+                    // Create button
+                    createButton
+                        .padding(.top, SonderSpacing.sm)
                 }
+                .padding(SonderSpacing.lg)
+                .padding(.bottom, 80)
             }
             .scrollDismissesKeyboard(.interactively)
+            .background(SonderColors.cream)
             .navigationTitle("Add Your Own Spot")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -95,13 +55,7 @@ struct CreateCustomPlaceView: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                }
-
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        createPlace()
-                    }
-                    .disabled(!isValid)
+                    .foregroundStyle(SonderColors.inkMuted)
                 }
             }
             .sheet(isPresented: $showMap) {
@@ -111,6 +65,193 @@ struct CreateCustomPlaceView: View {
                 )
             }
         }
+    }
+
+    // MARK: - Name Section
+
+    private var nameSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            Text("Name")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            TextField("What's this place called?", text: $placeName)
+                .font(SonderTypography.body)
+                .padding(SonderSpacing.md)
+                .background(SonderColors.warmGray)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                .autocorrectionDisabled()
+        }
+    }
+
+    // MARK: - Address Section
+
+    private var addressSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            Text("Address")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            TextField("Street address (optional)", text: $placeAddress)
+                .font(SonderTypography.body)
+                .padding(SonderSpacing.md)
+                .background(SonderColors.warmGray)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                .autocorrectionDisabled()
+        }
+    }
+
+    // MARK: - Location Section
+
+    private var locationSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            Text("Location")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            if let coordinate = selectedCoordinate {
+                // Location set — warm card with checkmark
+                HStack(spacing: SonderSpacing.sm) {
+                    Circle()
+                        .fill(SonderColors.sage.opacity(0.15))
+                        .frame(width: 40, height: 40)
+                        .overlay {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundStyle(SonderColors.sage)
+                        }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Location pinned")
+                            .font(SonderTypography.headline)
+                            .foregroundStyle(SonderColors.inkDark)
+
+                        Text("\(coordinate.latitude, specifier: "%.4f"), \(coordinate.longitude, specifier: "%.4f")")
+                            .font(SonderTypography.caption)
+                            .foregroundStyle(SonderColors.inkMuted)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        showMap = true
+                    } label: {
+                        Text("Change")
+                            .font(SonderTypography.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(SonderColors.terracotta)
+                            .padding(.horizontal, SonderSpacing.sm)
+                            .padding(.vertical, SonderSpacing.xxs)
+                            .background(SonderColors.terracotta.opacity(0.1))
+                            .clipShape(Capsule())
+                    }
+                }
+                .padding(SonderSpacing.md)
+                .background(SonderColors.warmGray)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+            } else {
+                // Location options — two tappable warm cards
+                VStack(spacing: SonderSpacing.sm) {
+                    Button {
+                        useCurrentLocation()
+                    } label: {
+                        HStack(spacing: SonderSpacing.sm) {
+                            Circle()
+                                .fill(SonderColors.terracotta.opacity(0.1))
+                                .frame(width: 40, height: 40)
+                                .overlay {
+                                    Image(systemName: "location.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(SonderColors.terracotta)
+                                }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Use Current Location")
+                                    .font(SonderTypography.headline)
+                                    .foregroundStyle(SonderColors.inkDark)
+
+                                Text("Pin to where you are now")
+                                    .font(SonderTypography.caption)
+                                    .foregroundStyle(SonderColors.inkMuted)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(SonderColors.inkLight)
+                        }
+                        .padding(SonderSpacing.md)
+                        .background(SonderColors.warmGray)
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        showMap = true
+                    } label: {
+                        HStack(spacing: SonderSpacing.sm) {
+                            Circle()
+                                .fill(SonderColors.ochre.opacity(0.1))
+                                .frame(width: 40, height: 40)
+                                .overlay {
+                                    Image(systemName: "map")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(SonderColors.ochre)
+                                }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Choose on Map")
+                                    .font(SonderTypography.headline)
+                                    .foregroundStyle(SonderColors.inkDark)
+
+                                Text("Tap anywhere to drop a pin")
+                                    .font(SonderTypography.caption)
+                                    .foregroundStyle(SonderColors.inkMuted)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(SonderColors.inkLight)
+                        }
+                        .padding(SonderSpacing.md)
+                        .background(SonderColors.warmGray)
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text("Required — helps show this place on your map")
+                    .font(SonderTypography.caption)
+                    .foregroundStyle(SonderColors.inkLight)
+            }
+        }
+    }
+
+    // MARK: - Create Button
+
+    private var createButton: some View {
+        Button {
+            createPlace()
+        } label: {
+            Text("Create Place")
+                .font(SonderTypography.headline)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, SonderSpacing.md)
+                .background(isValid ? SonderColors.terracotta : SonderColors.inkLight.opacity(0.3))
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isValid)
     }
 
     private var isValid: Bool {

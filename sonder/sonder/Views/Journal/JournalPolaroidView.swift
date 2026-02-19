@@ -20,6 +20,26 @@ struct JournalPolaroidView: View {
     @State private var cardCenters: [Int: CGFloat] = [:]  // index -> midY in scroll
     @State private var scrolledID: String?
     @State private var sessionSeed: UInt64 = .random(in: 0..<UInt64.max)
+    @State private var showOrphanedLogs: Bool = true
+
+    init(
+        trips: [Trip],
+        allLogs: [Log],
+        places: [Place],
+        orphanedLogs: [Log],
+        selectedTrip: Binding<Trip?>,
+        selectedLog: Binding<Log?>
+    ) {
+        self.trips = trips
+        self.allLogs = allLogs
+        self.places = places
+        self.orphanedLogs = orphanedLogs
+        self._selectedTrip = selectedTrip
+        self._selectedLog = selectedLog
+        // Set initial scroll position to the most recent trip so it's focused
+        // on the very first render — .onAppear would be too late.
+        self._scrolledID = State(initialValue: trips.first?.id)
+    }
 
     private var placesByID: [String: Place] {
         Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
@@ -47,7 +67,7 @@ struct JournalPolaroidView: View {
     var body: some View {
         GeometryReader { outerGeo in
             let cardHeight: CGFloat = 392
-            let cardSpacing: CGFloat = 64
+            let cardSpacing: CGFloat = 48
 
             ZStack {
                 topographicBackground
@@ -108,17 +128,16 @@ struct JournalPolaroidView: View {
                         }
                     }
                 }
-                .scrollTargetBehavior(.viewAligned(limitBehavior: .automatic))
+                .scrollTargetBehavior(PolaroidSnapBehavior(
+                    cardHeight: cardHeight,
+                    cardSpacing: cardSpacing,
+                    cardCount: trips.count
+                ))
                 .scrollPosition(id: $scrolledID, anchor: .center)
                 .onScrollGeometryChange(for: CGFloat.self) { geo in
                     geo.contentOffset.y
                 } action: { _, newOffset in
                     scrollOffset = -newOffset
-                }
-            }
-            .onAppear {
-                if scrolledID == nil {
-                    scrolledID = trips.first?.id
                 }
             }
             .onChange(of: scrolledID) { oldValue, _ in
@@ -435,17 +454,23 @@ struct JournalPolaroidView: View {
         )
     }
 
-    /// Film frame number in monospaced text with dark background pill.
-    private func filmFrameNumber(index: Int) -> some View {
-        Text("No. \(String(format: "%02d", index + 1))")
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            .foregroundStyle(Color.white.opacity(0.85))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.black.opacity(0.35))
-            .clipShape(RoundedRectangle(cornerRadius: 3))
-            .padding(.leading, 8)
-            .padding(.bottom, 8)
+    /// Sharpie-style frame number written on the polaroid's white strip.
+    private func sharpieFrameNumber(index: Int) -> some View {
+        let ink = Color(red: 0.13, green: 0.12, blue: 0.11)
+        let number = trips.count - index  // oldest = 01
+
+        return ZStack {
+            // Subtle bleed for marker feel
+            Text(String(format: "%02d", number))
+                .font(.custom("Marker Felt", size: 14))
+                .foregroundStyle(ink.opacity(0.18))
+                .blur(radius: 0.6)
+                .offset(x: 0.2, y: 0.5)
+
+            Text(String(format: "%02d", number))
+                .font(.custom("Marker Felt", size: 14))
+                .foregroundStyle(ink.opacity(0.50))
+        }
     }
 
     /// Rubber-stamp date in the corner of the photo (uses startDate or createdAt).
@@ -627,8 +652,7 @@ struct JournalPolaroidView: View {
                     photoMoodOverlay
                         .opacity(0.75 - Double(proximity) * 0.3)
 
-                    // Film frame number (bottom-left)
-                    filmFrameNumber(index: index)
+                    // (film frame number moved to caption strip)
 
                     // Date stamp (bottom-right)
                     VStack {
@@ -658,17 +682,24 @@ struct JournalPolaroidView: View {
                 .padding(.horizontal, frameBorder)
 
                 // Caption area
-                VStack(alignment: .leading, spacing: 5) {
-                    sharpieTitle(for: trip)
+                ZStack(alignment: .bottomTrailing) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        sharpieTitle(for: trip)
 
-                    Text(captionDetails(for: trip))
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(SonderColors.inkMuted)
-                        .lineLimit(1)
+                        Text(captionDetails(for: trip))
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(SonderColors.inkMuted)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, frameBorder + 10)
+                    .padding(.top, 11)
+
+                    // Sharpie-style trip number on the polaroid white strip
+                    sharpieFrameNumber(index: index)
+                        .padding(.trailing, frameBorder + 10)
+                        .padding(.bottom, 8)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, frameBorder + 10)
-                .padding(.top, 11)
                 .frame(height: frameBottomStrip, alignment: .topLeading)
             }
             .background(paperColor(warmth: deco.paperWarmth))
@@ -723,36 +754,51 @@ struct JournalPolaroidView: View {
 
     private var orphanedLogsSection: some View {
         VStack(spacing: 16) {
-            HStack {
-                Text("Loose memories")
-                    .font(.system(.headline, design: .serif).weight(.semibold))
-                    .foregroundStyle(SonderColors.inkDark.opacity(0.85))
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showOrphanedLogs.toggle()
+                }
+            } label: {
+                HStack {
+                    Text("Loose memories")
+                        .font(.system(.headline, design: .serif).weight(.semibold))
+                        .foregroundStyle(SonderColors.inkDark.opacity(0.85))
 
-                Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(SonderColors.inkMuted)
+                        .rotationEffect(.degrees(showOrphanedLogs ? 90 : 0))
 
-                Text("\(orphanedLogs.count)")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(SonderColors.inkMuted)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule().fill(Color.white.opacity(0.45))
-                    )
-            }
-            .padding(.horizontal, 28)
+                    Spacer()
 
-            LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)],
-                spacing: 16
-            ) {
-                ForEach(orphanedLogs, id: \.id) { log in
-                    miniPolaroidCard(log: log)
+                    Text("\(orphanedLogs.count)")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(SonderColors.inkMuted)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule().fill(Color.white.opacity(0.45))
+                        )
                 }
             }
-            .padding(.horizontal, 24)
+            .buttonStyle(.plain)
+            .padding(.horizontal, 28)
+
+            if showOrphanedLogs {
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)],
+                    spacing: 16
+                ) {
+                    ForEach(orphanedLogs, id: \.id) { log in
+                        miniPolaroidCard(log: log)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .transition(.opacity)
+            }
         }
         .padding(.top, 28)
-        .padding(.bottom, 100)
+        .padding(.bottom, showOrphanedLogs ? 100 : 400)
     }
 
     private func miniPolaroidCard(log: Log) -> some View {
@@ -764,11 +810,11 @@ struct JournalPolaroidView: View {
                 ZStack {
                     if let urlString = log.photoURL, let url = URL(string: urlString) {
                         DownsampledAsyncImage(url: url, targetSize: CGSize(width: 180, height: 180)) {
-                            miniPolaroidPlaceholder(log: log)
+                            miniPolaroidPlaceholder(log: log, place: place)
                         }
                         .aspectRatio(contentMode: .fill)
                     } else {
-                        miniPolaroidPlaceholder(log: log)
+                        miniPolaroidPlaceholder(log: log, place: place)
                     }
 
                     LinearGradient(
@@ -810,24 +856,350 @@ struct JournalPolaroidView: View {
         .buttonStyle(.plain)
     }
 
-    private func miniPolaroidPlaceholder(log: Log) -> some View {
-        LinearGradient(
-            colors: [
-                Color(red: 0.88, green: 0.85, blue: 0.80),
-                Color(red: 0.82, green: 0.78, blue: 0.72)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .overlay {
-            Image(systemName: "mappin.circle")
-                .font(.system(size: 22))
-                .foregroundStyle(.white.opacity(0.5))
+    // MARK: - Orphaned Log Placeholder Styles
+
+    /// Randomly picks one of six placeholder styles per log, stable within a session.
+    private func miniPolaroidPlaceholder(log: Log, place: Place? = nil) -> some View {
+        let seed = sessionSeed ^ UInt64(bitPattern: Int64(log.id.hashValue)) ^ 0xCAFEBABEDEAD
+        var rng = SeededRNG(seed: seed)
+        let style = Int.random(in: 0..<6, using: &rng)
+        return Group {
+            switch style {
+            case 0: placeholderChemicalBurn(rating: log.rating, seed: seed)
+            case 1: placeholderCategoryDoodle(types: place?.types ?? [], seed: seed)
+            case 2: placeholderPassportStamp(date: log.visitedAt, rating: log.rating, seed: seed)
+            case 3: placeholderVintageLabel(name: place?.name ?? "Unknown", date: log.visitedAt, seed: seed)
+            case 4: placeholderTopoMiniMap(rating: log.rating, seed: seed)
+            default: placeholderWatercolorWash(types: place?.types ?? [], seed: seed)
+            }
+        }
+    }
+
+    private func placeholderCategoryIcon(for types: [String]) -> String {
+        for type in types {
+            if type.contains("restaurant") || type == "food" { return "fork.knife" }
+            if type.contains("cafe") || type.contains("coffee") { return "cup.and.saucer.fill" }
+            if type.contains("bar") || type.contains("night_club") { return "wineglass.fill" }
+            if type.contains("museum") || type.contains("art_gallery") { return "building.columns.fill" }
+            if type.contains("park") || type.contains("campground") { return "leaf.fill" }
+            if type.contains("store") || type.contains("shopping") { return "bag.fill" }
+            if type.contains("lodging") || type.contains("hotel") { return "bed.double.fill" }
+            if type.contains("gym") || type.contains("stadium") { return "figure.run" }
+            if type.contains("airport") { return "airplane" }
+            if type.contains("train") || type.contains("transit") { return "tram.fill" }
+            if type.contains("library") { return "books.vertical.fill" }
+            if type.contains("movie") || type.contains("theater") { return "film.fill" }
+            if type.contains("spa") || type.contains("beauty") { return "sparkles" }
+            if type.contains("church") || type.contains("temple") || type.contains("mosque") { return "building.fill" }
+            if type.contains("hospital") || type.contains("pharmacy") { return "cross.fill" }
+            if type.contains("beach") { return "sun.max.fill" }
+        }
+        return "mappin.circle.fill"
+    }
+
+    /// Style 0 — Undeveloped polaroid with organic color blobs and a light-leak streak.
+    private func placeholderChemicalBurn(rating: Rating, seed: UInt64) -> some View {
+        Canvas { context, size in
+            var rng = SeededRNG(seed: seed ^ 0x111)
+            context.fill(Path(CGRect(origin: .zero, size: size)),
+                         with: .color(Color(red: 0.93, green: 0.90, blue: 0.84)))
+
+            let tint: Color
+            switch rating {
+            case .mustSee: tint = Color(red: 0.85, green: 0.62, blue: 0.35)
+            case .solid:   tint = Color(red: 0.62, green: 0.76, blue: 0.65)
+            case .skip:    tint = Color(red: 0.74, green: 0.72, blue: 0.69)
+            }
+
+            for _ in 0..<Int.random(in: 4...7, using: &rng) {
+                let cx = CGFloat.random(in: -15...size.width + 15, using: &rng)
+                let cy = CGFloat.random(in: -15...size.height + 15, using: &rng)
+                let rx = CGFloat.random(in: 25...65, using: &rng)
+                let ry = CGFloat.random(in: 20...55, using: &rng)
+                context.fill(
+                    Path(ellipseIn: CGRect(x: cx - rx, y: cy - ry, width: rx * 2, height: ry * 2)),
+                    with: .color(tint.opacity(Double.random(in: 0.08...0.22, using: &rng))))
+            }
+
+            let sy = CGFloat.random(in: size.height * 0.2...size.height * 0.7, using: &rng)
+            var streak = Path()
+            streak.move(to: CGPoint(x: -10, y: sy))
+            streak.addQuadCurve(
+                to: CGPoint(x: size.width + 10, y: sy + CGFloat.random(in: -25...25, using: &rng)),
+                control: CGPoint(x: size.width * 0.5, y: sy + CGFloat.random(in: -30...30, using: &rng)))
+            context.stroke(streak, with: .color(Color.white.opacity(0.18)),
+                           style: StrokeStyle(lineWidth: CGFloat.random(in: 18...38, using: &rng), lineCap: .round))
+        }
+    }
+
+    /// Style 1 — Kraft paper with faint ruled lines and a large category-icon sketch.
+    private func placeholderCategoryDoodle(types: [String], seed: UInt64) -> some View {
+        let icon = placeholderCategoryIcon(for: types)
+        var rng = SeededRNG(seed: seed ^ 0x222)
+        let rotation = Double.random(in: -12...12, using: &rng)
+
+        return ZStack {
+            LinearGradient(
+                colors: [Color(red: 0.83, green: 0.77, blue: 0.67), Color(red: 0.79, green: 0.73, blue: 0.63)],
+                startPoint: .topLeading, endPoint: .bottomTrailing)
+
+            Canvas { context, size in
+                var lrng = SeededRNG(seed: seed ^ 0x2222)
+                for y in stride(from: CGFloat(8), to: size.height, by: 11) {
+                    var line = Path()
+                    line.move(to: CGPoint(x: 5, y: y))
+                    line.addLine(to: CGPoint(x: size.width - 5, y: y))
+                    context.stroke(line,
+                                   with: .color(Color.white.opacity(Double.random(in: 0.08...0.14, using: &lrng))),
+                                   style: StrokeStyle(lineWidth: 0.5))
+                }
+            }
+
+            Image(systemName: icon)
+                .font(.system(size: 38, weight: .ultraLight))
+                .foregroundStyle(Color(red: 0.50, green: 0.43, blue: 0.34).opacity(0.45))
+                .rotationEffect(.degrees(rotation))
+        }
+    }
+
+    /// Style 2 — Passport page with ruled lines, a circular entry stamp, and the visit date.
+    private func placeholderPassportStamp(date: Date, rating: Rating, seed: UInt64) -> some View {
+        var rng = SeededRNG(seed: seed ^ 0x333)
+        let stampRotation = Double.random(in: -18...18, using: &rng)
+        let stampAlpha = Double.random(in: 0.35...0.55, using: &rng)
+
+        let ink: Color
+        switch rating {
+        case .mustSee: ink = Color(red: 0.72, green: 0.28, blue: 0.22)
+        case .solid:   ink = Color(red: 0.22, green: 0.32, blue: 0.58)
+        case .skip:    ink = Color(red: 0.50, green: 0.48, blue: 0.45)
+        }
+
+        return ZStack {
+            Color(red: 0.95, green: 0.93, blue: 0.88)
+
+            Canvas { context, size in
+                for y in stride(from: CGFloat(10), to: size.height, by: 14) {
+                    var line = Path()
+                    line.move(to: CGPoint(x: 5, y: y))
+                    line.addLine(to: CGPoint(x: size.width - 5, y: y))
+                    context.stroke(line,
+                                   with: .color(Color(red: 0.70, green: 0.75, blue: 0.85).opacity(0.15)),
+                                   style: StrokeStyle(lineWidth: 0.5))
+                }
+            }
+
+            Canvas { context, size in
+                let center = CGPoint(x: size.width / 2, y: size.height / 2)
+                let r: CGFloat = min(size.width, size.height) * 0.30
+                context.stroke(
+                    Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)),
+                    with: .color(ink.opacity(stampAlpha)),
+                    style: StrokeStyle(lineWidth: 2.0))
+                let ir = r * 0.70
+                context.stroke(
+                    Path(ellipseIn: CGRect(x: center.x - ir, y: center.y - ir, width: ir * 2, height: ir * 2)),
+                    with: .color(ink.opacity(stampAlpha * 0.8)),
+                    style: StrokeStyle(lineWidth: 1.2))
+                var h = Path()
+                h.move(to: CGPoint(x: center.x - r * 0.85, y: center.y))
+                h.addLine(to: CGPoint(x: center.x + r * 0.85, y: center.y))
+                context.stroke(h, with: .color(ink.opacity(stampAlpha * 0.6)),
+                               style: StrokeStyle(lineWidth: 0.8))
+            }
+            .rotationEffect(.degrees(stampRotation))
+
+            Text(date.formatted(.dateTime.month(.abbreviated).day()).uppercased())
+                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                .foregroundStyle(ink.opacity(0.40))
+                .rotationEffect(.degrees(stampRotation))
+        }
+    }
+
+    /// Style 3 — Vintage luggage label with the place name in a decorative double border.
+    private func placeholderVintageLabel(name: String, date: Date, seed: UInt64) -> some View {
+        var rng = SeededRNG(seed: seed ^ 0x444)
+        let rotation = Double.random(in: -4...4, using: &rng)
+        let borderInk = Color(red: 0.55, green: 0.40, blue: 0.28)
+
+        return ZStack {
+            LinearGradient(
+                colors: [Color(red: 0.92, green: 0.88, blue: 0.80), Color(red: 0.88, green: 0.84, blue: 0.75)],
+                startPoint: .top, endPoint: .bottom)
+
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .stroke(borderInk.opacity(0.35), lineWidth: 1.5)
+                .padding(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .stroke(borderInk.opacity(0.20), lineWidth: 0.8)
+                        .padding(12)
+                )
+                .overlay {
+                    VStack(spacing: 4) {
+                        Text(name.uppercased())
+                            .font(.system(size: 11, weight: .bold, design: .serif))
+                            .foregroundStyle(borderInk.opacity(0.65))
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                            .minimumScaleFactor(0.7)
+
+                        Rectangle()
+                            .fill(borderInk.opacity(0.20))
+                            .frame(width: 40, height: 0.8)
+
+                        Text(date.formatted(.dateTime.year()).uppercased())
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .foregroundStyle(borderInk.opacity(0.45))
+                    }
+                    .padding(.horizontal, 18)
+                }
+                .rotationEffect(.degrees(rotation))
+        }
+    }
+
+    /// Style 4 — Mini topographic map with contour lines and a center pin.
+    private func placeholderTopoMiniMap(rating: Rating, seed: UInt64) -> some View {
+        let tint: Color
+        switch rating {
+        case .mustSee: tint = Color(red: 0.78, green: 0.42, blue: 0.30)
+        case .solid:   tint = Color(red: 0.45, green: 0.58, blue: 0.48)
+        case .skip:    tint = Color(red: 0.58, green: 0.55, blue: 0.52)
+        }
+
+        return ZStack {
+            Color(red: 0.94, green: 0.91, blue: 0.84)
+
+            Canvas { context, size in
+                var rng = SeededRNG(seed: seed ^ 0x555)
+                for i in 0..<12 {
+                    let baseY = size.height * CGFloat(i) / 10 - size.height * 0.1
+                    var points: [CGPoint] = []
+                    for s in 0...6 {
+                        let x = size.width * CGFloat(s) / 6
+                        let wave = sin(CGFloat(s) * 0.8 + CGFloat(i) * 0.5)
+                            * CGFloat.random(in: 8...20, using: &rng)
+                        points.append(CGPoint(x: x, y: baseY + wave))
+                    }
+                    var path = Path()
+                    path.move(to: points[0])
+                    for j in 1..<points.count {
+                        let mid = CGPoint(
+                            x: (points[j - 1].x + points[j].x) / 2,
+                            y: (points[j - 1].y + points[j].y) / 2)
+                        path.addQuadCurve(to: mid, control: points[j - 1])
+                    }
+                    if let last = points.last { path.addLine(to: last) }
+                    let isThick = i % 4 == 0
+                    context.stroke(path,
+                                   with: .color(tint.opacity(isThick ? 0.35 : 0.18)),
+                                   style: StrokeStyle(lineWidth: isThick ? 1.4 : 0.7, lineCap: .round))
+                }
+
+                let cx = size.width / 2, cy = size.height / 2
+                let pr: CGFloat = 5
+                context.fill(Path(ellipseIn: CGRect(x: cx - pr, y: cy - pr, width: pr * 2, height: pr * 2)),
+                             with: .color(tint.opacity(0.55)))
+                context.fill(Path(ellipseIn: CGRect(x: cx - 1.5, y: cy - 1.5, width: 3, height: 3)),
+                             with: .color(Color.white.opacity(0.50)))
+            }
+        }
+    }
+
+    /// Style 5 — Soft overlapping watercolor circles with a category icon.
+    private func placeholderWatercolorWash(types: [String], seed: UInt64) -> some View {
+        let icon = placeholderCategoryIcon(for: types)
+
+        return ZStack {
+            Color(red: 0.96, green: 0.94, blue: 0.90)
+
+            Canvas { context, size in
+                var rng = SeededRNG(seed: seed ^ 0x666)
+                let palette: [Color] = [
+                    Color(red: 0.72, green: 0.82, blue: 0.85),
+                    Color(red: 0.85, green: 0.78, blue: 0.70),
+                    Color(red: 0.80, green: 0.72, blue: 0.78),
+                    Color(red: 0.75, green: 0.83, blue: 0.73),
+                    Color(red: 0.88, green: 0.80, blue: 0.68)
+                ]
+                for _ in 0..<Int.random(in: 5...8, using: &rng) {
+                    let cx = CGFloat.random(in: 0...size.width, using: &rng)
+                    let cy = CGFloat.random(in: 0...size.height, using: &rng)
+                    let r = CGFloat.random(in: 20...55, using: &rng)
+                    let color = palette[Int.random(in: 0..<palette.count, using: &rng)]
+                    context.fill(
+                        Path(ellipseIn: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)),
+                        with: .color(color.opacity(Double.random(in: 0.12...0.28, using: &rng))))
+                }
+            }
+
+            Image(systemName: icon)
+                .font(.system(size: 28, weight: .thin))
+                .foregroundStyle(Color.white.opacity(0.6))
         }
     }
 
     private func polaroidPlaceholder(trip: Trip) -> some View {
         TripCoverPlaceholderView(seedKey: trip.id, title: trip.name, caption: "Loading memories...")
+    }
+}
+
+// MARK: - Polaroid Snap Behavior
+
+/// Snaps to card boundaries with low velocity & displacement thresholds so small
+/// flicks reliably advance one card instead of bouncing back.
+private struct PolaroidSnapBehavior: ScrollTargetBehavior {
+    let cardHeight: CGFloat
+    let cardSpacing: CGFloat
+    let cardCount: Int
+
+    /// Minimum flick speed (pts/sec) that forces an advance.
+    private let velocityThreshold: CGFloat = 60
+
+    /// Fraction of stride the user must drag before we advance (0.15 = 15%).
+    private let displacementFraction: CGFloat = 0.15
+
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        let stride = cardHeight + cardSpacing
+        guard stride > 0, cardCount > 0 else { return }
+
+        let contentOffset = target.rect.minY
+        let velocity = context.velocity.dy  // pts/sec, negative = scrolling down
+
+        // If the user scrolled past all cards into the orphaned-logs tail,
+        // let momentum carry naturally — no snapping.
+        let maxSnappableOffset = stride * CGFloat(cardCount - 1)
+        if contentOffset > maxSnappableOffset + stride * 0.25 {
+            return
+        }
+
+        // Nearest card index (clamped).
+        let rawIndex = contentOffset / stride
+        let nearestIndex = round(rawIndex)
+
+        // Determine direction bias from velocity or displacement.
+        let displacement = rawIndex - nearestIndex
+        let hasVelocity = abs(velocity) > velocityThreshold
+        let hasDrag = abs(displacement) > displacementFraction
+
+        let snappedIndex: CGFloat
+        if hasVelocity {
+            // Flick detected — advance in that direction.
+            snappedIndex = velocity < 0
+                ? ceil(rawIndex)   // scrolling down → next card
+                : floor(rawIndex)  // scrolling up   → previous card
+        } else if hasDrag {
+            // Slow drag past threshold — advance toward drag direction.
+            snappedIndex = displacement > 0
+                ? ceil(rawIndex)
+                : floor(rawIndex)
+        } else {
+            // Tiny movement — snap back to nearest.
+            snappedIndex = nearestIndex
+        }
+
+        let clamped = max(0, min(CGFloat(cardCount - 1), snappedIndex))
+        target.rect.origin.y = clamped * stride
     }
 }
 
@@ -838,7 +1210,8 @@ private struct SeededRNG: RandomNumberGenerator {
     private var state: UInt64
 
     init(seed: UInt64) {
-        state = seed
+        // xorshift64 requires a non-zero state; fall back to a constant if 0
+        state = seed == 0 ? 0x5DEECE66D : seed
     }
 
     mutating func next() -> UInt64 {

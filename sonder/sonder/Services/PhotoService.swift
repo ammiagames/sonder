@@ -106,8 +106,8 @@ final class PhotoService {
                 let result = try await SupabaseConfig.client.storage
                     .from(storageBucket)
                     .upload(
-                        path: filename,
-                        file: compressedData,
+                        filename,
+                        data: compressedData,
                         options: FileOptions(contentType: "image/jpeg")
                     )
 
@@ -216,8 +216,8 @@ final class PhotoService {
                 let result = try await SupabaseConfig.client.storage
                     .from(storageBucket)
                     .upload(
-                        path: filename,
-                        file: data,
+                        filename,
+                        data: data,
                         options: FileOptions(contentType: "image/jpeg")
                     )
 

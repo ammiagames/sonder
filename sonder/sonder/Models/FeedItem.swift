@@ -22,6 +22,7 @@ struct FeedItem: Identifiable, Codable {
         let note: String?
         let tags: [String]
         let createdAt: Date
+        let tripID: String?
 
         /// Backward-compat: returns the first photo URL
         var photoURL: String? { photoURLs.first }
@@ -33,6 +34,7 @@ struct FeedItem: Identifiable, Codable {
             case note
             case tags
             case createdAt = "created_at"
+            case tripID = "trip_id"
         }
     }
 
@@ -267,7 +269,8 @@ struct FeedLogResponse: Codable {
                 photoURLs: photoURLs,
                 note: note,
                 tags: tags,
-                createdAt: createdAt
+                createdAt: createdAt,
+                tripID: tripID
             ),
             user: user,
             place: place

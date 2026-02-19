@@ -138,11 +138,7 @@ final class GooglePlacesService {
             try? await Task.sleep(for: .milliseconds(GooglePlacesConfig.autocompleteDebounceMs))
         }
 
-        do {
-            try await debounceTask?.value
-        } catch {
-            return []
-        }
+        await debounceTask?.value
 
         guard !Task.isCancelled else { return [] }
 

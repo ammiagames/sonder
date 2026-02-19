@@ -16,6 +16,7 @@ struct JournalBoardingPassView: View {
     let orphanedLogs: [Log]
     @Binding var selectedTrip: Trip?
     @Binding var selectedLog: Log?
+    @State private var showOrphanedLogs: Bool = true
 
     private var placesByID: [String: Place] {
         Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
@@ -80,14 +81,17 @@ struct JournalBoardingPassView: View {
                     if !orphanedLogs.isEmpty {
                         orphanedLogsHeader
 
-                        ForEach(orphanedLogs, id: \.id) { log in
-                            orphanedLogStub(log: log)
+                        if showOrphanedLogs {
+                            ForEach(orphanedLogs, id: \.id) { log in
+                                orphanedLogStub(log: log)
+                            }
+                            .transition(.opacity)
                         }
                     }
                 }
                 .padding(.horizontal, SonderSpacing.md)
                 .padding(.top, SonderSpacing.md)
-                .padding(.bottom, 100)
+                .padding(.bottom, showOrphanedLogs ? 100 : 400)
             }
         }
     }
@@ -362,17 +366,27 @@ struct JournalBoardingPassView: View {
     // MARK: - Orphaned Logs
 
     private var orphanedLogsHeader: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "mappin.circle")
-                .font(.system(size: 13))
-            Text("Not in a trip")
-                .font(.system(size: 14, weight: .medium))
-            Text("(\(orphanedLogs.count))")
-                .font(.system(size: 13))
-                .opacity(0.5)
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showOrphanedLogs.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "mappin.circle")
+                    .font(.system(size: 13))
+                Text("Not in a trip")
+                    .font(.system(size: 14, weight: .medium))
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .rotationEffect(.degrees(showOrphanedLogs ? 90 : 0))
+                Text("(\(orphanedLogs.count))")
+                    .font(.system(size: 13))
+                    .opacity(0.5)
+            }
+            .foregroundStyle(Color(red: 0.45, green: 0.50, blue: 0.58))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .foregroundStyle(Color(red: 0.45, green: 0.50, blue: 0.58))
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(.plain)
         .padding(.top, 12)
     }
 

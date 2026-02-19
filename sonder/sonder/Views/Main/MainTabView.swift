@@ -26,50 +26,32 @@ struct MainTabView: View {
     @State private var journalPopTrigger = UUID()
     @State private var profilePopTrigger = UUID()
 
-    /// Tracks which tabs have been visited at least once so their views are kept alive.
-    @State private var loadedTabs: Set<Int> = [0]
     @State private var didSetInitialTab = false
 
     var body: some View {
-        ZStack {
-            if loadedTabs.contains(0) {
-                FeedView(popToRoot: feedPopTrigger)
-                    .environment(\.isTabVisible, selectedTab == 0)
-                    .opacity(selectedTab == 0 ? 1 : 0)
-                    .allowsHitTesting(selectedTab == 0)
-            }
+        TabView(selection: $selectedTab) {
+            FeedView(popToRoot: feedPopTrigger)
+                .environment(\.isTabVisible, selectedTab == 0)
+                .tag(0)
 
-            if loadedTabs.contains(1) {
-                ExploreMapView(focusMyPlaces: $exploreFocusMyPlaces, hasSelection: $exploreHasSelection, pendingPinDrop: $pendingPinDrop)
-                    .environment(\.isTabVisible, selectedTab == 1)
-                    .opacity(selectedTab == 1 ? 1 : 0)
-                    .allowsHitTesting(selectedTab == 1)
-            }
+            ExploreMapView(focusMyPlaces: $exploreFocusMyPlaces, hasSelection: $exploreHasSelection, pendingPinDrop: $pendingPinDrop)
+                .environment(\.isTabVisible, selectedTab == 1)
+                .tag(1)
 
-            if loadedTabs.contains(2) {
-                JournalContainerView(popToRoot: journalPopTrigger)
-                    .environment(\.isTabVisible, selectedTab == 2)
-                    .opacity(selectedTab == 2 ? 1 : 0)
-                    .allowsHitTesting(selectedTab == 2)
-            }
+            JournalContainerView(popToRoot: journalPopTrigger)
+                .environment(\.isTabVisible, selectedTab == 2)
+                .tag(2)
 
-            if loadedTabs.contains(3) {
-                ProfileView(selectedTab: $selectedTab, exploreFocusMyPlaces: $exploreFocusMyPlaces, popToRoot: profilePopTrigger)
-                    .environment(\.isTabVisible, selectedTab == 3)
-                    .opacity(selectedTab == 3 ? 1 : 0)
-                    .allowsHitTesting(selectedTab == 3)
-            }
+            ProfileView(selectedTab: $selectedTab, exploreFocusMyPlaces: $exploreFocusMyPlaces, popToRoot: profilePopTrigger)
+                .environment(\.isTabVisible, selectedTab == 3)
+                .tag(3)
         }
-        .animation(nil, value: selectedTab)
+        .toolbar(.hidden, for: .tabBar)
         .onAppear {
             if !didSetInitialTab && initialTab != 0 {
                 didSetInitialTab = true
                 selectedTab = initialTab
-                loadedTabs.insert(initialTab)
             }
-        }
-        .onChange(of: selectedTab) { _, newTab in
-            loadedTabs.insert(newTab)
         }
         .toolbarColorScheme(.light, for: .navigationBar)
         .safeAreaInset(edge: .bottom) {
@@ -114,10 +96,6 @@ struct SonderTabBar: View {
     let onLogTap: () -> Void
     var onSameTabTap: ((Int) -> Void)? = nil
 
-    @Namespace private var pillAnimation
-    /// Local visual state — animated independently so the TabView content swap stays instant.
-    @State private var visualTab: Int = 0
-
     var body: some View {
         HStack(spacing: 0) {
             tabButton(icon: "bubble.left.and.bubble.right", label: "Feed", tag: 0)
@@ -129,12 +107,6 @@ struct SonderTabBar: View {
         .padding(.top, SonderSpacing.xxs)
         .padding(.bottom, SonderSpacing.xxs)
         .offset(y: 16)
-        .onAppear { visualTab = selectedTab }
-        .onChange(of: selectedTab) { _, newValue in
-            withAnimation(.smooth(duration: 0.25)) {
-                visualTab = newValue
-            }
-        }
         .background {
             ZStack {
                 Rectangle().fill(.ultraThinMaterial)
@@ -158,7 +130,7 @@ struct SonderTabBar: View {
     // MARK: - Tab Button
 
     private func tabButton(icon: String, label: String, tag: Int) -> some View {
-        let isSelected = visualTab == tag
+        let isSelected = selectedTab == tag
 
         return Button {
             if selectedTab == tag {
@@ -170,12 +142,10 @@ struct SonderTabBar: View {
         } label: {
             VStack(spacing: SonderSpacing.xxs) {
                 ZStack {
-                    // Sliding selection pill
                     if isSelected {
                         Capsule()
                             .fill(SonderColors.terracotta.opacity(0.15))
                             .frame(width: 52, height: 30)
-                            .matchedGeometryEffect(id: "tabPill", in: pillAnimation)
                     }
 
                     Image(systemName: icon)
