@@ -21,20 +21,12 @@ enum ProfileStatsService {
         let archetype = classifyArchetype(tasteDNA: tasteDNA, logs: logs, placeMap: placeMap)
         let categoryBreakdown = computeCategoryBreakdown(logs: logs, placeMap: placeMap)
         let ratingDistribution = computeRatingDistribution(logs: logs)
-        let calendarHeatmap = computeCalendarHeatmap(logs: logs)
-        let streak = computeStreak(logs: logs)
-        let dayOfWeek = computeDayOfWeekPattern(logs: logs)
-        let bookends = computeBookends(logs: logs, placeMap: placeMap)
 
         return ProfileStats(
             tasteDNA: tasteDNA,
             archetype: archetype,
             categoryBreakdown: categoryBreakdown,
             ratingDistribution: ratingDistribution,
-            calendarHeatmap: calendarHeatmap,
-            streak: streak,
-            dayOfWeek: dayOfWeek,
-            bookends: bookends,
             totalLogs: logs.count
         )
     }
@@ -153,9 +145,16 @@ enum ProfileStatsService {
     // MARK: - Rating Distribution
 
     static func computeRatingDistribution(logs: [Log]) -> RatingDistribution {
-        let skipCount = logs.filter { $0.rating == .skip }.count
-        let solidCount = logs.filter { $0.rating == .solid }.count
-        let mustSeeCount = logs.filter { $0.rating == .mustSee }.count
+        var skipCount = 0
+        var solidCount = 0
+        var mustSeeCount = 0
+        for log in logs {
+            switch log.rating {
+            case .skip: skipCount += 1
+            case .solid: solidCount += 1
+            case .mustSee: mustSeeCount += 1
+            }
+        }
         let total = logs.count
 
         let philosophy: String
@@ -186,155 +185,6 @@ enum ProfileStatsService {
             solidCount: solidCount,
             mustSeeCount: mustSeeCount,
             philosophy: philosophy
-        )
-    }
-
-    // MARK: - Calendar Heatmap
-
-    static func computeCalendarHeatmap(logs: [Log]) -> CalendarHeatmapData {
-        let calendar = Calendar.current
-        let endDate = calendar.startOfDay(for: Date())
-        let startDate = calendar.date(byAdding: .month, value: -6, to: endDate) ?? endDate
-
-        guard !logs.isEmpty else {
-            return CalendarHeatmapData(entries: [], startDate: startDate, endDate: endDate)
-        }
-
-        // Group logs by day
-        var dayCounts: [Date: Int] = [:]
-        for log in logs {
-            let day = calendar.startOfDay(for: log.createdAt)
-            if day >= startDate && day <= endDate {
-                dayCounts[day, default: 0] += 1
-            }
-        }
-
-        let entries = dayCounts
-            .map { (date: $0.key, count: $0.value) }
-            .sorted { $0.date < $1.date }
-
-        return CalendarHeatmapData(entries: entries, startDate: startDate, endDate: endDate)
-    }
-
-    // MARK: - Streak
-
-    static func computeStreak(logs: [Log]) -> StreakData {
-        guard !logs.isEmpty else {
-            return StreakData(currentStreak: 0, longestStreak: 0, longestStreakStartDate: nil)
-        }
-
-        let calendar = Calendar.current
-        let uniqueDays = Set(logs.map { calendar.startOfDay(for: $0.createdAt) })
-        let sortedDays = uniqueDays.sorted()
-
-        guard !sortedDays.isEmpty else {
-            return StreakData(currentStreak: 0, longestStreak: 0, longestStreakStartDate: nil)
-        }
-
-        var currentStreak = 1
-        var longestStreak = 1
-        var longestStart = sortedDays[0]
-        var streakStart = sortedDays[0]
-
-        for i in 1..<sortedDays.count {
-            let daysBetween = calendar.dateComponents([.day], from: sortedDays[i - 1], to: sortedDays[i]).day ?? 0
-            if daysBetween == 1 {
-                currentStreak += 1
-                if currentStreak > longestStreak {
-                    longestStreak = currentStreak
-                    longestStart = streakStart
-                }
-            } else {
-                currentStreak = 1
-                streakStart = sortedDays[i]
-            }
-        }
-
-        // Check if the current streak is still active (includes today or yesterday)
-        let today = calendar.startOfDay(for: Date())
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
-        guard let lastLogDay = sortedDays.last else {
-            return StreakData(currentStreak: 0, longestStreak: 0, longestStreakStartDate: nil)
-        }
-
-        let activeCurrentStreak: Int
-        if lastLogDay == today || lastLogDay == yesterday {
-            // Recalculate streak from the end
-            activeCurrentStreak = computeCurrentStreakFromEnd(sortedDays: sortedDays, calendar: calendar)
-        } else {
-            activeCurrentStreak = 0
-        }
-
-        return StreakData(
-            currentStreak: activeCurrentStreak,
-            longestStreak: longestStreak,
-            longestStreakStartDate: longestStart
-        )
-    }
-
-    private static func computeCurrentStreakFromEnd(sortedDays: [Date], calendar: Calendar) -> Int {
-        guard !sortedDays.isEmpty else { return 0 }
-
-        var streak = 1
-        for i in stride(from: sortedDays.count - 1, through: 1, by: -1) {
-            let daysBetween = calendar.dateComponents([.day], from: sortedDays[i - 1], to: sortedDays[i]).day ?? 0
-            if daysBetween == 1 {
-                streak += 1
-            } else {
-                break
-            }
-        }
-        return streak
-    }
-
-    // MARK: - Day of Week Pattern
-
-    static func computeDayOfWeekPattern(logs: [Log]) -> DayOfWeekPattern {
-        let calendar = Calendar.current
-        var counts = [Int](repeating: 0, count: 7)
-
-        for log in logs {
-            let weekday = calendar.component(.weekday, from: log.createdAt) - 1 // 0=Sun...6=Sat
-            counts[weekday] += 1
-        }
-
-        let dayNames = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
-        let maxCount = counts.max() ?? 0
-        let peakIndex = counts.firstIndex(of: maxCount) ?? 0
-        let total = counts.reduce(0, +)
-
-        let weekdaySum = counts[1] + counts[2] + counts[3] + counts[4] + counts[5] // Mon-Fri
-        let isWeekday = total > 0 ? Double(weekdaySum) / Double(total) > 0.7 : false
-
-        return DayOfWeekPattern(
-            counts: counts,
-            peakDay: dayNames[peakIndex],
-            peakPercentage: total > 0 ? Double(maxCount) / Double(total) : 0,
-            isWeekdayExplorer: isWeekday
-        )
-    }
-
-    // MARK: - Bookends
-
-    static func computeBookends(logs: [Log], placeMap: [String: Place]) -> Bookends? {
-        guard logs.count >= 2 else { return nil }
-
-        let sorted = logs.sorted { $0.createdAt < $1.createdAt }
-        guard let first = sorted.first, let latest = sorted.last,
-              let firstPlace = placeMap[first.placeID],
-              let latestPlace = placeMap[latest.placeID] else { return nil }
-
-        let calendar = Calendar.current
-        let days = calendar.dateComponents([.day], from: first.createdAt, to: latest.createdAt).day ?? 0
-
-        return Bookends(
-            firstPlaceName: firstPlace.name,
-            firstCity: extractCity(from: firstPlace.address),
-            firstDate: first.createdAt,
-            latestPlaceName: latestPlace.name,
-            latestCity: extractCity(from: latestPlace.address),
-            latestDate: latest.createdAt,
-            daysBetween: days
         )
     }
 

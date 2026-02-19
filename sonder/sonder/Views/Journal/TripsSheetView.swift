@@ -285,9 +285,14 @@ struct TripRowCard: View {
         TripCoverPlaceholderView(seedKey: trip.id)
     }
 
+    private static let mediumDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        return f
+    }()
+
     private func formatDateRange(start: Date, end: Date?) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
+        let formatter = Self.mediumDateFormatter
 
         if let end = end {
             let startStr = formatter.string(from: start)

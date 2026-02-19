@@ -231,13 +231,6 @@ struct ShareLogView: View {
         let userLogs = allLogs.filter { $0.userID == log.userID }
         let logsBeforeThis = userLogs.filter { $0.createdAt <= log.createdAt }
         let placeNumber = logsBeforeThis.count
-        let mustSeeCount: Int? = {
-            if log.rating == .mustSee {
-                let count = logsBeforeThis.filter { $0.rating == .mustSee }.count
-                return count > 0 ? count : nil
-            }
-            return nil
-        }()
 
         // Extract city from address (first component after splitting by comma)
         let cityName = extractCity(from: place.address)
@@ -254,8 +247,7 @@ struct ShareLogView: View {
                 tags: log.tags,
                 date: log.createdAt,
                 username: username,
-                placeNumber: placeNumber > 0 ? placeNumber : nil,
-                mustSeeCount: mustSeeCount
+                placeNumber: placeNumber > 0 ? placeNumber : nil
             )
             self.isLoading = false
             self.renderPreview()

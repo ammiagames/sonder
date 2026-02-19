@@ -22,13 +22,10 @@ struct EditProfileView: View {
 
     @State private var firstName: String = ""
     @State private var username: String = ""
-    @State private var bio: String = ""
     @State private var selectedImage: UIImage?
     @State private var showImagePicker = false
     @State private var isUploading = false
     @State private var isSaving = false
-
-    private let maxBioLength = 150
 
     var body: some View {
         NavigationStack {
@@ -194,49 +191,12 @@ struct EditProfileView: View {
         }
     }
 
-    // MARK: - Bio Section
-
-    private var bioSection: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-            HStack {
-                Text("Bio")
-                    .font(SonderTypography.caption)
-                    .foregroundStyle(SonderColors.inkMuted)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                Spacer()
-
-                Text("\(bio.count)/\(maxBioLength)")
-                    .font(SonderTypography.caption)
-                    .foregroundStyle(bio.count > maxBioLength ? .red : SonderColors.inkLight)
-            }
-
-            TextField("Coffee snob. Always hunting for the best ramen.", text: $bio, axis: .vertical)
-                .font(SonderTypography.body)
-                .lineLimit(3...5)
-                .padding(SonderSpacing.md)
-                .background(SonderColors.warmGray)
-                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                .onChange(of: bio) { _, newValue in
-                    if newValue.count > maxBioLength {
-                        bio = String(newValue.prefix(maxBioLength))
-                    }
-                }
-
-            Text("Tell others what you love to explore")
-                .font(SonderTypography.caption)
-                .foregroundStyle(SonderColors.inkLight)
-        }
-    }
-
     // MARK: - Actions
 
     private func loadCurrentValues() {
         if let user = authService.currentUser {
             firstName = user.firstName ?? ""
             username = user.username
-            bio = user.bio ?? ""
         }
     }
 
@@ -260,7 +220,6 @@ struct EditProfileView: View {
             let trimmedFirstName = firstName.trimmingCharacters(in: .whitespaces)
             user.firstName = trimmedFirstName.isEmpty ? nil : trimmedFirstName
             user.username = trimmedUsername
-            user.bio = bio.isEmpty ? nil : bio
             user.avatarURL = newAvatarURL
             user.updatedAt = Date()
 

@@ -10,6 +10,8 @@ import SwiftData
 
 @Model
 final class Follow {
+    #Index<Follow>([\.followerID], [\.followingID])
+
     var followerID: String
     var followingID: String
     var createdAt: Date

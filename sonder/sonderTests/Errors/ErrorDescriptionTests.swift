@@ -47,16 +47,4 @@ struct ErrorDescriptionTests {
         }
     }
 
-    @Test func locationError_descriptions() {
-        let cases: [LocationService.LocationError] = [
-            .denied,
-            .restricted,
-            .unableToDetermineLocation,
-            .unknown(NSError(domain: "test", code: 1))
-        ]
-        for error in cases {
-            #expect(error.errorDescription != nil)
-            #expect(!error.errorDescription!.isEmpty)
-        }
-    }
 }

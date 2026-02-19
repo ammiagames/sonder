@@ -203,8 +203,9 @@ final class SocialService {
 
     /// Refresh cached counts for current user
     func refreshCounts(for userID: String) async {
-        followerCount = await getFollowerCount(for: userID)
-        followingCount = await getFollowingCount(for: userID)
+        async let f = getFollowerCount(for: userID)
+        async let g = getFollowingCount(for: userID)
+        (followerCount, followingCount) = await (f, g)
         countsLoaded = true
     }
 
@@ -252,43 +253,4 @@ final class SocialService {
         return users.first
     }
 
-    // MARK: - Local Cache Sync
-
-    /// Sync follow relationships from Supabase to local cache
-    func syncFollows(for userID: String) async {
-        do {
-            // Fetch all follows where user is follower
-            let following: [Follow] = try await supabase
-                .from("follows")
-                .select()
-                .eq("follower_id", value: userID)
-                .execute()
-                .value
-
-            // Clear existing local cache for this user
-            let userIDCopy = userID
-            let descriptor = FetchDescriptor<Follow>(
-                predicate: #Predicate { follow in
-                    follow.followerID == userIDCopy
-                }
-            )
-
-            let existing = try modelContext.fetch(descriptor)
-            for follow in existing {
-                modelContext.delete(follow)
-            }
-
-            // Insert fresh data
-            for follow in following {
-                modelContext.insert(follow)
-            }
-
-            try modelContext.save()
-
-            // Update counts
-            await refreshCounts(for: userID)
-        } catch {
-            logger.error("Error syncing follows: \(error.localizedDescription)")
-        }
-    }
 }

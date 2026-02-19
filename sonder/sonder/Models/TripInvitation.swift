@@ -16,6 +16,8 @@ enum InvitationStatus: String, Codable, CaseIterable {
 
 @Model
 final class TripInvitation {
+    #Index<TripInvitation>([\.tripID], [\.inviteeID])
+
     @Attribute(.unique) var id: String
     var tripID: String
     var inviterID: String

@@ -261,26 +261,6 @@ final class PhotoIndexService {
         buildFullIndex(accessLevel: newLevel)
     }
 
-    // MARK: - Reset
-
-    func resetIndex() {
-        buildTask?.cancel()
-        stopObserver()
-
-        let container = modelContainer
-        Task.detached {
-            let bgContext = ModelContext(container)
-            try? bgContext.delete(model: PhotoLocationIndex.self)
-            try? bgContext.save()
-        }
-
-        storedFetchResult = nil
-        hasBuiltIndex = false
-        isBuilding = false
-        UserDefaults.standard.removeObject(forKey: Defaults.builtKey)
-        UserDefaults.standard.removeObject(forKey: Defaults.accessLevelKey)
-    }
-
     private func stopObserver() {
         if let observer = libraryObserver {
             PHPhotoLibrary.shared().unregisterChangeObserver(observer)

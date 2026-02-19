@@ -200,9 +200,14 @@ struct ProfileView: View {
         logs.filter { $0.tripID == trip.id }.count
     }
 
-    private func tripDateText(_ trip: Trip) -> String? {
+    private static let tripDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM yyyy"
+        return formatter
+    }()
+
+    private func tripDateText(_ trip: Trip) -> String? {
+        let formatter = Self.tripDateFormatter
         if let start = trip.startDate, let end = trip.endDate {
             let startText = formatter.string(from: start)
             let endText = formatter.string(from: end)

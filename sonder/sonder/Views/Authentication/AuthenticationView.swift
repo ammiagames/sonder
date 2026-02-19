@@ -37,23 +37,6 @@ struct AuthenticationView: View {
 
             // Authentication Buttons
             VStack(spacing: SonderSpacing.md) {
-                #if DEBUG
-                // Debug bypass button - only visible in debug builds
-                Button {
-                    authService.debugSignIn()
-                } label: {
-                    HStack {
-                        Image(systemName: "hammer.fill")
-                        Text("Debug Sign In (Dev Only)")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(SonderColors.ochre)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-                }
-                #endif
-
                 SignInWithAppleButton(.signIn) { request in
                     request.requestedScopes = [.email, .fullName]
                 } onCompletion: { result in

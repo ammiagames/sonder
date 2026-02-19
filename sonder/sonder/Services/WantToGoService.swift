@@ -29,25 +29,34 @@ final class WantToGoService {
 
     private static let pendingDeletionsKey = "wtg_pending_deletion_place_ids"
 
+    /// In-memory cache of pending deletion place IDs, loaded once from UserDefaults.
+    private var _pendingDeletionPlaceIDs: Set<String>?
+
     /// Place IDs removed locally but not yet confirmed deleted on Supabase.
     /// Persisted so they survive app kill and are retried on next sync.
     private var pendingDeletionPlaceIDs: Set<String> {
-        Set(UserDefaults.standard.stringArray(forKey: Self.pendingDeletionsKey) ?? [])
+        if let cached = _pendingDeletionPlaceIDs { return cached }
+        let ids = Set(UserDefaults.standard.stringArray(forKey: Self.pendingDeletionsKey) ?? [])
+        _pendingDeletionPlaceIDs = ids
+        return ids
     }
 
     private func addPendingDeletion(_ placeID: String) {
         var ids = pendingDeletionPlaceIDs
         ids.insert(placeID)
+        _pendingDeletionPlaceIDs = ids
         UserDefaults.standard.set(Array(ids), forKey: Self.pendingDeletionsKey)
     }
 
     private func removePendingDeletion(_ placeID: String) {
         var ids = pendingDeletionPlaceIDs
         ids.remove(placeID)
+        _pendingDeletionPlaceIDs = ids
         UserDefaults.standard.set(Array(ids), forKey: Self.pendingDeletionsKey)
     }
 
     private func clearPendingDeletions() {
+        _pendingDeletionPlaceIDs = []
         UserDefaults.standard.removeObject(forKey: Self.pendingDeletionsKey)
     }
 

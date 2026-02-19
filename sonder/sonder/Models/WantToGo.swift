@@ -10,6 +10,8 @@ import SwiftData
 
 @Model
 final class WantToGo {
+    #Index<WantToGo>([\.userID], [\.placeID])
+
     @Attribute(.unique) var id: String
     var userID: String
     var placeID: String

@@ -59,37 +59,3 @@ struct FilmGrainOverlay: View {
     }
 }
 
-// MARK: - Paper Texture Overlay
-
-struct PaperTextureOverlay: View {
-    var warmth: Double = 0.03
-    var seed: Int = 99
-
-    var body: some View {
-        Canvas { context, size in
-            var rng = ExportSeededRNG(seed: UInt64(bitPattern: Int64(seed)))
-            let step: CGFloat = 8
-            var y: CGFloat = 0
-            while y < size.height {
-                var x: CGFloat = 0
-                while x < size.width {
-                    let variation = Double.random(in: -warmth...warmth, using: &rng)
-                    if variation > 0 {
-                        context.fill(
-                            Path(CGRect(x: x, y: y, width: step, height: step)),
-                            with: .color(Color(red: 0.92, green: 0.87, blue: 0.78).opacity(variation * 6))
-                        )
-                    } else {
-                        context.fill(
-                            Path(CGRect(x: x, y: y, width: step, height: step)),
-                            with: .color(Color.black.opacity(abs(variation) * 2))
-                        )
-                    }
-                    x += step
-                }
-                y += step
-            }
-        }
-        .allowsHitTesting(false)
-    }
-}

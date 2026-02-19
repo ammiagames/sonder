@@ -370,24 +370,29 @@ struct OtherUserProfileView: View {
             .sorted { $0.count > $1.count }
     }
 
-    private var skipCount: Int {
-        userLogs.filter { $0.rating == .skip }.count
+    private var ratingCounts: (skip: Int, solid: Int, mustSee: Int) {
+        var skip = 0, solid = 0, mustSee = 0
+        for item in userLogs {
+            switch item.rating {
+            case .skip: skip += 1
+            case .solid: solid += 1
+            case .mustSee: mustSee += 1
+            }
+        }
+        return (skip, solid, mustSee)
     }
 
-    private var solidCount: Int {
-        userLogs.filter { $0.rating == .solid }.count
-    }
-
-    private var mustSeeCount: Int {
-        userLogs.filter { $0.rating == .mustSee }.count
-    }
+    private var skipCount: Int { ratingCounts.skip }
+    private var solidCount: Int { ratingCounts.solid }
+    private var mustSeeCount: Int { ratingCounts.mustSee }
 
     private var ratingPhilosophy: String {
         let total = userLogs.count
         guard total > 0 else { return "" }
-        let mustSeePct = Double(mustSeeCount) / Double(total)
-        let skipPct = Double(skipCount) / Double(total)
-        let solidPct = Double(solidCount) / Double(total)
+        let counts = ratingCounts
+        let mustSeePct = Double(counts.mustSee) / Double(total)
+        let skipPct = Double(counts.skip) / Double(total)
+        let solidPct = Double(counts.solid) / Double(total)
 
         if mustSeePct > 0.6 {
             return "Generous — \(Int(mustSeePct * 100))% of their places are Must-See"
@@ -432,9 +437,14 @@ struct OtherUserProfileView: View {
         return nil
     }
 
-    private func tripDateText(_ trip: Trip) -> String? {
+    private static let tripDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM yyyy"
+        return formatter
+    }()
+
+    private func tripDateText(_ trip: Trip) -> String? {
+        let formatter = Self.tripDateFormatter
         if let start = trip.startDate, let end = trip.endDate {
             let startText = formatter.string(from: start)
             let endText = formatter.string(from: end)
@@ -1114,14 +1124,19 @@ struct OtherUserProfileView: View {
             logger.error("Error loading user: \(error.localizedDescription)")
         }
 
-        // Check follow status
-        if let currentUserID = authService.currentUser?.id {
-            isFollowing = await socialService.isFollowingAsync(userID: userID, currentUserID: currentUserID)
-        }
+        // Load follow status and counts concurrently
+        async let followStatus: Bool = {
+            if let currentUserID = authService.currentUser?.id {
+                return await socialService.isFollowingAsync(userID: userID, currentUserID: currentUserID)
+            }
+            return false
+        }()
+        async let fetchedFollowerCount = socialService.getFollowerCount(for: userID)
+        async let fetchedFollowingCount = socialService.getFollowingCount(for: userID)
 
-        // Load counts
-        followerCount = await socialService.getFollowerCount(for: userID)
-        followingCount = await socialService.getFollowingCount(for: userID)
+        isFollowing = await followStatus
+        followerCount = await fetchedFollowerCount
+        followingCount = await fetchedFollowingCount
 
         // Load logs (all profiles are public)
         do {

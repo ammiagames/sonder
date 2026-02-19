@@ -67,17 +67,6 @@ enum SonderColors {
     /// Background for multi-friend cluster badges
     static let exploreCluster = Color(red: 0.25, green: 0.25, blue: 0.28)
 
-    // MARK: - Semantic Colors
-
-    /// Primary action color
-    static let primary = terracotta
-
-    /// Success states
-    static let success = sage
-
-    /// Warning/attention
-    static let warning = ochre
-
     /// Map pin colors matching ratings
     static func pinColor(for rating: Rating) -> Color {
         switch rating {
@@ -91,7 +80,6 @@ enum SonderColors {
 
     static let creamUI = UIColor(red: 0.98, green: 0.96, blue: 0.93, alpha: 1.0)
     static let inkDarkUI = UIColor(red: 0.20, green: 0.18, blue: 0.16, alpha: 1.0)
-    static let inkMutedUI = UIColor(red: 0.50, green: 0.46, blue: 0.42, alpha: 1.0)
     static let terracottaUI = UIColor(red: 0.80, green: 0.45, blue: 0.35, alpha: 1.0)
 }
 
@@ -101,8 +89,6 @@ enum SonderTypography {
     // Editorial serif headers — travel magazine feel (New York font)
     static let largeTitle = Font.system(.largeTitle, design: .serif).weight(.bold)
     static let title = Font.system(.title2, design: .serif).weight(.semibold)
-    static let journalTitle = Font.system(.title3, design: .serif).weight(.medium)
-
     // Warm rounded for interactive elements — buttons, chips, labels
     static let headline = Font.system(.headline, design: .rounded)
 
@@ -127,34 +113,16 @@ enum SonderSpacing {
     static let radiusMd: CGFloat = 12
     static let radiusLg: CGFloat = 16
     static let radiusXl: CGFloat = 20
-    static let radiusFull: CGFloat = 9999
 }
 
 /// Sonder's shadow styles - soft and warm
 enum SonderShadows {
-    static func soft(_ color: Color = .black) -> some View {
-        EmptyView()
-            .shadow(color: color.opacity(0.08), radius: 8, x: 0, y: 4)
-    }
-
     static let softRadius: CGFloat = 8
     static let softOpacity: Double = 0.08
     static let softY: CGFloat = 4
 }
 
 // MARK: - View Modifiers
-
-struct WarmCardStyle: ViewModifier {
-    var padding: CGFloat = SonderSpacing.md
-
-    func body(content: Content) -> some View {
-        content
-            .padding(padding)
-            .background(SonderColors.warmGray)
-            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
-            .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
-    }
-}
 
 struct WarmButtonStyle: ButtonStyle {
     var isPrimary: Bool = true
@@ -164,7 +132,7 @@ struct WarmButtonStyle: ButtonStyle {
             .font(SonderTypography.headline)
             .padding(.horizontal, SonderSpacing.lg)
             .padding(.vertical, SonderSpacing.sm)
-            .background(isPrimary ? SonderColors.primary : SonderColors.warmGray)
+            .background(isPrimary ? SonderColors.terracotta : SonderColors.warmGray)
             .foregroundStyle(isPrimary ? .white : SonderColors.inkDark)
             .clipShape(Capsule())
             .opacity(configuration.isPressed ? 0.85 : 1.0)
@@ -174,10 +142,6 @@ struct WarmButtonStyle: ButtonStyle {
 }
 
 extension View {
-    func warmCard(padding: CGFloat = SonderSpacing.md) -> some View {
-        modifier(WarmCardStyle(padding: padding))
-    }
-
     /// Expands the tap target of a toolbar icon to 56×56pt
     /// while keeping the visual icon size unchanged.
     func toolbarIcon() -> some View {

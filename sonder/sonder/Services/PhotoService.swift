@@ -270,10 +270,13 @@ final class PhotoService {
         var quality = compressionQuality
         var data = compressImage(image)
 
+        // Create resized image for retries (first call already resized)
+        let resizedImage: UIImage? = data.flatMap { UIImage(data: $0) }
+
         while let currentData = data,
               currentData.count > maxSizeBytes && quality > 0.1 {
             quality -= 0.1
-            data = image.jpegData(compressionQuality: quality)
+            data = (resizedImage ?? image).jpegData(compressionQuality: quality)
         }
 
         return data

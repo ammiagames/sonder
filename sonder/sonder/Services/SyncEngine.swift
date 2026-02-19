@@ -662,16 +662,10 @@ final class SyncEngine {
 
         guard !remoteLogs.isEmpty else { return }
 
-        // Find place IDs we don't have locally — only check IDs we need
+        // Find place IDs we don't have locally — single bulk fetch instead of N queries
         let remotePlaceIDs = Set(remoteLogs.map(\.placeID))
-        var localPlaceIDs = Set<String>()
-        for placeID in remotePlaceIDs {
-            let pid = placeID
-            let desc = FetchDescriptor<Place>(predicate: #Predicate { $0.id == pid })
-            if (try? modelContext.fetchCount(desc)) ?? 0 > 0 {
-                localPlaceIDs.insert(placeID)
-            }
-        }
+        let allLocalPlaces = try modelContext.fetch(FetchDescriptor<Place>())
+        let localPlaceIDs = Set(allLocalPlaces.map(\.id)).intersection(remotePlaceIDs)
         let missingPlaceIDs = remotePlaceIDs.subtracting(localPlaceIDs)
 
         // Fetch missing places from Supabase

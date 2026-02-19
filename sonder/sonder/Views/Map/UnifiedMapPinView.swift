@@ -42,15 +42,23 @@ struct LogPinView: View {
     let rating: Rating
     var photoURLs: [String] = []
     var placeTypes: [String] = []
+    /// Override the default pin size (used by CombinedMapPinView for larger pins)
+    var pinSizeOverride: CGFloat? = nil
     var visitCount: Int = 1
     var isWantToGo: Bool = false
+    /// Set to false to suppress visit-count and bookmark badges (CombinedMapPinView adds its own)
+    var showBadges: Bool = true
 
-    private var pinSize: CGFloat {
+    private var defaultPinSize: CGFloat {
         switch rating {
         case .mustSee: return 44
         case .solid: return 38
         case .skip: return 32
         }
+    }
+
+    private var pinSize: CGFloat {
+        pinSizeOverride ?? defaultPinSize
     }
 
     private var ringWidth: CGFloat {
@@ -104,24 +112,26 @@ struct LogPinView: View {
                 ratingEmojiVisual
             }
 
-            // Visit count badge — hidden when stacked (stacking conveys multiplicity)
-            if visitCount > 1 && resolvedPhotoURLs.count < 2 {
-                Text("×\(visitCount)")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(SonderColors.terracotta)
-                    .clipShape(Capsule())
-                    .offset(x: -(pinSize * 0.44), y: pinSize * 0.39)
-            }
+            if showBadges {
+                // Visit count badge — hidden when stacked (stacking conveys multiplicity)
+                if visitCount > 1 && resolvedPhotoURLs.count < 2 {
+                    Text("×\(visitCount)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(SonderColors.terracotta)
+                        .clipShape(Capsule())
+                        .offset(x: -(pinSize * 0.44), y: pinSize * 0.39)
+                }
 
-            // Bookmark badge
-            WantToGoTab()
-                .offset(x: pinSize * 0.39, y: -(pinSize * 0.39))
-                .opacity(isWantToGo ? 1 : 0)
-                .scaleEffect(isWantToGo ? 1 : 0.3)
-                .animation(.easeOut(duration: 0.25), value: isWantToGo)
+                // Bookmark badge
+                WantToGoTab()
+                    .offset(x: pinSize * 0.39, y: -(pinSize * 0.39))
+                    .opacity(isWantToGo ? 1 : 0)
+                    .scaleEffect(isWantToGo ? 1 : 0.3)
+                    .animation(.easeOut(duration: 0.25), value: isWantToGo)
+            }
         }
     }
 
@@ -240,9 +250,7 @@ struct UnifiedMapPinView: View {
 // MARK: - Combined Map Pin View
 
 /// Pin for places logged by both the user and friends.
-/// With photo: circle with terracotta ring + friend badge.
-/// Without photo: rating emoji in cream circle + friend badge.
-/// Multiple photos: stacked circles with depth effect + friend badge.
+/// Reuses LogPinView for the core visual, adding friend/fire badges on top.
 struct CombinedMapPinView: View {
     let rating: Rating
     var photoURLs: [String] = []
@@ -261,56 +269,18 @@ struct CombinedMapPinView: View {
         }
     }
 
-    private var ringWidth: CGFloat {
-        switch rating {
-        case .mustSee: return 3.5
-        case .solid: return 2.5
-        case .skip: return 1.5
-        }
-    }
-
-    private var shadowRadius: CGFloat {
-        switch rating {
-        case .mustSee: return 6
-        case .solid: return 3
-        case .skip: return 1.5
-        }
-    }
-
-    private var shadowColor: Color {
-        switch rating {
-        case .mustSee: return SonderColors.ochre.opacity(0.5)
-        case .solid: return .black.opacity(0.2)
-        case .skip: return .black.opacity(0.12)
-        }
-    }
-
-    private var saturation: Double {
-        switch rating {
-        case .mustSee: return 1.0
-        case .solid: return 0.85
-        case .skip: return 0.5
-        }
-    }
-
-    private var ratingColor: Color {
-        SonderColors.pinColor(for: rating)
-    }
-
-    private var resolvedPhotoURLs: [URL] {
-        photoURLs.compactMap { URL(string: $0) }
-    }
-
     var body: some View {
         ZStack {
-            let urls = resolvedPhotoURLs
-            if urls.count >= 2 {
-                stackedPhotoCircles(urls: urls)
-            } else if let url = urls.first {
-                photoPinVisual(url: url)
-            } else {
-                ratingEmojiVisual
-            }
+            // Reuse LogPinView for the core pin visual (photo/emoji/stacked)
+            LogPinView(
+                rating: rating,
+                photoURLs: photoURLs,
+                placeTypes: placeTypes,
+                pinSizeOverride: pinSize,
+                visitCount: visitCount,
+                isWantToGo: isWantToGo,
+                showBadges: false
+            )
 
             // Friend badge (right side)
             HStack(spacing: 2) {
@@ -329,7 +299,7 @@ struct CombinedMapPinView: View {
             .offset(x: pinSize * 0.55, y: -(pinSize * 0.15))
 
             // Visit count badge — hidden when stacked
-            if visitCount > 1 && resolvedPhotoURLs.count < 2 {
+            if visitCount > 1 && photoURLs.compactMap({ URL(string: $0) }).count < 2 {
                 Text("×\(visitCount)")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.white)
@@ -357,81 +327,5 @@ struct CombinedMapPinView: View {
                 .scaleEffect(isWantToGo ? 1 : 0.3)
                 .animation(.easeOut(duration: 0.25), value: isWantToGo)
         }
-    }
-
-    // MARK: - Stacked Photo Circles
-
-    private func stackedPhotoCircles(urls: [URL]) -> some View {
-        let stack = Array(urls.prefix(3))
-        return ZStack {
-            ForEach(Array(stack.enumerated()).dropLast(), id: \.offset) { index, url in
-                let depth = stack.count - 1 - index
-                let scale: CGFloat = depth == 2 ? 0.84 : 0.92
-                let opacity: Double = depth == 2 ? 0.55 : 0.65
-                let offsetAmount = CGFloat(depth) * -4
-
-                DownsampledAsyncImage(url: url, targetSize: PinPhotoConstants.pointSize) {
-                    Circle().fill(ratingColor)
-                }
-                .saturation(saturation)
-                .frame(width: pinSize, height: pinSize)
-                .clipShape(Circle())
-                .overlay {
-                    Circle().stroke(SonderColors.terracotta, lineWidth: 1)
-                }
-                .scaleEffect(scale)
-                .opacity(opacity)
-                .offset(x: offsetAmount, y: offsetAmount)
-            }
-
-            photoPinVisual(url: stack.last!)
-        }
-    }
-
-    // MARK: - Photo Pin (circle with image)
-
-    private func photoPinVisual(url: URL) -> some View {
-        DownsampledAsyncImage(url: url, targetSize: PinPhotoConstants.pointSize) {
-            Circle().fill(ratingColor)
-        }
-        .saturation(saturation)
-        .frame(width: pinSize, height: pinSize)
-        .clipShape(Circle())
-        .overlay {
-            Circle()
-                .stroke(SonderColors.terracotta, lineWidth: ringWidth)
-        }
-        .shadow(color: shadowColor, radius: shadowRadius, y: 1)
-    }
-
-    // MARK: - No Photo: Rating Emoji
-
-    private var categoryGradient: AnyShapeStyle {
-        if let category = ExploreMapFilter.CategoryFilter.category(for: placeTypes) {
-            return AnyShapeStyle(
-                RadialGradient(
-                    colors: [category.color.opacity(0.18), SonderColors.cream],
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: pinSize / 2
-                )
-            )
-        }
-        return AnyShapeStyle(SonderColors.cream)
-    }
-
-    private var ratingEmojiVisual: some View {
-        Circle()
-            .fill(categoryGradient)
-            .frame(width: pinSize, height: pinSize)
-            .overlay {
-                Text(rating.emoji)
-                    .font(.system(size: pinSize * 0.45))
-            }
-            .overlay {
-                Circle()
-                    .stroke(ratingColor, lineWidth: ringWidth)
-            }
-            .shadow(color: shadowColor, radius: shadowRadius, y: 1)
     }
 }

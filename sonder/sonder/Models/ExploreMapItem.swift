@@ -235,14 +235,6 @@ struct ExploreMapFilter: Equatable {
             }
         }
 
-        func next() -> RatingFilter {
-            switch self {
-            case .all: return .solidPlus
-            case .solidPlus: return .mustSeeOnly
-            case .mustSeeOnly: return .all
-            }
-        }
-
         func matches(_ rating: Rating) -> Bool {
             switch self {
             case .all: return true

@@ -20,7 +20,6 @@ struct LogShareCardData {
     let date: Date
     let username: String
     let placeNumber: Int?      // "Place #47"
-    let mustSeeCount: Int?     // "12th must-see"
 
     var formattedDate: String {
         let formatter = DateFormatter()
@@ -807,8 +806,7 @@ private let previewData = LogShareCardData(
     tags: ["ramen", "late night", "hidden gem"],
     date: Date(),
     username: "michaelsong",
-    placeNumber: 47,
-    mustSeeCount: 12
+    placeNumber: 47
 )
 
 #Preview("A: Film Frame") {

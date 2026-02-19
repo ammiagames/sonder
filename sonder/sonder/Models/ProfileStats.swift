@@ -15,10 +15,6 @@ struct ProfileStats {
     let archetype: ExplorerArchetype
     let categoryBreakdown: [CategoryStat]
     let ratingDistribution: RatingDistribution
-    let calendarHeatmap: CalendarHeatmapData
-    let streak: StreakData
-    let dayOfWeek: DayOfWeekPattern
-    let bookends: Bookends?
     let totalLogs: Int
 }
 
@@ -135,40 +131,4 @@ struct RatingDistribution {
     let philosophy: String
 }
 
-// MARK: - Calendar Heatmap Data
-
-struct CalendarHeatmapData {
-    let entries: [(date: Date, count: Int)]
-    let startDate: Date
-    let endDate: Date
-}
-
-// MARK: - Streak Data
-
-struct StreakData {
-    let currentStreak: Int
-    let longestStreak: Int
-    let longestStreakStartDate: Date?
-}
-
-// MARK: - Day of Week Pattern
-
-struct DayOfWeekPattern {
-    let counts: [Int] // 7 elements: Sun=0...Sat=6
-    let peakDay: String
-    let peakPercentage: Double
-    let isWeekdayExplorer: Bool
-}
-
-// MARK: - Bookends
-
-struct Bookends {
-    let firstPlaceName: String
-    let firstCity: String?
-    let firstDate: Date
-    let latestPlaceName: String
-    let latestCity: String?
-    let latestDate: Date
-    let daysBetween: Int
-}
 

@@ -177,9 +177,11 @@ final class FeedService {
         places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference, types)
     """
 
+    private static let iso8601Formatter = ISO8601DateFormatter()
+
     private func fetchFeedLogs(followingIDs: [String], before cursor: Date?) async throws -> [FeedLogResponse] {
         if let cursor = cursor {
-            let cursorString = ISO8601DateFormatter().string(from: cursor)
+            let cursorString = Self.iso8601Formatter.string(from: cursor)
             return try await supabase
                 .from("logs")
                 .select(selectQuery)

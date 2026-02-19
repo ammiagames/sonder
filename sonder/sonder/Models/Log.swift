@@ -46,6 +46,8 @@ enum SyncStatus: String, Codable {
 
 @Model
 final class Log {
+    #Index<Log>([\.userID], [\.placeID], [\.tripID])
+
     @Attribute(.unique) var id: String
     var userID: String
     var placeID: String

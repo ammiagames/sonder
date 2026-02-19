@@ -21,8 +21,6 @@ final class AuthenticationService {
     var isLoading = false
     /// True while restoring session on launch. Show splash screen instead of auth screen.
     var isCheckingSession = true
-    /// True when a brand-new user just signed up (first time in Supabase).
-    var isNewUser = false
     var error: Error?
 
     /// Set by SonderApp after ModelContainer is ready. Used for local user caching.
@@ -30,29 +28,11 @@ final class AuthenticationService {
 
     private let supabase = SupabaseConfig.client
 
-    // Debug mode - set to true to bypass authentication during development
-    // NOTE: Must be false for Supabase RLS to work (need real auth session)
-    private let debugBypassAuth = false
-
     init() {
         // Session check is deferred until modelContext is set (called from initializeServices).
         // This ensures the SwiftData user cache is available for offline launches.
     }
 
-    // MARK: - Debug Bypass
-
-    /// Creates a mock user for development purposes
-    func debugSignIn() {
-        guard debugBypassAuth else { return }
-        currentUser = User(
-            id: "debug-user-\(UUID().uuidString.prefix(8))",
-            username: "debug_user",
-            avatarURL: nil,
-            bio: "Debug user for development",
-            isPublic: false
-        )
-    }
-    
     // MARK: - Session Management
     
     func checkSession() async {
@@ -264,9 +244,6 @@ final class AuthenticationService {
             .value
 
         if existingUsers.isEmpty {
-            // Flag for onboarding flow
-            isNewUser = true
-
             // New user - create with current timestamp
             let user = User(
                 id: id,

@@ -24,7 +24,6 @@ struct FeedItem: Identifiable, Codable {
         let createdAt: Date
         let tripID: String?
 
-        /// Backward-compat: returns the first photo URL
         var photoURL: String? { photoURLs.first }
 
         enum CodingKeys: String, CodingKey {
@@ -179,13 +178,17 @@ struct FeedTripItem: Identifiable {
         let placePhotoReference: String?
         let createdAt: Date
 
-        /// Backward-compat: returns the first photo URL
         var photoURL: String? { photoURLs.first }
     }
 
-    var dateRangeDisplay: String? {
+    private static let dateRangeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    var dateRangeDisplay: String? {
+        let formatter = Self.dateRangeFormatter
         if let start = startDate, let end = endDate {
             return "\(formatter.string(from: start)) – \(formatter.string(from: end))"
         } else if let start = startDate {
@@ -244,9 +247,6 @@ struct FeedLogResponse: Codable {
     let tripID: String?
     let user: FeedItem.FeedUser
     let place: FeedItem.FeedPlace
-
-    /// Backward-compat: returns the first photo URL
-    var photoURL: String? { photoURLs.first }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -307,9 +307,6 @@ struct TripLogResponse: Codable {
     let photoURLs: [String]
     let createdAt: Date
     let place: FeedItem.FeedPlace
-
-    /// Backward-compat: returns the first photo URL
-    var photoURL: String? { photoURLs.first }
 
     enum CodingKeys: String, CodingKey {
         case id, rating

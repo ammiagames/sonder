@@ -147,8 +147,8 @@ struct TripExportCustomizationTests {
 
 struct ExportStyleTests {
 
-    @Test func allCasesHasFourStyles() {
-        #expect(ExportStyle.allCases.count == 4)
+    @Test func allCasesHasFiveStyles() {
+        #expect(ExportStyle.allCases.count == 5)
     }
 
     @Test func eachStyleHasTitleAndIcon() {

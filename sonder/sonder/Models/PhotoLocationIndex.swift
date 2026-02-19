@@ -10,6 +10,8 @@ import SwiftData
 
 @Model
 final class PhotoLocationIndex {
+    #Index<PhotoLocationIndex>([\.latitude], [\.longitude])
+
     @Attribute(.unique) var localIdentifier: String
     var latitude: Double
     var longitude: Double

@@ -19,27 +19,6 @@ final class LocationService: NSObject {
     var isAuthorized: Bool {
         authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways
     }
-    var error: LocationError?
-
-    enum LocationError: LocalizedError {
-        case denied
-        case restricted
-        case unableToDetermineLocation
-        case unknown(Error)
-
-        var errorDescription: String? {
-            switch self {
-            case .denied:
-                return "Location access denied. Please enable in Settings."
-            case .restricted:
-                return "Location access is restricted on this device."
-            case .unableToDetermineLocation:
-                return "Unable to determine your location."
-            case .unknown(let error):
-                return error.localizedDescription
-            }
-        }
-    }
 
     override init() {
         super.init()
@@ -55,15 +34,11 @@ final class LocationService: NSObject {
 
     /// Request a single location update
     func requestLocation() {
-        error = nil
-
         switch authorizationStatus {
         case .notDetermined:
             requestPermission()
-        case .denied:
-            error = .denied
-        case .restricted:
-            error = .restricted
+        case .denied, .restricted:
+            break
         case .authorizedWhenInUse, .authorizedAlways:
             locationManager.requestLocation()
         @unknown default:
@@ -96,20 +71,7 @@ extension LocationService: CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        Task { @MainActor in
-            if let clError = error as? CLError {
-                switch clError.code {
-                case .denied:
-                    self.error = .denied
-                case .locationUnknown:
-                    self.error = .unableToDetermineLocation
-                default:
-                    self.error = .unknown(error)
-                }
-            } else {
-                self.error = .unknown(error)
-            }
-        }
+        // Location errors are non-fatal; the system will retry automatically
     }
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {

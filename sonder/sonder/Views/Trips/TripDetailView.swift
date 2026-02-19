@@ -108,11 +108,15 @@ struct TripDetailView: View {
     }
 
     private var ratingCounts: (mustSee: Int, solid: Int, skip: Int) {
-        (
-            mustSee: tripLogs.filter { $0.rating == .mustSee }.count,
-            solid: tripLogs.filter { $0.rating == .solid }.count,
-            skip: tripLogs.filter { $0.rating == .skip }.count
-        )
+        var mustSee = 0, solid = 0, skip = 0
+        for log in tripLogs {
+            switch log.rating {
+            case .mustSee: mustSee += 1
+            case .solid: solid += 1
+            case .skip: skip += 1
+            }
+        }
+        return (mustSee, solid, skip)
     }
 
     var body: some View {
@@ -389,10 +393,15 @@ struct TripDetailView: View {
         return nil
     }
 
+    private static let coverDateStampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM yyyy"
+        return f
+    }()
+
     /// Date stamp for cover in a compact format
     private var coverDateStamp: String? {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
+        let formatter = Self.coverDateStampFormatter
         if let start = trip.startDate {
             return formatter.string(from: start)
         }
@@ -1301,9 +1310,14 @@ struct TripDetailView: View {
     }
 
     private func dayEndSummaryText(logs: [Log]) -> String {
-        let mustSees = logs.filter { $0.rating == .mustSee }.count
-        let solids = logs.filter { $0.rating == .solid }.count
-        let skips = logs.filter { $0.rating == .skip }.count
+        var mustSees = 0, solids = 0, skips = 0
+        for log in logs {
+            switch log.rating {
+            case .mustSee: mustSees += 1
+            case .solid: solids += 1
+            case .skip: skips += 1
+            }
+        }
 
         var parts: [String] = []
         if mustSees > 0 { parts.append("\(mustSees) must-\(mustSees == 1 ? "see" : "sees")") }
@@ -1395,8 +1409,9 @@ struct TripDetailView: View {
         guard tripLogs.count >= 3 else { return "" }
 
         let sorted = tripLogs.sorted { $0.visitedAt < $1.visitedAt }
-        let mustSees = tripLogs.filter { $0.rating == .mustSee }.count
-        let skips = tripLogs.filter { $0.rating == .skip }.count
+        let counts = ratingCounts
+        let mustSees = counts.mustSee
+        let skips = counts.skip
         let total = tripLogs.count
 
         // Tag frequency
