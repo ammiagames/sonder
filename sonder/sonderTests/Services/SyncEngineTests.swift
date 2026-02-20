@@ -347,7 +347,7 @@ struct SyncEngineTests {
         let (engine, context, container) = try makeSUT()
         _ = container
 
-        let remote = RemoteTrip(
+        let remote = Trip(
             id: "trip-1",
             name: "Japan 2026",
             tripDescription: "Spring trip",
@@ -378,7 +378,7 @@ struct SyncEngineTests {
         ))
         try context.save()
 
-        let remote = RemoteTrip(
+        let remote = Trip(
             id: "trip-1",
             name: "Updated Name",
             tripDescription: "New description",
@@ -409,7 +409,7 @@ struct SyncEngineTests {
         ))
         try context.save()
 
-        let remote = RemoteTrip(
+        let remote = Trip(
             id: "trip-1",
             name: "Old Remote Name",
             createdBy: "user-1",
@@ -429,12 +429,12 @@ struct SyncEngineTests {
         _ = container
 
         let remoteTrips = [
-            RemoteTrip(id: "t1", name: "Trip A", createdBy: "user-1",
-                       createdAt: fixedDate(), updatedAt: fixedDate()),
-            RemoteTrip(id: "t2", name: "Trip B", createdBy: "user-1",
-                       createdAt: fixedDate(), updatedAt: fixedDate()),
-            RemoteTrip(id: "t3", name: "Trip C", collaboratorIDs: ["user-1"],
-                       createdBy: "user-2", createdAt: fixedDate(), updatedAt: fixedDate()),
+            Trip(id: "t1", name: "Trip A", createdBy: "user-1",
+                 createdAt: fixedDate(), updatedAt: fixedDate()),
+            Trip(id: "t2", name: "Trip B", createdBy: "user-1",
+                 createdAt: fixedDate(), updatedAt: fixedDate()),
+            Trip(id: "t3", name: "Trip C", collaboratorIDs: ["user-1"],
+                 createdBy: "user-2", createdAt: fixedDate(), updatedAt: fixedDate()),
         ]
 
         try engine.mergeRemoteTrips(remoteTrips)
@@ -560,8 +560,8 @@ struct SyncEngineTests {
         _ = container
 
         let remoteTrips = [
-            RemoteTrip(id: "trip-1", name: "Solo Trip", createdBy: "user-1",
-                       createdAt: fixedDate(), updatedAt: fixedDate()),
+            Trip(id: "trip-1", name: "Solo Trip", createdBy: "user-1",
+                 createdAt: fixedDate(), updatedAt: fixedDate()),
         ]
 
         try engine.mergeRemoteTrips(remoteTrips)

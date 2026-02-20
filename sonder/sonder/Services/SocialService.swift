@@ -10,6 +10,11 @@ import SwiftData
 import Supabase
 import os
 
+/// Lightweight Codable wrapper for Supabase follow joins — only the `users` field is used.
+private struct FollowJoinResponse: Codable {
+    let users: User
+}
+
 @MainActor
 @Observable
 final class SocialService {
@@ -125,19 +130,25 @@ final class SocialService {
 
     // MARK: - Follower/Following Lists
 
-    /// Get list of users the given user is following
-    func getFollowing(for userID: String) async throws -> [User] {
-        struct FollowWithUser: Codable {
+    /// Get IDs of users the given user is following (lightweight — no joins).
+    func getFollowingIDs(for userID: String) async throws -> [String] {
+        struct FollowingID: Codable {
             let following_id: String
-            let users: User
-
-            enum CodingKeys: String, CodingKey {
-                case following_id
-                case users
-            }
         }
 
-        let response: [FollowWithUser] = try await supabase
+        let response: [FollowingID] = try await supabase
+            .from("follows")
+            .select("following_id")
+            .eq("follower_id", value: userID)
+            .execute()
+            .value
+
+        return response.map { $0.following_id }
+    }
+
+    /// Get list of users the given user is following
+    func getFollowing(for userID: String) async throws -> [User] {
+        let response: [FollowJoinResponse] = try await supabase
             .from("follows")
             .select("following_id, users!follows_following_id_fkey(*)")
             .eq("follower_id", value: userID)
@@ -149,17 +160,7 @@ final class SocialService {
 
     /// Get list of users following the given user
     func getFollowers(for userID: String) async throws -> [User] {
-        struct FollowWithUser: Codable {
-            let follower_id: String
-            let users: User
-
-            enum CodingKeys: String, CodingKey {
-                case follower_id
-                case users
-            }
-        }
-
-        let response: [FollowWithUser] = try await supabase
+        let response: [FollowJoinResponse] = try await supabase
             .from("follows")
             .select("follower_id, users!follows_follower_id_fkey(*)")
             .eq("following_id", value: userID)

@@ -20,12 +20,6 @@ struct TripDetailView: View {
     @Query private var allLogs: [Log]
     @Query private var places: [Place]
 
-    private static let mediumDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        return f
-    }()
-
     let trip: Trip
     var onDelete: (() -> Void)? = nil
 
@@ -1027,11 +1021,7 @@ struct TripDetailView: View {
     private var pinPhotoPlaceholder: some View {
         Circle()
             .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                SonderColors.placeholderGradient
             )
     }
 
@@ -1766,14 +1756,7 @@ struct TripDetailView: View {
     // MARK: - Helpers
 
     private var dateRangeText: String? {
-        if let start = trip.startDate, let end = trip.endDate {
-            return "\(Self.mediumDateFormatter.string(from: start)) - \(Self.mediumDateFormatter.string(from: end))"
-        } else if let start = trip.startDate {
-            return "From \(Self.mediumDateFormatter.string(from: start))"
-        } else if let end = trip.endDate {
-            return "Until \(Self.mediumDateFormatter.string(from: end))"
-        }
-        return nil
+        ProfileShared.tripMediumDateRange(trip)
     }
 }
 

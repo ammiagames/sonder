@@ -53,8 +53,6 @@ enum ExplorerArchetype: String, CaseIterable {
     case cultureVulture
     case nightOwl
     case wanderer
-    case photographer
-    case completionist
     case curator
     case explorer // default
 
@@ -64,8 +62,6 @@ enum ExplorerArchetype: String, CaseIterable {
         case .cultureVulture: return "Culture Vulture"
         case .nightOwl: return "Night Owl"
         case .wanderer: return "Wanderer"
-        case .photographer: return "Photographer"
-        case .completionist: return "Completionist"
         case .curator: return "Curator"
         case .explorer: return "Explorer"
         }
@@ -77,8 +73,6 @@ enum ExplorerArchetype: String, CaseIterable {
         case .cultureVulture: return "building.columns"
         case .nightOwl: return "moon.stars"
         case .wanderer: return "figure.walk"
-        case .photographer: return "camera"
-        case .completionist: return "checkmark.seal"
         case .curator: return "text.quote"
         case .explorer: return "safari"
         }
@@ -90,8 +84,6 @@ enum ExplorerArchetype: String, CaseIterable {
         case .cultureVulture: return "Museums, galleries, landmarks — you soak it all in"
         case .nightOwl: return "Bars, clubs, and late nights are your thing"
         case .wanderer: return "Always exploring new cities and neighborhoods"
-        case .photographer: return "You capture every moment with photos"
-        case .completionist: return "Detailed notes and tags on everything you visit"
         case .curator: return "Your logs read like a travel guide"
         case .explorer: return "A curious soul discovering the world one place at a time"
         }

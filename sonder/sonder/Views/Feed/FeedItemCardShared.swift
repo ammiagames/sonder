@@ -31,11 +31,7 @@ enum FeedItemCardShared {
     static func avatarPlaceholder(username: String, size: CGFloat) -> some View {
         Circle()
             .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                SonderColors.placeholderGradient
             )
             .frame(width: size, height: size)
             .overlay {

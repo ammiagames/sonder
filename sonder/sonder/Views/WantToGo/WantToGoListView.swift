@@ -453,11 +453,7 @@ struct WantToGoRow: View {
     private var photoPlaceholder: some View {
         RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
             .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                SonderColors.placeholderGradient
             )
             .frame(width: 60, height: 60)
             .overlay {

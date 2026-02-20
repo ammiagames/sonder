@@ -587,8 +587,6 @@ struct ExploreMapServiceTests {
             Issue.record("Expected .personal pin")
         }
 
-        // visitCount should reflect all logs
-        #expect(pins[0].visitCount == 3)
         // bestRating should scan all logs
         #expect(pins[0].bestRating == .mustSee)
         // userRating should be most recent log's rating
@@ -632,7 +630,6 @@ struct ExploreMapServiceTests {
             Issue.record("Expected .combined pin")
         }
 
-        #expect(pins[0].visitCount == 2)
     }
 
     @Test func annotatedPin_bookmarkBadgePosition_combinedPin() throws {

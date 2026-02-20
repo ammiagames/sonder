@@ -277,6 +277,41 @@ final class AuthenticationService {
         }
     }
     
+    /// Sync current user profile fields to Supabase.
+    /// Shared by EditProfileView and OnboardingProfileStep.
+    func syncUserProfile(_ user: User) async {
+        struct UserProfileUpdate: Codable {
+            let first_name: String?
+            let username: String
+            let bio: String?
+            let avatar_url: String?
+            let phone_number: String?
+            let phone_number_hash: String?
+            let updated_at: Date
+        }
+
+        let update = UserProfileUpdate(
+            first_name: user.firstName,
+            username: user.username,
+            bio: user.bio,
+            avatar_url: user.avatarURL,
+            phone_number: user.phoneNumber,
+            phone_number_hash: user.phoneNumberHash,
+            updated_at: user.updatedAt
+        )
+
+        do {
+            try await supabase
+                .from("users")
+                .update(update)
+                .eq("id", value: user.id)
+                .execute()
+            logger.info("User profile synced to Supabase")
+        } catch {
+            logger.error("Error syncing user to Supabase: \(error.localizedDescription)")
+        }
+    }
+
     func generateUsername(from email: String) -> String {
         let components = email.components(separatedBy: "@")
         let baseUsername = components.first ?? "user"

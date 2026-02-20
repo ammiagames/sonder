@@ -462,16 +462,7 @@ final class FeedService {
     func fetchFeedItem(logID: String) async throws -> FeedItem? {
         let response: [FeedLogResponse] = try await supabase
             .from("logs")
-            .select("""
-                id,
-                rating,
-                photo_urls,
-                note,
-                tags,
-                created_at,
-                users!logs_user_id_fkey(id, username, avatar_url, is_public),
-                places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference, types)
-            """)
+            .select(selectQuery)
             .eq("id", value: logID)
             .limit(1)
             .execute()
@@ -485,17 +476,7 @@ final class FeedService {
     func fetchUserLogs(userID: String) async throws -> [FeedItem] {
         let response: [FeedLogResponse] = try await supabase
             .from("logs")
-            .select("""
-                id,
-                rating,
-                photo_urls,
-                note,
-                tags,
-                created_at,
-                trip_id,
-                users!logs_user_id_fkey(id, username, avatar_url, is_public),
-                places!logs_place_id_fkey(id, name, address, lat, lng, photo_reference, types)
-            """)
+            .select(selectQuery)
             .eq("user_id", value: userID)
             .order("created_at", ascending: false)
             .limit(200)
@@ -515,9 +496,6 @@ private struct TripLogWithTripID: Codable {
     let createdAt: Date
     let tripID: String
     let place: FeedItem.FeedPlace
-
-    /// Backward-compat: returns the first photo URL
-    var photoURL: String? { photoURLs.first }
 
     enum CodingKeys: String, CodingKey {
         case id, rating

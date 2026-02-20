@@ -204,24 +204,8 @@ struct ProfileView: View {
         logs.filter { $0.tripID == trip.id }.count
     }
 
-    private static let tripDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM yyyy"
-        return formatter
-    }()
-
     private func tripDateText(_ trip: Trip) -> String? {
-        let formatter = Self.tripDateFormatter
-        if let start = trip.startDate, let end = trip.endDate {
-            let startText = formatter.string(from: start)
-            let endText = formatter.string(from: end)
-            return startText == endText ? startText : "\(formatter.string(from: start)) – \(formatter.string(from: end))"
-        } else if let start = trip.startDate {
-            return formatter.string(from: start)
-        } else if let end = trip.endDate {
-            return formatter.string(from: end)
-        }
-        return nil
+        ProfileShared.tripDateText(trip)
     }
 
     private func tripCoverURL(_ trip: Trip) -> URL? {
@@ -237,40 +221,13 @@ struct ProfileView: View {
         return nil
     }
 
-    private func tripGradient(_ trip: Trip) -> (Color, Color) {
-        let gradients: [(Color, Color)] = [
-            (SonderColors.terracotta, SonderColors.ochre),
-            (SonderColors.warmBlue, SonderColors.sage),
-            (SonderColors.dustyRose, SonderColors.terracotta),
-            (SonderColors.sage, SonderColors.warmBlue),
-            (SonderColors.ochre, SonderColors.dustyRose),
-        ]
-        return gradients[abs(trip.id.hashValue) % gradients.count]
-    }
-
     @ViewBuilder
     private func tripCoverPhoto(_ trip: Trip, size: CGSize) -> some View {
-        if let url = tripCoverURL(trip) {
-            DownsampledAsyncImage(url: url, targetSize: size) {
-                tripPlaceholderGradient(trip)
-            }
-        } else {
-            tripPlaceholderGradient(trip)
-        }
+        ProfileShared.tripCoverPhoto(trip, size: size, coverURL: tripCoverURL(trip))
     }
 
     private func tripPlaceholderGradient(_ trip: Trip) -> some View {
-        let grad = tripGradient(trip)
-        return LinearGradient(
-            colors: [grad.0.opacity(0.7), grad.1.opacity(0.7)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .overlay {
-            Image(systemName: "airplane")
-                .font(.system(size: 24, weight: .light))
-                .foregroundStyle(.white.opacity(0.4))
-        }
+        ProfileShared.tripPlaceholderGradient(trip)
     }
 
     // MARK: - Recent Trips Section
@@ -608,11 +565,7 @@ struct ProfileView: View {
     private var avatarPlaceholder: some View {
         Circle()
             .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                SonderColors.placeholderGradient
             )
             .overlay {
                 Text(authService.currentUser?.username.prefix(1).uppercased() ?? "?")
@@ -723,26 +676,7 @@ struct ProfileView: View {
     }
 
     private func tagChip(tag: String, count: Int, isTop: Bool, maxCount: Int) -> some View {
-        let weight = CGFloat(count) / CGFloat(maxCount)
-        let fontSize: CGFloat = isTop ? 16 : (12 + 4 * weight)
-        let hPad: CGFloat = isTop ? SonderSpacing.md : SonderSpacing.sm
-        let vPad: CGFloat = isTop ? SonderSpacing.xs : (SonderSpacing.xxs + 2)
-        let bgColor: Color = isTop ? SonderColors.terracotta : SonderColors.terracotta.opacity(0.08 + 0.12 * Double(weight))
-        let textColor: Color = isTop ? .white : SonderColors.terracotta
-        let countColor: Color = isTop ? .white.opacity(0.8) : SonderColors.terracotta.opacity(0.6)
-
-        return HStack(spacing: 4) {
-            Text(tag)
-                .font(.system(size: fontSize, weight: isTop ? .bold : .medium))
-                .foregroundStyle(textColor)
-            Text("\(count)")
-                .font(.system(size: fontSize - 2, weight: .regular))
-                .foregroundStyle(countColor)
-        }
-        .padding(.horizontal, hPad)
-        .padding(.vertical, vPad)
-        .background(bgColor)
-        .clipShape(Capsule())
+        ProfileShared.tagChip(tag: tag, count: count, isTop: isTop, maxCount: maxCount)
     }
 
     // MARK: - City Data (shared)
@@ -892,19 +826,7 @@ struct ProfileView: View {
     }
 
     private func cityPhotoFallback(index: Int) -> some View {
-        let gradients: [(Color, Color)] = [
-            (SonderColors.terracotta, SonderColors.ochre),
-            (SonderColors.warmBlue, SonderColors.sage),
-            (SonderColors.dustyRose, SonderColors.terracotta),
-            (SonderColors.sage, SonderColors.warmBlue),
-            (SonderColors.ochre, SonderColors.dustyRose),
-        ]
-        let grad = gradients[index % gradients.count]
-        return LinearGradient(
-            colors: [grad.0, grad.1],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        ProfileShared.cityPhotoFallback(index: index)
     }
 
     // MARK: - Computed Stats

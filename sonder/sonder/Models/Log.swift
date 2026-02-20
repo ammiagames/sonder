@@ -89,15 +89,6 @@ final class Log {
         photoURLs.filter { !$0.contains("googleapis.com") && !$0.hasPrefix("pending-upload:") }
     }
 
-    /// Whether this log has photos still being uploaded in the background.
-    var hasPendingUploads: Bool { photoURLs.contains { $0.hasPrefix("pending-upload:") } }
-
-    /// Whether this log is effectively unassigned to any trip
-    /// (nil, empty string, or any blank-only value).
-    var hasNoTrip: Bool {
-        tripID == nil || tripID?.trimmingCharacters(in: .whitespaces).isEmpty == true
-    }
-
     init(
         id: String = UUID().uuidString.lowercased(),
         userID: String,

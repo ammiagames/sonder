@@ -293,11 +293,7 @@ private struct FollowListUserCard: View {
     private var avatarPlaceholder: some View {
         Circle()
             .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                SonderColors.placeholderGradient
             )
             .frame(width: 46, height: 46)
             .overlay {

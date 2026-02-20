@@ -66,11 +66,7 @@ struct TripCreatedCard: View {
     private var avatarPlaceholder: some View {
         Circle()
             .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                SonderColors.placeholderGradient
             )
             .frame(width: 28, height: 28)
             .overlay {

@@ -17,9 +17,9 @@ struct LogTests {
     }
 
     @Test func ratingEmoji() {
-        #expect(Rating.skip.emoji == "👎")
+        #expect(Rating.skip.emoji == "💤")
         #expect(Rating.okay.emoji == "👌")
-        #expect(Rating.great.emoji == "⭐")
+        #expect(Rating.great.emoji == "💛")
         #expect(Rating.mustSee.emoji == "🔥")
     }
 

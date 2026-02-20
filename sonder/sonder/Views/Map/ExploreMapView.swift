@@ -75,8 +75,6 @@ struct ExploreMapView: View {
     // Map snapshot — shown as placeholder while live Map reloads tiles
     @State private var mapSnapshot: UIImage?
     @State private var snapshotProgress: CGFloat = 0
-    @State private var mapViewSize: CGSize = .zero
-
     // Dissolve animation handle — stored to cancel on rapid tab switching
     @State private var dissolveTask: Task<Void, Never>?
     @State private var snapshotGeneration: UInt64 = 0

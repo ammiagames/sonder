@@ -210,10 +210,6 @@ struct OtherUserCityLogsView: View {
     }
 
     private func tripDateRange(start: Date, end: Date?) -> String {
-        let fmt = Date.FormatStyle().month(.abbreviated).day()
-        if let end {
-            return "\(start.formatted(fmt)) – \(end.formatted(fmt))"
-        }
-        return start.formatted(fmt)
+        ProfileShared.tripDateRange(start: start, end: end)
     }
 }

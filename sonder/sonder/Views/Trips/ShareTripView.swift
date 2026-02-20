@@ -111,12 +111,6 @@ struct ShareTripView: View {
     @State private var renderTask: Task<Void, Never>?
     @State private var captionDebounceTask: Task<Void, Never>?
 
-    private static let mediumDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        return f
-    }()
-
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -818,16 +812,7 @@ struct ShareTripView: View {
             return nil
         }()
 
-        let dateRangeText: String? = {
-            if let start = trip.startDate, let end = trip.endDate {
-                return "\(Self.mediumDateFormatter.string(from: start)) \u{2013} \(Self.mediumDateFormatter.string(from: end))"
-            } else if let start = trip.startDate {
-                return "From \(Self.mediumDateFormatter.string(from: start))"
-            } else if let end = trip.endDate {
-                return "Until \(Self.mediumDateFormatter.string(from: end))"
-            }
-            return nil
-        }()
+        let dateRangeText = ProfileShared.tripMediumDateRange(trip)
 
         // Default selection: first 6 photos
         let defaultIndices = Set(Array(0..<min(6, allLogPhotos.count)))

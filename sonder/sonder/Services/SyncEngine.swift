@@ -113,70 +113,6 @@ struct RemoteLog: Codable {
     }
 }
 
-/// Plain Codable struct for decoding trips from Supabase (avoids @Model decode issues)
-struct RemoteTrip: Codable {
-    let id: String
-    let name: String
-    let tripDescription: String?
-    let coverPhotoURL: String?
-    let startDate: Date?
-    let endDate: Date?
-    let collaboratorIDs: [String]
-    let createdBy: String
-    let createdAt: Date
-    let updatedAt: Date
-
-    enum CodingKeys: String, CodingKey {
-        case id, name
-        case tripDescription = "description"
-        case coverPhotoURL = "cover_photo_url"
-        case startDate = "start_date"
-        case endDate = "end_date"
-        case collaboratorIDs = "collaborator_ids"
-        case createdBy = "created_by"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-    }
-
-    init(
-        id: String,
-        name: String,
-        tripDescription: String? = nil,
-        coverPhotoURL: String? = nil,
-        startDate: Date? = nil,
-        endDate: Date? = nil,
-        collaboratorIDs: [String] = [],
-        createdBy: String,
-        createdAt: Date = Date(),
-        updatedAt: Date = Date()
-    ) {
-        self.id = id
-        self.name = name
-        self.tripDescription = tripDescription
-        self.coverPhotoURL = coverPhotoURL
-        self.startDate = startDate
-        self.endDate = endDate
-        self.collaboratorIDs = collaboratorIDs
-        self.createdBy = createdBy
-        self.createdAt = createdAt
-        self.updatedAt = updatedAt
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        name = try container.decode(String.self, forKey: .name)
-        tripDescription = try container.decodeIfPresent(String.self, forKey: .tripDescription)
-        coverPhotoURL = try container.decodeIfPresent(String.self, forKey: .coverPhotoURL)
-        startDate = try container.decodeIfPresent(Date.self, forKey: .startDate)
-        endDate = try container.decodeIfPresent(Date.self, forKey: .endDate)
-        collaboratorIDs = try container.decodeIfPresent([String].self, forKey: .collaboratorIDs) ?? []
-        createdBy = try container.decode(String.self, forKey: .createdBy)
-        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
-        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
-    }
-}
-
 @MainActor
 @Observable
 final class SyncEngine {
@@ -276,9 +212,6 @@ final class SyncEngine {
 
         isSyncing = true
 
-        // First, process any pending photo uploads
-        await processPendingPhotoUploads()
-
         // Push: sync local changes to remote (independent so one failure doesn't block the other)
         do {
             try await syncPendingTrips()
@@ -331,11 +264,6 @@ final class SyncEngine {
         await syncNow()
     }
 
-    // MARK: - Photo Upload Coordination
-
-    /// Batch uploads are self-managed by PhotoService; nothing to do here.
-    private func processPendingPhotoUploads() async { }
-
     // MARK: - Periodic Sync
 
     private func startPeriodicSync() {
@@ -372,10 +300,6 @@ final class SyncEngine {
         }
     }
 
-    func stopPeriodicSync() {
-        syncTask?.cancel()
-        syncTask = nil
-    }
 
     func resumePeriodicSync() {
         if syncTask == nil {
@@ -551,7 +475,7 @@ final class SyncEngine {
             ownedQuery = ownedQuery.gt("updated_at", value: bufferDate)
         }
 
-        let ownedTrips: [RemoteTrip] = try await ownedQuery.execute().value
+        let ownedTrips: [Trip] = try await ownedQuery.execute().value
         logger.info("Pull trips: \(ownedTrips.count) owned\(isIncremental ? " (incremental)" : " (full)")")
 
         var allRemoteTrips = ownedTrips
@@ -567,7 +491,7 @@ final class SyncEngine {
             collabQuery = collabQuery.gt("updated_at", value: bufferDate)
         }
 
-        if let collabTrips: [RemoteTrip] = try? await collabQuery.execute().value {
+        if let collabTrips: [Trip] = try? await collabQuery.execute().value {
             let ownedIDs = Set(allRemoteTrips.map(\.id))
             let newCollabs = collabTrips.filter { !ownedIDs.contains($0.id) }
             allRemoteTrips += newCollabs
@@ -591,7 +515,7 @@ final class SyncEngine {
     /// Merge remote trips into local SwiftData store.
     /// - Remote trips not found locally are inserted.
     /// - Existing local trips are updated if the remote `updatedAt` is newer.
-    func mergeRemoteTrips(_ remoteTrips: [RemoteTrip]) throws {
+    func mergeRemoteTrips(_ remoteTrips: [Trip]) throws {
         let localTrips = try modelContext.fetch(FetchDescriptor<Trip>())
         var localTripsByID: [String: Trip] = [:]
         for trip in localTrips {
@@ -623,21 +547,9 @@ final class SyncEngine {
                     local.syncStatus = .synced
                 }
             } else {
-                // New trip from server
-                let trip = Trip(
-                    id: remote.id,
-                    name: remote.name,
-                    tripDescription: remote.tripDescription,
-                    coverPhotoURL: remote.coverPhotoURL,
-                    startDate: remote.startDate,
-                    endDate: remote.endDate,
-                    collaboratorIDs: remote.collaboratorIDs,
-                    createdBy: remote.createdBy,
-                    createdAt: remote.createdAt,
-                    updatedAt: remote.updatedAt,
-                    syncStatus: .synced
-                )
-                modelContext.insert(trip)
+                // New trip from server — mark as synced and insert directly
+                remote.syncStatus = .synced
+                modelContext.insert(remote)
             }
         }
 
@@ -930,13 +842,6 @@ final class SyncEngine {
             ($0.syncStatus == .pending || $0.syncStatus == .failed)
             && !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
         }
-    }
-
-    /// Retry a specific failed log
-    func retryLog(_ log: Log) async {
-        log.syncStatus = .pending
-        try? modelContext.save()
-        await syncNow()
     }
 
     /// Force-mark all stuck logs as synced, clearing the pending badge.

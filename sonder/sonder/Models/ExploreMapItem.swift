@@ -104,15 +104,6 @@ enum UnifiedMapPin: Identifiable {
         }
     }
 
-    /// Number of personal visits (logs) at this place
-    var visitCount: Int {
-        switch self {
-        case .personal(let logs, _): return logs.count
-        case .friends: return 0
-        case .combined(let logs, _, _): return logs.count
-        }
-    }
-
     /// Best rating across all data (user + friends)
     var bestRating: Rating {
         switch self {
@@ -338,14 +329,6 @@ struct ExploreMapFilter: Equatable {
             case .lastMonth: return "Last Month"
             case .lastYear: return "Last Year"
             case .allTime: return "All Time"
-            }
-        }
-
-        func next() -> RecencyFilter {
-            switch self {
-            case .lastMonth: return .lastYear
-            case .lastYear: return .allTime
-            case .allTime: return .lastMonth
             }
         }
 

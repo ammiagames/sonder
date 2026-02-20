@@ -160,11 +160,6 @@ final class WantToGoService {
         return items.contains { $0.placeID == placeID && $0.userID == userID }
     }
 
-    /// Refresh the cached items list
-    private func refreshItems(for userID: String) async {
-        items = getWantToGoList(for: userID)
-    }
-
     // MARK: - Auto-remove on Log
 
     /// Removes a bookmark for a place that was just logged.
@@ -233,11 +228,6 @@ final class WantToGoService {
     /// Check if a place is in a specific list
     func isInList(placeID: String, userID: String, listID: String) -> Bool {
         items.contains { $0.placeID == placeID && $0.userID == userID && $0.listID == listID }
-    }
-
-    /// Returns list IDs containing this place
-    func listsContaining(placeID: String, userID: String) -> [String] {
-        items.filter { $0.placeID == placeID && $0.userID == userID }.compactMap(\.listID)
     }
 
     /// Get the user's Want to Go list, optionally filtered by listID

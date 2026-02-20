@@ -132,23 +132,6 @@ final class PhotoService {
         return nil
     }
 
-    /// Upload multiple photos sequentially with progress tracking
-    /// (kept for cover photo / avatar use cases)
-    func uploadPhotos(
-        _ images: [UIImage],
-        for userId: String,
-        onProgress: @escaping (Int, Int) -> Void
-    ) async -> [String] {
-        var urls: [String] = []
-        for (index, image) in images.enumerated() {
-            onProgress(index + 1, images.count)
-            if let url = await uploadPhoto(image, for: userId) {
-                urls.append(url)
-            }
-        }
-        return urls
-    }
-
     // MARK: - Batch Upload API
 
     /// Queue images for background upload, returning placeholder strings immediately.

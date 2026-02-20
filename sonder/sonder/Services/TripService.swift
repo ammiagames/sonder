@@ -10,6 +10,22 @@ import SwiftData
 import Supabase
 import os
 
+// MARK: - Supabase Update DTOs
+
+private struct StatusUpdate: Codable {
+    let status: String
+}
+
+private struct CollaboratorUpdate: Codable {
+    let collaborator_ids: [String]
+    let updated_at: Date
+}
+
+private struct LogTripUpdate: Codable {
+    let trip_id: String?
+    let updated_at: Date
+}
+
 @MainActor
 @Observable
 final class TripService {
@@ -293,11 +309,6 @@ final class TripService {
 
     /// Accept an invitation
     func acceptInvitation(_ invitation: TripInvitation) async throws {
-        // Update invitation status
-        struct StatusUpdate: Codable {
-            let status: String
-        }
-
         try await supabase
             .from("trip_invitations")
             .update(StatusUpdate(status: "accepted"))
@@ -316,10 +327,6 @@ final class TripService {
 
     /// Decline an invitation
     func declineInvitation(_ invitation: TripInvitation) async throws {
-        struct StatusUpdate: Codable {
-            let status: String
-        }
-
         try await supabase
             .from("trip_invitations")
             .update(StatusUpdate(status: "declined"))
@@ -348,11 +355,6 @@ final class TripService {
         trip.syncStatus = .pending
 
         // Sync to Supabase
-        struct CollaboratorUpdate: Codable {
-            let collaborator_ids: [String]
-            let updated_at: Date
-        }
-
         try await supabase
             .from("trips")
             .update(CollaboratorUpdate(collaborator_ids: trip.collaboratorIDs, updated_at: trip.updatedAt))
@@ -384,11 +386,6 @@ final class TripService {
         try modelContext.save()
 
         // Sync to Supabase
-        struct CollaboratorUpdate: Codable {
-            let collaborator_ids: [String]
-            let updated_at: Date
-        }
-
         try await supabase
             .from("trips")
             .update(CollaboratorUpdate(collaborator_ids: trip.collaboratorIDs, updated_at: trip.updatedAt))
@@ -411,11 +408,6 @@ final class TripService {
         try modelContext.save()
 
         // Sync to Supabase
-        struct LogTripUpdate: Codable {
-            let trip_id: String?
-            let updated_at: Date
-        }
-
         try await supabase
             .from("logs")
             .update(LogTripUpdate(trip_id: trip?.id, updated_at: log.updatedAt))
@@ -438,11 +430,6 @@ final class TripService {
         try modelContext.save()
 
         // Sync each to Supabase
-        struct LogTripUpdate: Codable {
-            let trip_id: String?
-            let updated_at: Date
-        }
-
         for log in logsToAssign {
             do {
                 try await supabase

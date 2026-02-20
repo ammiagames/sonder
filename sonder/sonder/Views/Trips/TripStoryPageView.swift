@@ -224,11 +224,7 @@ private struct StoryPage: View {
     private var photoPlaceholder: some View {
         Rectangle()
             .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                SonderColors.placeholderGradient
             )
             .overlay {
                 Image(systemName: "photo")

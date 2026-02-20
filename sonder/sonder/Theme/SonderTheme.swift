@@ -80,6 +80,15 @@ enum SonderColors {
         }
     }
 
+    // MARK: - Placeholder Gradients
+
+    /// Warm gradient used as photo/avatar placeholder across the app
+    static let placeholderGradient = LinearGradient(
+        colors: [terracotta.opacity(0.3), ochre.opacity(0.2)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
     // MARK: - UIColor Variants (for UIKit appearance APIs)
 
     static let creamUI = UIColor(red: 0.98, green: 0.96, blue: 0.93, alpha: 1.0)

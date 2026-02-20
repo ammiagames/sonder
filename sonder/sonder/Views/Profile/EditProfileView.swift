@@ -132,11 +132,7 @@ struct EditProfileView: View {
     private var avatarPlaceholder: some View {
         Circle()
             .fill(
-                LinearGradient(
-                    colors: [SonderColors.terracotta.opacity(0.3), SonderColors.ochre.opacity(0.2)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                SonderColors.placeholderGradient
             )
             .overlay {
                 Text(username.prefix(1).uppercased())
@@ -264,7 +260,7 @@ struct EditProfileView: View {
                 try modelContext.save()
 
                 // Sync user profile to Supabase
-                await syncUserToSupabase(user)
+                await authService.syncUserProfile(user)
 
                 // Haptic feedback
                 let feedback = UINotificationFeedbackGenerator()
@@ -281,38 +277,6 @@ struct EditProfileView: View {
         }
     }
 
-    private func syncUserToSupabase(_ user: User) async {
-        struct UserUpdate: Codable {
-            let first_name: String?
-            let username: String
-            let bio: String?
-            let avatar_url: String?
-            let phone_number: String?
-            let phone_number_hash: String?
-            let updated_at: Date
-        }
-
-        let update = UserUpdate(
-            first_name: user.firstName,
-            username: user.username,
-            bio: user.bio,
-            avatar_url: user.avatarURL,
-            phone_number: user.phoneNumber,
-            phone_number_hash: user.phoneNumberHash,
-            updated_at: user.updatedAt
-        )
-
-        do {
-            try await SupabaseConfig.client
-                .from("users")
-                .update(update)
-                .eq("id", value: user.id)
-                .execute()
-            logger.info("User profile synced to Supabase")
-        } catch {
-            logger.error("Error syncing user to Supabase: \(error.localizedDescription)")
-        }
-    }
 }
 
 #Preview {

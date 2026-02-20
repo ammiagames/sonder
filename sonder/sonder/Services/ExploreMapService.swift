@@ -118,11 +118,6 @@ final class ExploreMapService {
         return result.sorted { $0.username.localizedCaseInsensitiveCompare($1.username) == .orderedAscending }
     }
 
-    /// Returns places where 2+ friends rated must-see
-    func friendsLovedPlaces() -> [ExploreMapPlace] {
-        Array(placesMap.values).filter { $0.isFriendsLoved }
-    }
-
     // MARK: - Unified Pin Computation
 
     /// Merges personal logs with friends' places into unified pins.
