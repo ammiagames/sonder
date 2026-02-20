@@ -17,6 +17,7 @@ enum ProfileDestination: Hashable {
     case followers
     case following
     case wantToGo
+    case savedLists
     case city(String)
     case tag(String)
     case logDetail(logID: String, placeID: String)
@@ -28,6 +29,7 @@ struct ProfileView: View {
     @Environment(SyncEngine.self) private var syncEngine
     @Environment(SocialService.self) private var socialService
     @Environment(WantToGoService.self) private var wantToGoService
+    @Environment(SavedListsService.self) private var savedListsService
     @Query private var allLogs: [Log]
     @Query private var places: [Place]
     @Query(sort: \Trip.updatedAt, order: .reverse) private var allTrips: [Trip]
@@ -159,6 +161,8 @@ struct ProfileView: View {
                     )
                 case .wantToGo:
                     WantToGoListView()
+                case .savedLists:
+                    SavedListsView()
                 case .city(let name):
                     CityLogsView(title: name, logs: logsForCity(name))
                 case .tag(let name):
@@ -166,7 +170,7 @@ struct ProfileView: View {
                 case .logDetail(let logID, let placeID):
                     if let log = logs.first(where: { $0.id == logID }),
                        let place = places.first(where: { $0.id == placeID }) {
-                        LogDetailView(log: log, place: place)
+                        LogViewScreen(log: log, place: place)
                     }
                 case .trip(let trip):
                     TripDetailView(trip: trip)
@@ -427,8 +431,10 @@ struct ProfileView: View {
     // MARK: - Want to Go Link
 
     private var wantToGoLink: some View {
-        Button {
-            activeDestination = .wantToGo
+        let listCount = savedListsService.lists.count
+
+        return Button {
+            activeDestination = .savedLists
         } label: {
             HStack(spacing: SonderSpacing.sm) {
                 // Bookmark icon with warm background
@@ -440,12 +446,12 @@ struct ProfileView: View {
                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Want to Go")
+                    Text("Saved Lists")
                         .font(SonderTypography.headline)
                         .foregroundStyle(SonderColors.inkDark)
 
                     if wantToGoCount > 0 {
-                        Text("\(wantToGoCount) saved")
+                        Text("\(wantToGoCount) saved\(listCount > 1 ? " \u{00B7} \(listCount) lists" : "")")
                             .font(SonderTypography.caption)
                             .foregroundStyle(SonderColors.inkMuted)
                     } else {
@@ -635,10 +641,15 @@ struct ProfileView: View {
                                 .fill(SonderColors.ratingSkip)
                                 .frame(width: geo.size.width * dist.skipPercentage)
                         }
-                        if dist.solidCount > 0 {
+                        if dist.okayCount > 0 {
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(SonderColors.ratingSolid)
-                                .frame(width: geo.size.width * dist.solidPercentage)
+                                .fill(SonderColors.ratingOkay)
+                                .frame(width: geo.size.width * dist.okayPercentage)
+                        }
+                        if dist.greatCount > 0 {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(SonderColors.ratingGreat)
+                                .frame(width: geo.size.width * dist.greatPercentage)
                         }
                         if dist.mustSeeCount > 0 {
                             RoundedRectangle(cornerRadius: 4)
@@ -651,9 +662,10 @@ struct ProfileView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
                 // Legend
-                HStack(spacing: SonderSpacing.md) {
+                HStack(spacing: SonderSpacing.sm) {
                     ratingLegendItem(emoji: "👎", label: "Skip", count: dist.skipCount, color: SonderColors.ratingSkip)
-                    ratingLegendItem(emoji: "👍", label: "Solid", count: dist.solidCount, color: SonderColors.ratingSolid)
+                    ratingLegendItem(emoji: "👌", label: "Okay", count: dist.okayCount, color: SonderColors.ratingOkay)
+                    ratingLegendItem(emoji: "⭐", label: "Great", count: dist.greatCount, color: SonderColors.ratingGreat)
                     ratingLegendItem(emoji: "🔥", label: "Must-See", count: dist.mustSeeCount, color: SonderColors.ratingMustSee)
                 }
             }
@@ -965,7 +977,7 @@ struct FilteredLogsListView: View {
             ForEach(logs, id: \.id) { log in
                 if let place = places.first(where: { $0.id == log.placeID }) {
                     NavigationLink {
-                        LogDetailView(log: log, place: place)
+                        LogViewScreen(log: log, place: place)
                     } label: {
                         HStack(spacing: SonderSpacing.sm) {
                             Text(log.rating.emoji)

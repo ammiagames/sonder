@@ -23,61 +23,86 @@ Sonder is a social place-logging iOS app where users rate and save places they v
 - **Profile**: User stats, settings, avatar
 - **Offline-First Sync**: SyncEngine with pending/failed states, network monitoring
 - **Photo Upload**: Compression + Supabase Storage upload with retry queue
-- **Social Layer (Phase 4 - In Progress)**:
+- **Social Layer (Complete)**:
   - Follow/unfollow users
-  - Feed showing friends' logs
+  - Feed showing friends' logs (with trip cards, realtime updates)
   - User search
   - Want to Go list (bookmark places from friends' logs)
-  - Other user profiles
+  - Other user profiles with map view
+- **Explore Map (Complete)**:
+  - Friends Activity Map with unified pins (personal + friends + combined)
+  - Three toggleable layers (Mine / Friends / Saved)
+  - Filter system (rating, category, recency, per-friend)
+  - Friends Loved carousel
+  - Ken Burns camera animation for pin selection
+  - Map snapshot overlay for tab switching
+- **Photo Suggestions**: Camera roll spatial index for location-based photo suggestions
+- **Trip Exports**: Multiple export formats (journal, postcard, route map, collage, receipt)
+- **Trip Collaboration**: Invitations, shared trips, collaborator management
+- **Onboarding Flow**: Welcome, profile setup, first log, find friends
+- **Proximity Notifications**: Alerts when near Want to Go places
 
 #### Key Models (SwiftData)
 | Model | Purpose |
 |-------|---------|
 | `User` | User profile (id, username, email, avatarURL, bio, isPublic) |
 | `Place` | Cached place data (id, name, address, lat/lng, types, photoReference) |
-| `Log` | A user's review (id, userID, placeID, rating, photoURL, note, tags, tripID, syncStatus) |
+| `Log` | A user's review (id, userID, placeID, rating, photoURLs, note, tags, tripID, syncStatus) |
 | `Trip` | Trip container (id, name, description, dates, collaboratorIDs, createdBy) |
+| `TripInvitation` | Trip collaboration invite (tripID, inviterID, inviteeID, status) |
 | `Follow` | Follow relationship (followerID, followingID) |
 | `WantToGo` | Saved/bookmarked place (userID, placeID, sourceLogID) |
 | `RecentSearch` | Search history cache |
+| `FeedItem` | Decoded feed entry (log + user + place, not persisted) |
+| `ExploreMapItem` | Map pin types: LogSnapshot, UnifiedMapPin, ExploreMapPlace, filters |
+| `ProfileStats` | Computed profile statistics |
+| `PhotoLocationIndex` | Spatial index of camera roll photo locations (SwiftData) |
 
 #### Key Services (`@Observable`, injected via Environment)
 | Service | Purpose |
 |---------|---------|
-| `AuthenticationService` | Sign in/out, current user state |
-| `GooglePlacesService` | Place search, autocomplete, details, photos |
+| `AuthenticationService` | Sign in/out, session management, current user state |
+| `GooglePlacesService` | Place search, autocomplete, details, photos (REST API) |
 | `LocationService` | CoreLocation wrapper, current location |
 | `PlacesCacheService` | SwiftData cache for places + recent searches |
 | `PhotoService` | Image compression, Supabase Storage upload queue |
 | `SyncEngine` | Offline-first sync, pending count, network monitoring |
-| `FeedService` | Load friends' feed, pagination, Supabase Realtime |
+| `FeedService` | Load friends' feed, pagination, Supabase Realtime subscriptions |
 | `SocialService` | Follow/unfollow, user search, follower counts |
 | `WantToGoService` | Save/unsave places to Want to Go list |
-| `TripService` | Trip CRUD, collaborator management |
+| `TripService` | Trip CRUD, invitations, collaborator management |
+| `ExploreMapService` | Friends' place data, unified pin computation, filtering |
+| `ProfileStatsService` | Computed profile stats (cities, countries, heatmap, taste DNA) |
+| `ProximityNotificationService` | Geofence alerts near Want to Go places |
+| `PhotoSuggestionService` | Camera roll permission + location-based photo suggestions |
+| `PhotoIndexService` | Spatial index of camera roll photos (SwiftData + Photos framework) |
 
 #### Project Structure
 ```
 sonder/
 ├── sonder/
-│   ├── Models/          # SwiftData models
-│   ├── Services/        # @Observable services
+│   ├── Models/            # SwiftData models + value types
+│   ├── Services/          # @Observable services (15 services)
 │   ├── Views/
-│   │   ├── Auth/        # Sign in/up views
-│   │   ├── Components/  # Reusable UI components
-│   │   ├── Feed/        # Social feed views
-│   │   ├── Logging/     # Place search, preview, add details
-│   │   ├── LogDetail/   # View/edit existing log
-│   │   ├── Main/        # MainTabView, tab navigation
-│   │   ├── Map/         # Map views
-│   │   ├── Profile/     # User profile, settings
-│   │   ├── Social/      # User search, follow lists
-│   │   ├── Trips/       # Trip list, detail, creation
-│   │   └── WantToGo/    # Saved places list
-│   ├── Theme/           # SonderColors, SonderTypography, SonderSpacing
-│   ├── Config/          # Supabase config, Google Places config
-│   └── sonderApp.swift  # App entry, service injection
-├── sonderTests/         # Unit tests (Swift Testing framework)
-└── FEATURE_ROADMAP.md   # This file
+│   │   ├── Authentication/ # Sign in/up views
+│   │   ├── Components/    # Reusable UI (PlacePhotoView, TagInputView, SplashView, etc.)
+│   │   ├── Feed/          # Social feed (FeedView, FeedItemCard, TripFeedCard, FeedLogDetailView)
+│   │   ├── Journal/       # Journal tab (JournalContainerView, MasonryTripsGrid, Polaroid, BoardingPass)
+│   │   ├── Logging/       # Log flow (SearchPlace, PlacePreview, RatePlace, AddDetails)
+│   │   ├── LogDetail/     # View/edit existing log
+│   │   ├── Main/          # MainTabView, tab navigation
+│   │   ├── Map/           # Explore map (ExploreMapView, UnifiedBottomCard, pins, filters)
+│   │   ├── Onboarding/    # First-launch onboarding flow (4 steps)
+│   │   ├── Profile/       # User profile, other user profiles, edit profile
+│   │   ├── Share/         # Log share cards (multiple visual styles)
+│   │   ├── Social/        # User search, follow lists
+│   │   ├── Trips/         # Trip list, detail, creation, story mode, exports
+│   │   └── WantToGo/      # Saved places list
+│   ├── Theme/             # SonderColors, SonderTypography, SonderSpacing
+│   ├── Config/            # SupabaseConfig, GoogleConfig, GooglePlacesConfig
+│   └── sonderApp.swift    # App entry, service injection, splash screen
+├── sonderTests/           # Unit tests (Swift Testing framework, 105 tests)
+└── docs/                  # Technical specs and design docs
 ```
 
 #### Design System
@@ -102,8 +127,11 @@ All UI uses centralized theming from `SonderTheme.swift`:
 
 ### Running Tests
 ```bash
-# From project root, or use Xcode: Product > Test (Cmd+U)
-xcodebuild test -scheme sonder -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+# From project root (105 tests, ~0.3s)
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test \
+  -project sonder.xcodeproj -scheme sonder \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' \
+  -only-testing:sonderTests -parallel-testing-enabled NO
 ```
 
 ### Important Notes for Development
@@ -120,53 +148,25 @@ Features below are prioritized by user value and development complexity.
 
 ---
 
-## Phase 1: Friends Activity Map (Explore)
+## Phase 1: Friends Activity Map (Explore) — COMPLETE
 
-**Priority: HIGH**
-**Replaces: Current Map tab (profile map stays as personal view)**
+**Status: BUILT**
 
-### Overview
-Transform the Map tab into a social discovery experience showing where friends have been, with smart clustering to avoid visual clutter.
+The Explore tab (Tab 2) is a full social discovery map with:
+- **Unified pins**: Personal, friends, and combined pins with smart overlap merging
+- **Three toggleable layers**: Mine / Friends / Saved (Want to Go)
+- **Filter system**: Rating, category (keyword-based), recency, per-friend filtering
+- **Friends Loved carousel**: Places where 2+ friends rated must-see
+- **Ken Burns camera animation**: Smooth frame-by-frame pan for pin selection
+- **Map snapshot overlay**: Static snapshot during tab switches to prevent jarring reloads
+- **Bottom cards**: Context-aware detail cards with drag-to-dismiss
 
-### Core Features
+See `explore_spec.md` for complete technical specification.
 
-#### 1.1 Friends Activity Map
-- Show pins for places friends have logged
-- **Clustered pins** when multiple friends reviewed the same place
-  - Badge shows count: "3"
-  - Tap to expand mini-feed of friends' reviews
-  - Display aggregated rating with friend avatars
-- **Clean UI approach for crowding:**
-  - Zoom-based clustering (zoomed out = clusters, zoomed in = individual pins)
-  - Maximum 3 avatar thumbnails on cluster, "+2 more" indicator
-  - Bottom sheet for details instead of map overlays
-
-#### 1.2 Saved Places Layer
-- Toggle to show/hide Want to Go pins (different color/icon)
-- Visual distinction: Friends' logs = filled pins, Your saves = bookmark outline
-- Tap saved place to see who recommended it
-
-#### 1.3 "Your Friends Loved" Section
-- Horizontal carousel or section highlighting places with 2+ must-see ratings
-- Shows on map with special "fire" indicator
-- Quick filter to show only these places
-
-#### 1.4 Filter System
-- **Rating**: Must-See only, Solid+, All
-- **Category**: Food, Coffee, Nightlife, Outdoors, Shopping, Attractions
-- **Recency**: Last month, 6 months, All time
-- **Source**: All friends, Close friends (if implemented later)
-
-### Supabase Considerations
-- Efficient query for friends' logs with place joins
-- Consider materialized view for "friends_places" if performance is an issue
-- Index on (user_id, created_at) for recency filtering
-
-### UI Changes
-- Map tab icon changes to compass/explore icon
-- Current personal map moves to Profile tab (already exists there)
-- Add filter chip bar at top of map
-- Bottom sheet for place details (replaces full-screen navigation)
+### Remaining Work
+- [ ] Pin clustering for dense areas (no clustering currently)
+- [ ] Category filtering via Google Place types (currently keyword-based)
+- [ ] Supabase Realtime subscription for friends' new logs
 
 ---
 
@@ -344,7 +344,7 @@ Surface nostalgic content to increase engagement and emotional connection.
 
 | Phase | Feature | Priority | Complexity | Dependencies |
 |-------|---------|----------|------------|--------------|
-| 1 | Friends Activity Map | HIGH | Medium | Social layer complete |
+| 1 | ~~Friends Activity Map~~ | ~~HIGH~~ | ~~Medium~~ | **COMPLETE** |
 | 2 | Shareable Trip Links | HIGH | Medium | None |
 | 3 | Quick Log Mode | HIGH | Low | None |
 | 4 | Memories | MEDIUM | Low | 1+ year of user data |
@@ -358,7 +358,7 @@ Surface nostalgic content to increase engagement and emotional connection.
 
 ## Next Steps
 
-1. Complete Social Layer (follows, feed, want-to-go) - in progress
-2. Begin Phase 1 (Friends Activity Map) - highest user value
-3. Phase 2 (Shareable Links) - can be developed in parallel
-4. Phase 3 (Quick Log) - quick win, low complexity
+1. **Pre-production hardening** — Apple Sign-In, Google Places SDK migration, performance fixes (see `load_testing_audit.md`, `reducing-supabase-calls.md`)
+2. **Phase 2 (Shareable Links)** — viral growth enabler
+3. **Phase 3 (Quick Log)** — quick win, low complexity
+4. **Code quality** — see `docs/ISSUES.md` for tracked tech debt

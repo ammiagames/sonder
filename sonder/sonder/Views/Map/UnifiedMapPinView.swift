@@ -52,7 +52,8 @@ struct LogPinView: View {
     private var defaultPinSize: CGFloat {
         switch rating {
         case .mustSee: return 44
-        case .solid: return 38
+        case .great: return 41
+        case .okay: return 38
         case .skip: return 32
         }
     }
@@ -64,7 +65,8 @@ struct LogPinView: View {
     private var ringWidth: CGFloat {
         switch rating {
         case .mustSee: return 3.5
-        case .solid: return 2.5
+        case .great: return 3.0
+        case .okay: return 2.5
         case .skip: return 1.5
         }
     }
@@ -72,7 +74,8 @@ struct LogPinView: View {
     private var shadowRadius: CGFloat {
         switch rating {
         case .mustSee: return 6
-        case .solid: return 3
+        case .great: return 4.5
+        case .okay: return 3
         case .skip: return 1.5
         }
     }
@@ -80,7 +83,8 @@ struct LogPinView: View {
     private var shadowColor: Color {
         switch rating {
         case .mustSee: return SonderColors.ochre.opacity(0.5)
-        case .solid: return .black.opacity(0.2)
+        case .great: return SonderColors.ochre.opacity(0.35)
+        case .okay: return .black.opacity(0.2)
         case .skip: return .black.opacity(0.12)
         }
     }
@@ -88,7 +92,8 @@ struct LogPinView: View {
     private var saturation: Double {
         switch rating {
         case .mustSee: return 1.0
-        case .solid: return 0.85
+        case .great: return 0.95
+        case .okay: return 0.85
         case .skip: return 0.5
         }
     }
@@ -162,7 +167,9 @@ struct LogPinView: View {
             }
 
             // Front circle — most recent photo, full appearance
-            photoPinVisual(url: stack.last!)
+            if let frontURL = stack.last {
+                photoPinVisual(url: frontURL)
+            }
         }
     }
 
@@ -225,7 +232,7 @@ struct UnifiedMapPinView: View {
         switch pin {
         case .personal(let logs, let place):
             LogPinView(
-                rating: logs.first?.rating ?? .solid,
+                rating: logs.first?.rating ?? .okay,
                 photoURLs: logs.compactMap(\.photoURL),
                 placeTypes: place.types,
                 visitCount: logs.count,
@@ -235,7 +242,7 @@ struct UnifiedMapPinView: View {
             ExploreMapPinView(place: place, isWantToGo: isWantToGo)
         case .combined(let logs, let place, let friendPlace):
             CombinedMapPinView(
-                rating: logs.first?.rating ?? .solid,
+                rating: logs.first?.rating ?? .okay,
                 photoURLs: logs.compactMap(\.photoURL),
                 placeTypes: place.types,
                 friendCount: friendPlace.friendCount,
@@ -264,7 +271,8 @@ struct CombinedMapPinView: View {
     private var pinSize: CGFloat {
         switch rating {
         case .mustSee: return 48
-        case .solid: return 42
+        case .great: return 45
+        case .okay: return 42
         case .skip: return 36
         }
     }

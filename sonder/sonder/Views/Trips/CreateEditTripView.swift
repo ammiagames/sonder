@@ -61,7 +61,7 @@ struct CreateEditTripView: View {
     private var orphanedLogs: [Log] {
         guard let userID = authService.currentUser?.id else { return [] }
         let tripIDs = Set(allTrips.map(\.id))
-        return allLogs.filter { $0.userID == userID && ($0.hasNoTrip || !tripIDs.contains($0.tripID!)) }
+        return allLogs.filter { $0.userID == userID && ($0.tripID.map { !tripIDs.contains($0) } ?? true) }
     }
 
     private var placesByID: [String: Place] {

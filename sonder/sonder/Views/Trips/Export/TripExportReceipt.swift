@@ -168,8 +168,11 @@ struct TripExportReceipt: View {
             if data.ratingCounts.mustSee > 0 {
                 subtotalRow("MUST-SEE  \(Rating.mustSee.emoji)", count: data.ratingCounts.mustSee)
             }
-            if data.ratingCounts.solid > 0 {
-                subtotalRow("SOLID     \(Rating.solid.emoji)", count: data.ratingCounts.solid)
+            if data.ratingCounts.great > 0 {
+                subtotalRow("GREAT     \(Rating.great.emoji)", count: data.ratingCounts.great)
+            }
+            if data.ratingCounts.okay > 0 {
+                subtotalRow("OKAY      \(Rating.okay.emoji)", count: data.ratingCounts.okay)
             }
             if data.ratingCounts.skip > 0 {
                 subtotalRow("SKIP      \(Rating.skip.emoji)", count: data.ratingCounts.skip)

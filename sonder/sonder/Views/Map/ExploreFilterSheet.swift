@@ -13,6 +13,7 @@ struct ExploreFilterSheet: View {
     @Binding var filter: ExploreMapFilter
     @Environment(\.dismiss) private var dismiss
     @Environment(ExploreMapService.self) private var exploreMapService
+    @Environment(SavedListsService.self) private var savedListsService
 
     var body: some View {
         NavigationStack {
@@ -184,14 +185,31 @@ struct ExploreFilterSheet: View {
                     Text("Time Period")
                 }
 
-                // MARK: - Show/Hide
+                // MARK: - Saved Lists
                 Section {
                     Toggle(isOn: $filter.showWantToGo) {
-                        Label("Show Want to Go", systemImage: "bookmark")
+                        Label("Show Saved Places", systemImage: "bookmark")
                     }
                     .tint(SonderColors.terracotta)
+
+                    if filter.showWantToGo {
+                        savedListsPickerGrid
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    }
                 } header: {
-                    Text("Want to Go")
+                    HStack {
+                        Text("Saved Lists")
+                        Spacer()
+                        if !filter.selectedSavedListIDs.isEmpty {
+                            Button("Show All") {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    filter.selectedSavedListIDs = []
+                                }
+                            }
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(SonderColors.terracotta)
+                        }
+                    }
                 }
             }
             .navigationTitle("Filters")
@@ -261,6 +279,78 @@ struct ExploreFilterSheet: View {
         }
     }
 
+    // MARK: - Saved Lists Picker Grid
+
+    private var savedListsPickerGrid: some View {
+        let lists = savedListsService.lists
+        let allSelected = filter.selectedSavedListIDs.isEmpty
+
+        return Group {
+            if lists.isEmpty {
+                Text("No saved lists yet")
+                    .font(SonderTypography.caption)
+                    .foregroundStyle(SonderColors.inkMuted)
+            } else {
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible()),
+                    GridItem(.flexible())
+                ], spacing: 10) {
+                    ForEach(lists, id: \.id) { list in
+                        let isSelected = allSelected || filter.selectedSavedListIDs.contains(list.id)
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                toggleSavedList(list.id)
+                            }
+                        } label: {
+                            VStack(spacing: 6) {
+                                Text(list.emoji)
+                                    .font(.system(size: 20))
+                                    .opacity(isSelected ? 1.0 : 0.4)
+
+                                Text(list.name)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, SonderSpacing.sm)
+                            .background(isSelected && !allSelected ? SonderColors.terracotta.opacity(0.15) : SonderColors.warmGray)
+                            .foregroundStyle(isSelected ? SonderColors.inkDark : SonderColors.inkLight)
+                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                            .overlay {
+                                if isSelected && !allSelected {
+                                    RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
+                                        .stroke(SonderColors.terracotta, lineWidth: 1.5)
+                                        .transition(.opacity)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func toggleSavedList(_ listID: String) {
+        let allListIDs = Set(savedListsService.lists.map(\.id))
+
+        if filter.selectedSavedListIDs.isEmpty {
+            // "All" is active → switch to single-deselect
+            filter.selectedSavedListIDs = allListIDs
+            filter.selectedSavedListIDs.remove(listID)
+        } else if filter.selectedSavedListIDs.contains(listID) {
+            filter.selectedSavedListIDs.remove(listID)
+            // If none left, go back to "All"
+        } else {
+            filter.selectedSavedListIDs.insert(listID)
+            // If all lists are now selected, reset to "All"
+            if filter.selectedSavedListIDs == allListIDs {
+                filter.selectedSavedListIDs = []
+            }
+        }
+    }
+
     private func toggleFriend(_ friendID: String) {
         if filter.selectedFriendIDs.isEmpty {
             // "All" is active → switching to single-select this friend
@@ -312,8 +402,10 @@ struct ExploreFilterSheet: View {
             case .all:
                 Image(systemName: "star")
                     .foregroundStyle(SonderColors.inkMuted)
-            case .solidPlus:
-                Text("\u{1F44D}")
+            case .okayPlus:
+                Text("\u{1F44C}")
+            case .greatPlus:
+                Text("\u{2B50}")
             case .mustSeeOnly:
                 Text("\u{1F525}")
             }
@@ -328,10 +420,12 @@ extension ExploreMapFilter {
         var count = 0
         if !showMyPlaces { count += 1 }
         if !showFriendsPlaces { count += 1 }
+        if !showWantToGo { count += 1 }
         if rating != .all { count += 1 }
         count += categories.count
         if recency != .allTime { count += 1 }
         if !selectedFriendIDs.isEmpty { count += 1 }
+        if !selectedSavedListIDs.isEmpty { count += 1 }
         return count
     }
 
@@ -340,6 +434,7 @@ extension ExploreMapFilter {
         var labels: [(id: String, label: String)] = []
         if !showMyPlaces { labels.append((id: "myPlaces", label: "My Places Off")) }
         if !showFriendsPlaces { labels.append((id: "friendsPlaces", label: "Friends Off")) }
+        if !showWantToGo { labels.append((id: "wantToGo", label: "Saved Off")) }
         if rating != .all { labels.append((id: "rating", label: rating.label)) }
         for cat in categories.sorted(by: { $0.label < $1.label }) {
             labels.append((id: "category-\(cat.label)", label: cat.label))
@@ -347,6 +442,9 @@ extension ExploreMapFilter {
         if recency != .allTime { labels.append((id: "recency", label: recency.label)) }
         if !selectedFriendIDs.isEmpty {
             labels.append((id: "friends", label: "\(selectedFriendIDs.count) friend\(selectedFriendIDs.count == 1 ? "" : "s")"))
+        }
+        if !selectedSavedListIDs.isEmpty {
+            labels.append((id: "savedLists", label: "\(selectedSavedListIDs.count) list\(selectedSavedListIDs.count == 1 ? "" : "s")"))
         }
         return labels
     }
@@ -358,7 +456,9 @@ extension ExploreMapFilter {
         case "recency": recency = .allTime
         case "myPlaces": showMyPlaces = true
         case "friendsPlaces": showFriendsPlaces = true
+        case "wantToGo": showWantToGo = true
         case "friends": selectedFriendIDs = []
+        case "savedLists": selectedSavedListIDs = []
         default:
             if id.hasPrefix("category-") {
                 let label = String(id.dropFirst("category-".count))

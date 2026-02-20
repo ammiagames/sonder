@@ -43,6 +43,10 @@ final class Place {
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
+
+    var categoryIcon: String {
+        ExploreMapFilter.CategoryFilter.category(for: types)?.icon ?? "mappin"
+    }
 }
 
 // MARK: - Codable for Supabase sync

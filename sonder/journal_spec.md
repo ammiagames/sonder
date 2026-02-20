@@ -57,7 +57,6 @@ sonder/
 │   │   ├── JournalContainerView.swift  # Main journal tab view
 │   │   ├── MasonryTripsGrid.swift      # Masonry grid + zigzag trail + unassigned logs
 │   │   ├── JournalShared.swift         # Shared types: sorting, column assignment, preferences
-│   │   ├── JournalView.swift           # Legacy logs list/grid view (contains JournalLogRow, JournalGridCell)
 │   │   └── CityLogsView.swift          # City-specific logs grouped by trip (navigated from Profile)
 │   ├── Trips/
 │   │   ├── TripCard.swift              # Reusable trip card component
@@ -582,18 +581,7 @@ Two-option confirmation:
 
 `JournalShared.swift` contains types shared across journal views.
 
-### 12.1 JournalSegment (Legacy)
-
-```swift
-enum JournalSegment: String, CaseIterable {
-    case trips = "Trips"
-    case logs = "Logs"
-}
-```
-
-Currently unused (journal is trips-only) but still defined.
-
-### 12.2 CardFramePreference
+### 12.1 CardFramePreference
 
 PreferenceKey for collecting card frames in the masonry grid. Keyed by chronological index.
 
@@ -606,7 +594,7 @@ struct CardFramePreference: PreferenceKey {
 }
 ```
 
-### 12.3 Trip Sorting
+### 12.2 Trip Sorting
 
 ```swift
 func sortTripsReverseChronological(_ trips: [Trip]) -> [Trip]
@@ -614,7 +602,7 @@ func sortTripsReverseChronological(_ trips: [Trip]) -> [Trip]
 
 Sorts by `startDate` if available, otherwise by `createdAt`. Most recent first.
 
-### 12.4 Masonry Column Assignment
+### 12.3 Masonry Column Assignment
 
 ```swift
 struct MasonryColumnAssignment {
@@ -627,17 +615,6 @@ func assignMasonryColumns(trips:spacing:estimateHeight:) -> [MasonryColumnAssign
 ```
 
 Greedy shortest-column balancing algorithm. Preserves input order.
-
-### 12.5 JournalLogRow (in JournalView.swift)
-
-Reusable row component for displaying a single log in list format:
-- 64×64 photo thumbnail
-- Place name + rating emoji
-- Note preview (or address fallback)
-- Trip name badge + creation date
-- First 3 tags + overflow count
-
-Used in MasonryTripsGrid's "Not in a trip" section.
 
 ---
 
@@ -820,7 +797,7 @@ DELETE FROM trips WHERE id = {tripID}
 1. **No drag-to-reorder** — trips are always sorted by date; no manual ordering.
 2. **Masonry height estimation is approximate** — column balancing may be slightly uneven if actual rendered heights differ from estimates (e.g., long names wrapping).
 3. **No trip search within CityLogsView** — only the main journal has search.
-4. **JournalSegment enum is unused** — legacy from when the journal had a trips/logs segment picker. Could be cleaned up.
+4. ~~**JournalSegment enum is unused**~~ — DELETED (2026-02-17).
 5. **500-log query limit** — TripService fetches are capped by Supabase pagination defaults.
 6. **No trip templates or duplication** — can't clone a trip structure.
 7. **Collaborator editing is owner-only** — collaborators can view but not edit trip metadata.
@@ -832,5 +809,5 @@ DELETE FROM trips WHERE id = {tripID}
 - [ ] Trip templates (duplicate an existing trip's structure)
 - [ ] Drag-to-reorder logs within a trip timeline
 - [ ] Export trip as PDF/image for sharing
-- [ ] Clean up `JournalSegment` enum and `JournalView.swift` legacy code
+- [x] ~~Clean up `JournalSegment` enum and `JournalView.swift` legacy code~~ (deleted 2026-02-17)
 - [ ] Offline trip creation (currently requires Supabase connectivity)

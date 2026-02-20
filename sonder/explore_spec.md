@@ -57,7 +57,6 @@ sonder/
 │       ├── ExploreMapPinView.swift    # Friends-only pin with avatar(s) and badges
 │       ├── WantToGoMapPin.swift       # Standalone bookmark pin for Want to Go places
 │       ├── UnifiedBottomCard.swift    # Context-aware bottom card for unified pins
-│       ├── ExploreBottomCard.swift    # Bottom card for explore/friends pins (legacy)
 │       ├── WantToGoBottomCard          # (Defined inline in ExploreMapView.swift) Bottom card for WTG pins
 │       ├── ExploreFilterSheet.swift   # Filter sheet UI with all filter controls
 │       ├── FriendsLovedCarousel.swift # Horizontal carousel for friends-loved places
@@ -480,10 +479,6 @@ Shown when a standalone WTG pin is selected:
 - Chevron indicating tappability
 - Tap → fetches place details → navigates to `PlacePreviewView`
 - Same drag-to-dismiss behavior as UnifiedBottomCard
-
-### 7.3 ExploreBottomCard (`ExploreBottomCard.swift`)
-
-Legacy bottom card for the old explore-only map. May still be referenced but largely superseded by `UnifiedBottomCard`.
 
 ---
 

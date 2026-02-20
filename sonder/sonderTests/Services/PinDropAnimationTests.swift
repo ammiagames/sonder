@@ -10,11 +10,12 @@ struct PinDropAnimationTests {
 
     // MARK: - Helpers
 
+    /// Returns the pin AND keeps the container alive (caller must hold it via `_ = container`).
     private func makePersonalPin(
         placeID: String,
         latitude: Double,
         longitude: Double
-    ) throws -> UnifiedMapPin {
+    ) throws -> (UnifiedMapPin, ModelContainer) {
         let container = try makeTestModelContainer()
         let context = container.mainContext
         let place = TestData.place(
@@ -23,52 +24,57 @@ struct PinDropAnimationTests {
             latitude: latitude,
             longitude: longitude
         )
-        let log = TestData.log(placeID: placeID, rating: .solid)
+        let log = TestData.log(placeID: placeID, rating: .okay)
         context.insert(place)
         context.insert(log)
         try context.save()
-        return .personal(logs: [LogSnapshot(from: log)], place: place)
+        return (.personal(logs: [LogSnapshot(from: log)], place: place), container)
     }
 
     // MARK: - findPinByProximity
 
     @Test func findPinByProximity_exactMatch() throws {
-        let pin = try makePersonalPin(placeID: "p1", latitude: 37.7749, longitude: -122.4194)
+        let (pin, container) = try makePersonalPin(placeID: "p1", latitude: 37.7749, longitude: -122.4194)
         let coord = CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
 
         let result = ExploreMapService.findPinByProximity(coordinate: coord, in: [pin])
 
         #expect(result?.placeID == "p1")
+        _ = container
     }
 
     @Test func findPinByProximity_closeMatch() throws {
-        let pin = try makePersonalPin(placeID: "p1", latitude: 37.7749, longitude: -122.4194)
+        let (pin, container) = try makePersonalPin(placeID: "p1", latitude: 37.7749, longitude: -122.4194)
         // ~30m offset (well within default 0.0005 threshold ≈ 55m)
         let coord = CLLocationCoordinate2D(latitude: 37.77503, longitude: -122.41955)
 
         let result = ExploreMapService.findPinByProximity(coordinate: coord, in: [pin])
 
         #expect(result?.placeID == "p1")
+        _ = container
     }
 
     @Test func findPinByProximity_noMatch_farCoordinate() throws {
-        let pin = try makePersonalPin(placeID: "p1", latitude: 37.7749, longitude: -122.4194)
+        let (pin, container) = try makePersonalPin(placeID: "p1", latitude: 37.7749, longitude: -122.4194)
         // ~1km away — well beyond the 0.0005 threshold
         let coord = CLLocationCoordinate2D(latitude: 37.784, longitude: -122.410)
 
         let result = ExploreMapService.findPinByProximity(coordinate: coord, in: [pin])
 
         #expect(result == nil)
+        _ = container
     }
 
     @Test func findPinByProximity_closestWins() throws {
-        let pinA = try makePersonalPin(placeID: "pA", latitude: 37.7749, longitude: -122.4194)
-        let pinB = try makePersonalPin(placeID: "pB", latitude: 37.77495, longitude: -122.41945)
+        let (pinA, containerA) = try makePersonalPin(placeID: "pA", latitude: 37.7749, longitude: -122.4194)
+        let (pinB, containerB) = try makePersonalPin(placeID: "pB", latitude: 37.77495, longitude: -122.41945)
         let coord = CLLocationCoordinate2D(latitude: 37.77496, longitude: -122.41946)
 
         let result = ExploreMapService.findPinByProximity(coordinate: coord, in: [pinA, pinB])
 
         #expect(result?.placeID == "pB")
+        _ = containerA
+        _ = containerB
     }
 
     @Test func findPinByProximity_emptyPins() {

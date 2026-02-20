@@ -71,7 +71,9 @@ struct PlaceSearchRow: View {
     }
 }
 
-/// Inline bookmark button for search rows
+/// Inline bookmark button for search rows.
+/// Tap: if not saved → add to default list. If already saved → open list picker.
+/// Long press: always opens list picker.
 struct BookmarkButton: View {
     let placeId: String
     let placeName: String?
@@ -83,8 +85,8 @@ struct BookmarkButton: View {
     @Environment(GooglePlacesService.self) private var placesService
     @Environment(PlacesCacheService.self) private var cacheService
 
-    @State private var isBookmarked = false
     @State private var isLoading = false
+    @State private var showListPicker = false
 
     init(placeId: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil) {
         self.placeId = placeId
@@ -93,9 +95,14 @@ struct BookmarkButton: View {
         self.photoReference = photoReference
     }
 
+    private var isBookmarked: Bool {
+        guard let userID = authService.currentUser?.id else { return false }
+        return wantToGoService.isInWantToGo(placeID: placeId, userID: userID)
+    }
+
     var body: some View {
         Button {
-            toggleBookmark()
+            handleTap()
         } label: {
             Group {
                 if isLoading {
@@ -111,25 +118,38 @@ struct BookmarkButton: View {
         }
         .buttonStyle(.plain)
         .disabled(isLoading)
-        .onAppear {
-            checkStatus()
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .onEnded { _ in showListPicker = true }
+        )
+        .sheet(isPresented: $showListPicker) {
+            AddToListSheet(
+                placeID: placeId,
+                placeName: placeName,
+                placeAddress: placeAddress,
+                photoReference: photoReference,
+                sourceLogID: nil
+            )
         }
     }
 
-    private func checkStatus() {
-        guard let userID = authService.currentUser?.id else { return }
-        isBookmarked = wantToGoService.isInWantToGo(placeID: placeId, userID: userID)
+    private func handleTap() {
+        if isBookmarked {
+            // Already saved — open list picker to manage lists or unsave
+            showListPicker = true
+        } else {
+            addToSaved()
+        }
     }
 
-    private func toggleBookmark() {
+    private func addToSaved() {
         guard let userID = authService.currentUser?.id else { return }
 
         isLoading = true
-        let wasBookmarked = isBookmarked
 
         Task {
             do {
-                try await wantToGoService.toggleWantToGo(
+                try await wantToGoService.addToWantToGo(
                     placeID: placeId,
                     userID: userID,
                     placeName: placeName,
@@ -137,18 +157,13 @@ struct BookmarkButton: View {
                     photoReference: photoReference,
                     sourceLogID: nil
                 )
-                isBookmarked.toggle()
 
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
 
-                // When adding a bookmark, ensure the place is cached locally with
-                // coordinates so the map can display the pin immediately.
-                if !wasBookmarked {
-                    await ensurePlaceCached()
-                }
+                await ensurePlaceCached()
             } catch {
-                logger.error("Error toggling bookmark: \(error.localizedDescription)")
+                logger.error("Error adding bookmark: \(error.localizedDescription)")
             }
             isLoading = false
         }

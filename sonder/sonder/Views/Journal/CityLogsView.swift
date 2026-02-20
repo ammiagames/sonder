@@ -171,7 +171,7 @@ struct CityLogsView: View {
     private func logCard(log: Log, place: Place?) -> some View {
         if let place {
             NavigationLink {
-                LogDetailView(log: log, place: place)
+                LogViewScreen(log: log, place: place)
             } label: {
                 logCardContent(log: log, placeName: place.name)
             }

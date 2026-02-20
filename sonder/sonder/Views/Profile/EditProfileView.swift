@@ -22,6 +22,7 @@ struct EditProfileView: View {
 
     @State private var firstName: String = ""
     @State private var username: String = ""
+    @State private var phoneNumber: String = ""
     @State private var selectedImage: UIImage?
     @State private var showImagePicker = false
     @State private var isUploading = false
@@ -40,8 +41,8 @@ struct EditProfileView: View {
                     // Username section
                     usernameSection
 
-
-
+                    // Phone number section
+                    phoneNumberSection
                 }
                 .padding(SonderSpacing.lg)
             }
@@ -191,12 +192,36 @@ struct EditProfileView: View {
         }
     }
 
+    // MARK: - Phone Number Section
+
+    private var phoneNumberSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            Text("Phone Number")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            TextField("(555) 123-4567", text: $phoneNumber)
+                .font(SonderTypography.body)
+                .padding(SonderSpacing.md)
+                .background(SonderColors.warmGray)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                .keyboardType(.phonePad)
+
+            Text("Used to help friends find you. Never shared publicly.")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkLight)
+        }
+    }
+
     // MARK: - Actions
 
     private func loadCurrentValues() {
         if let user = authService.currentUser {
             firstName = user.firstName ?? ""
             username = user.username
+            phoneNumber = user.phoneNumber ?? ""
         }
     }
 
@@ -221,6 +246,17 @@ struct EditProfileView: View {
             user.firstName = trimmedFirstName.isEmpty ? nil : trimmedFirstName
             user.username = trimmedUsername
             user.avatarURL = newAvatarURL
+
+            // Normalize and hash phone number
+            let normalizedPhone = ContactsService.normalizePhoneNumber(phoneNumber)
+            if !normalizedPhone.isEmpty {
+                user.phoneNumber = normalizedPhone
+                user.phoneNumberHash = ContactsService.sha256Hash(normalizedPhone)
+            } else {
+                user.phoneNumber = nil
+                user.phoneNumberHash = nil
+            }
+
             user.updatedAt = Date()
 
             do {
@@ -251,6 +287,8 @@ struct EditProfileView: View {
             let username: String
             let bio: String?
             let avatar_url: String?
+            let phone_number: String?
+            let phone_number_hash: String?
             let updated_at: Date
         }
 
@@ -259,6 +297,8 @@ struct EditProfileView: View {
             username: user.username,
             bio: user.bio,
             avatar_url: user.avatarURL,
+            phone_number: user.phoneNumber,
+            phone_number_hash: user.phoneNumberHash,
             updated_at: user.updatedAt
         )
 

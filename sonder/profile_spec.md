@@ -55,16 +55,23 @@ The Profile is **Tab 4** (index 3) in Sonder. It is the user's personal dashboar
 
 ```
 sonder/
+├── Services/
+│   └── ProfileStatsService.swift          # Computed stats: cities, countries, heatmap, taste DNA, rating breakdown
+├── Models/
+│   └── ProfileStats.swift                 # ProfileStats model for computed stat values
 ├── Views/
 │   ├── Main/
 │   │   └── MainTabView.swift              # Contains ProfileView, SettingsView, LogsView,
 │   │                                      # FilteredLogsListView, LogRow, FilterChip,
 │   │                                      # JourneyStatCard, WarmFlowLayoutTags, StatCard
 │   ├── Profile/
+│   │   ├── ProfileView.swift              # Main profile page (own profile)
 │   │   ├── EditProfileView.swift          # Edit username, bio, avatar
 │   │   ├── ShareProfileCardView.swift     # Generate & share profile card image
+│   │   ├── TasteDNARadarChart.swift       # Radar chart for category taste profile
 │   │   ├── OtherUserProfileView.swift     # View another user's profile (read-only)
-│   │   └── OtherUserMapView.swift         # View another user's logged places on a map
+│   │   ├── OtherUserMapView.swift         # View another user's logged places on a map
+│   │   └── OtherUserCityLogsView.swift    # City logs for another user's profile
 │   ├── WantToGo/
 │   │   └── WantToGoListView.swift         # Want to Go list with Recent/City grouping
 │   └── Social/

@@ -16,8 +16,12 @@ enum WantToGoGrouping: String, CaseIterable {
     case city = "City"
 }
 
-/// List of places saved to Want to Go
+/// List of places saved to Want to Go.
+/// When `listID` is provided, shows only that list's items. Otherwise shows all.
 struct WantToGoListView: View {
+    let listID: String?
+    let listName: String?
+
     @Environment(AuthenticationService.self) private var authService
     @Environment(WantToGoService.self) private var wantToGoService
     @Environment(GooglePlacesService.self) private var placesService
@@ -33,6 +37,11 @@ struct WantToGoListView: View {
     @State private var scrollToCity: String?
     @State private var visibleCitySections: Set<String> = []
 
+    init(listID: String? = nil, listName: String? = nil) {
+        self.listID = listID
+        self.listName = listName
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -46,7 +55,7 @@ struct WantToGoListView: View {
             }
         }
         .background(SonderColors.cream)
-        .navigationTitle("Want to Go")
+        .navigationTitle(listName ?? "All Saved Places")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $selectedDetails) { details in
             PlacePreviewView(details: details) {
@@ -293,9 +302,11 @@ struct WantToGoListView: View {
 
         isLoading = true
         do {
-            items = try await wantToGoService.fetchWantToGoWithPlaces(for: userID)
+            items = deduplicateByPlace(try await wantToGoService.fetchWantToGoWithPlaces(for: userID, listID: listID))
         } catch {
-            logger.error("Error loading want to go: \(error.localizedDescription)")
+            logger.error("Error loading want to go from remote: \(error.localizedDescription)")
+            // Fall back to local SwiftData
+            refreshItemsFromLocal()
         }
         isLoading = false
     }
@@ -305,11 +316,11 @@ struct WantToGoListView: View {
     /// source-user info for items already loaded from Supabase.
     private func refreshItemsFromLocal() {
         guard let userID = authService.currentUser?.id else { return }
-        let localItems = wantToGoService.getWantToGoList(for: userID)
+        let localItems = wantToGoService.getWantToGoList(for: userID, listID: listID)
         let existingByPlaceID = Dictionary(uniqueKeysWithValues: items.map { ($0.place.id, $0) })
 
         withAnimation(.easeOut(duration: 0.25)) {
-            items = localItems.map { wtg in
+            items = deduplicateByPlace(localItems.map { wtg in
                 if let existing = existingByPlaceID[wtg.placeID] {
                     return existing
                 }
@@ -324,8 +335,16 @@ struct WantToGoListView: View {
                         photoReference: wtg.photoReference
                     )
                 )
-            }
+            })
         }
+    }
+
+    /// When showing all saved places (no list filter), deduplicate by placeID
+    /// so a place saved to multiple lists only appears once.
+    private func deduplicateByPlace(_ items: [WantToGoWithPlace]) -> [WantToGoWithPlace] {
+        guard listID == nil else { return items }
+        var seen = Set<String>()
+        return items.filter { seen.insert($0.place.id).inserted }
     }
 
     private func removeItem(_ item: WantToGoWithPlace) {
@@ -333,7 +352,7 @@ struct WantToGoListView: View {
 
         Task {
             do {
-                try await wantToGoService.removeFromWantToGo(placeID: item.place.id, userID: userID)
+                try await wantToGoService.removeFromWantToGo(placeID: item.place.id, userID: userID, listID: listID)
 
                 // Haptic feedback
                 let generator = UINotificationFeedbackGenerator()

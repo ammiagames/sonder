@@ -14,7 +14,7 @@ private let logger = Logger(subsystem: "com.sonder.app", category: "MainTabView"
 
 struct MainTabView: View {
     var initialTab: Int = 0
-    @State private var selectedTab = 0
+    @AppStorage("sonder.lastSelectedTab") private var selectedTab = 0
     @State private var showLogFlow = false
     @State private var exploreFocusMyPlaces = false
     @State private var exploreHasSelection = false
@@ -27,6 +27,7 @@ struct MainTabView: View {
     @State private var profilePopTrigger = UUID()
 
     @State private var didSetInitialTab = false
+    @State private var hideTabBarGradient = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -58,6 +59,7 @@ struct MainTabView: View {
             SonderTabBar(
                 selectedTab: $selectedTab,
                 onLogTap: { showLogFlow = true },
+                hideGradient: hideTabBarGradient,
                 onSameTabTap: { tab in
                     switch tab {
                     case 0: feedPopTrigger = UUID()
@@ -75,6 +77,7 @@ struct MainTabView: View {
         .overlay(alignment: .top) {
             PhotoUploadBannerOverlay()
         }
+        .onPreferenceChange(HideTabBarGradientKey.self) { hideTabBarGradient = $0 }
         .fullScreenCover(isPresented: $showLogFlow, onDismiss: {
             guard let coord = pendingLogCoord else { return }
             pendingLogCoord = nil
@@ -89,11 +92,23 @@ struct MainTabView: View {
     }
 }
 
+// MARK: - Tab Bar Gradient Preference
+
+/// Child views set this to `true` to hide the tab bar's top gradient
+/// (e.g. when a floating save button would otherwise appear behind it).
+struct HideTabBarGradientKey: PreferenceKey {
+    static var defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
 // MARK: - Custom Tab Bar
 
 struct SonderTabBar: View {
     @Binding var selectedTab: Int
     let onLogTap: () -> Void
+    var hideGradient: Bool = false
     var onSameTabTap: ((Int) -> Void)? = nil
 
     var body: some View {
@@ -116,14 +131,16 @@ struct SonderTabBar: View {
         }
         // Gradient fade above the bar — content dissolves into it
         .overlay(alignment: .top) {
-            LinearGradient(
-                colors: [SonderColors.cream.opacity(0), SonderColors.cream.opacity(0.8)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 24)
-            .offset(y: -24)
-            .allowsHitTesting(false)
+            if !hideGradient {
+                LinearGradient(
+                    colors: [SonderColors.cream.opacity(0), SonderColors.cream.opacity(0.8)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 24)
+                .offset(y: -24)
+                .allowsHitTesting(false)
+            }
         }
     }
 

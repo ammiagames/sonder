@@ -76,7 +76,7 @@ struct JournalContainerView: View {
 
     private var orphanedLogs: [Log] {
         let tripIDs = Set(userTrips.map(\.id))
-        return userLogs.filter { $0.hasNoTrip || (!tripIDs.contains($0.tripID!)) }
+        return userLogs.filter { $0.tripID.map { !tripIDs.contains($0) } ?? true }
     }
 
     private var filteredLogs: [Log] {
@@ -164,7 +164,7 @@ struct JournalContainerView: View {
             }
             .navigationDestination(item: $selectedLog) { log in
                 if let place = placesByID[log.placeID] {
-                    LogDetailView(log: log, place: place, onDelete: {
+                    LogViewScreen(log: log, place: place, onDelete: {
                         selectedLog = nil
                     })
                 }

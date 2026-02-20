@@ -93,7 +93,7 @@ struct TripsListView: View {
             }
             .navigationDestination(item: $selectedLog) { log in
                 if let place = places.first(where: { $0.id == log.placeID }) {
-                    LogDetailView(log: log, place: place, onDelete: {
+                    LogViewScreen(log: log, place: place, onDelete: {
                         selectedLog = nil
                     })
                 }

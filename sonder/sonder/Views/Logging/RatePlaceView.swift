@@ -35,6 +35,7 @@ struct RatePlaceView: View {
     @State private var isSaving = false
     @State private var coverNudgeTrip: Trip?
     @State private var showCoverImagePicker = false
+    @State private var tripSaveError: String?
 
     @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
     @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
@@ -79,7 +80,7 @@ struct RatePlaceView: View {
                         .padding(.top, SonderSpacing.lg)
 
                     // Rating circles
-                    HStack(spacing: SonderSpacing.lg) {
+                    HStack(spacing: SonderSpacing.md) {
                         ForEach(Rating.allCases, id: \.self) { rating in
                             ratingCircle(rating)
                         }
@@ -157,18 +158,21 @@ struct RatePlaceView: View {
                 )
             }
         }
-        .fullScreenCover(isPresented: $showConfirmation) {
-            LogConfirmationView(
-                onDismiss: {
-                    showConfirmation = false
-                    onLogComplete(place.coordinate)
-                },
-                tripName: coverNudgeTrip?.name,
-                onAddCover: {
-                    showConfirmation = false
-                    showCoverImagePicker = true
-                }
-            )
+        .overlay {
+            if showConfirmation {
+                LogConfirmationView(
+                    onDismiss: {
+                        showConfirmation = false
+                        onLogComplete(place.coordinate)
+                    },
+                    tripName: coverNudgeTrip?.name,
+                    onAddCover: {
+                        showConfirmation = false
+                        showCoverImagePicker = true
+                    }
+                )
+                .ignoresSafeArea()
+            }
         }
         .sheet(isPresented: $showNewTripSheet) {
             newTripSheet
@@ -194,6 +198,14 @@ struct RatePlaceView: View {
                 onLogComplete(place.coordinate)
             }
             .ignoresSafeArea()
+        }
+        .alert("Couldn't Save Trip", isPresented: Binding(
+            get: { tripSaveError != nil },
+            set: { if !$0 { tripSaveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { tripSaveError = nil }
+        } message: {
+            Text(tripSaveError ?? "An unknown error occurred.")
         }
     }
 
@@ -231,11 +243,7 @@ struct RatePlaceView: View {
 
     private func ratingCircle(_ rating: Rating) -> some View {
         let isSelected = selectedRating == rating
-        let color: Color = switch rating {
-        case .skip: SonderColors.ratingSkip
-        case .solid: SonderColors.ratingSolid
-        case .mustSee: SonderColors.ratingMustSee
-        }
+        let color = SonderColors.pinColor(for: rating)
 
         return Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -246,7 +254,7 @@ struct RatePlaceView: View {
             VStack(spacing: SonderSpacing.xs) {
                 Text(rating.emoji)
                     .font(.system(size: 32))
-                    .frame(width: 72, height: 72)
+                    .frame(width: 62, height: 62)
                     .background(isSelected ? color.opacity(0.2) : SonderColors.warmGray)
                     .clipShape(Circle())
                     .overlay(
@@ -403,7 +411,13 @@ struct RatePlaceView: View {
         }
 
         modelContext.insert(trip)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.delete(trip)
+            tripSaveError = error.localizedDescription
+            return
+        }
 
         withAnimation(.easeInOut(duration: 0.3)) {
             selectedTrip = trip

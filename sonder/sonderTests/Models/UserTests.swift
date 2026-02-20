@@ -107,5 +107,39 @@ struct UserTests {
         #expect(user.avatarURL == nil)
         #expect(user.bio == nil)
         #expect(user.isPublic == false) // default when missing from JSON
+        #expect(user.phoneNumber == nil)
+        #expect(user.phoneNumberHash == nil)
+    }
+
+    @Test func encodeDecodePhoneFields() throws {
+        let user = TestData.user(
+            phoneNumber: "+12125551234",
+            phoneNumberHash: "a1b2c3d4e5f6"
+        )
+
+        let data = try makeEncoder().encode(user)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+        #expect(json["phone_number"] as? String == "+12125551234")
+        #expect(json["phone_number_hash"] as? String == "a1b2c3d4e5f6")
+
+        let decoded = try makeDecoder().decode(User.self, from: data)
+        #expect(decoded.phoneNumber == "+12125551234")
+        #expect(decoded.phoneNumberHash == "a1b2c3d4e5f6")
+    }
+
+    @Test func decodePhoneFieldsFromJSON() throws {
+        let json = """
+        {
+            "id": "u-5",
+            "username": "eve",
+            "phone_number": "+14155559876",
+            "phone_number_hash": "abc123def456"
+        }
+        """.data(using: .utf8)!
+
+        let user = try makeDecoder().decode(User.self, from: json)
+        #expect(user.phoneNumber == "+14155559876")
+        #expect(user.phoneNumberHash == "abc123def456")
     }
 }

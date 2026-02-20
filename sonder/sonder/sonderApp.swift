@@ -27,6 +27,8 @@ struct SonderApp: App {
     @State private var tripService: TripService?
     @State private var proximityService = ProximityNotificationService()
     @State private var exploreMapService = ExploreMapService()
+    @State private var savedListsService: SavedListsService?
+    @State private var contactsService = ContactsService()
     @State private var photoSuggestionService = PhotoSuggestionService()
     @State private var photoIndexService: PhotoIndexService?
 
@@ -75,7 +77,8 @@ struct SonderApp: App {
                 RecentSearch.self,
                 Follow.self,
                 WantToGo.self,
-                PhotoLocationIndex.self
+                PhotoLocationIndex.self,
+                SavedList.self
             ])
 
             let modelConfiguration = ModelConfiguration(
@@ -109,7 +112,8 @@ struct SonderApp: App {
                     if servicesInitialized,
                        let syncEngine, let placesCacheService,
                        let socialService, let feedService,
-                       let wantToGoService, let tripService {
+                       let wantToGoService, let tripService,
+                       let savedListsService {
                         RootView(
                             authService: authService,
                             locationService: locationService,
@@ -123,7 +127,9 @@ struct SonderApp: App {
                             tripService: tripService,
                             proximityService: proximityService,
                             exploreMapService: exploreMapService,
-                            photoSuggestionService: photoSuggestionService
+                            contactsService: contactsService,
+                            photoSuggestionService: photoSuggestionService,
+                            savedListsService: savedListsService
                         )
                     } else {
                         SonderColors.cream.ignoresSafeArea()
@@ -205,9 +211,13 @@ struct SonderApp: App {
         feedService = FeedService(modelContext: ctx)
         wantToGoService = WantToGoService(modelContext: ctx)
         tripService = TripService(modelContext: ctx)
+        savedListsService = SavedListsService(modelContext: ctx)
 
         // Pass ModelContext to AuthenticationService for user caching
         authService.modelContext = ctx
+
+        // Read current contacts permission state (non-prompting)
+        contactsService.checkCurrentStatus()
 
         // Read current photo permission state (non-prompting)
         photoSuggestionService.checkCurrentAuthorizationStatus()
@@ -259,7 +269,9 @@ struct RootView: View {
     let tripService: TripService
     let proximityService: ProximityNotificationService
     let exploreMapService: ExploreMapService
+    let contactsService: ContactsService
     let photoSuggestionService: PhotoSuggestionService
+    let savedListsService: SavedListsService
 
     @Environment(\.modelContext) private var modelContext
 
@@ -280,7 +292,9 @@ struct RootView: View {
             .environment(tripService)
             .environment(proximityService)
             .environment(exploreMapService)
+            .environment(contactsService)
             .environment(photoSuggestionService)
+            .environment(savedListsService)
             .onChange(of: authService.currentUser?.id) { _, newID in
                 if let userID = newID {
                     Task {
@@ -289,6 +303,10 @@ struct RootView: View {
                         proximityService.configure(wantToGoService: wantToGoService, userID: userID)
                         proximityService.setupNotificationCategories()
                         await proximityService.resumeMonitoringIfAuthorized()
+                    }
+                    // Bootstrap saved lists
+                    Task {
+                        await savedListsService.fetchLists(for: userID)
                     }
                     // Defer full sync so the feed can load first
                     Task {
@@ -307,6 +325,8 @@ struct RootView: View {
                     proximityService.configure(wantToGoService: wantToGoService, userID: userID)
                     proximityService.setupNotificationCategories()
                     await proximityService.resumeMonitoringIfAuthorized()
+                    // Bootstrap saved lists
+                    await savedListsService.fetchLists(for: userID)
                 }
             }
             .onOpenURL { url in
@@ -323,10 +343,8 @@ struct RootView: View {
             if hasCompletedOnboarding {
                 MainTabView(initialTab: initialTab)
             } else {
-                OnboardingView { result in
+                OnboardingView {
                     markOnboardingComplete()
-                    // Land on Journal if they logged, Feed (default) otherwise
-                    initialTab = result.didLogPlace ? 2 : 0
                     onboardingComplete = true
                 }
             }

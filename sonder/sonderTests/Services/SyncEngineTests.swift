@@ -130,7 +130,7 @@ struct SyncEngineTests {
             id: "remote-1",
             userID: "user-1",
             placeID: "place-1",
-            rating: "solid",
+            rating: "okay",
             note: "Great spot",
             tags: ["food"],
             createdAt: fixedDate(),
@@ -144,14 +144,14 @@ struct SyncEngineTests {
         #expect(logs[0].id == "remote-1")
         #expect(logs[0].syncStatus == .synced)
         #expect(logs[0].note == "Great spot")
-        #expect(logs[0].rating == .solid)
+        #expect(logs[0].rating == .okay)
     }
 
     @Test func mergeRemoteLogs_skipsLocalPendingLog() throws {
         let (engine, context, container) = try makeSUT()
         _ = container
 
-        context.insert(TestData.log(id: "log-1", rating: .solid, syncStatus: .pending))
+        context.insert(TestData.log(id: "log-1", rating: .okay, syncStatus: .pending))
         try context.save()
 
         let remote = RemoteLog(
@@ -169,7 +169,7 @@ struct SyncEngineTests {
         let logs = try context.fetch(FetchDescriptor<Log>())
         #expect(logs.count == 1)
         #expect(logs[0].syncStatus == .pending)
-        #expect(logs[0].rating == .solid)  // Local value preserved
+        #expect(logs[0].rating == .okay)  // Local value preserved
     }
 
     @Test func mergeRemoteLogs_updatesStaleLocalLog() throws {
@@ -178,7 +178,7 @@ struct SyncEngineTests {
 
         context.insert(TestData.log(
             id: "log-1",
-            rating: .solid,
+            rating: .okay,
             syncStatus: .synced,
             updatedAt: fixedDate()
         ))
@@ -573,5 +573,28 @@ struct SyncEngineTests {
         // No logs should exist
         let logs = try context.fetch(FetchDescriptor<Log>())
         #expect(logs.isEmpty)
+    }
+
+    @Test func mergeRemoteLogs_legacySolidStringDecodesAsOkay() throws {
+        let (engine, context, container) = try makeSUT()
+        _ = container
+
+        context.insert(TestData.place(id: "place-1"))
+        try context.save()
+
+        let remote = RemoteLog(
+            id: "legacy-1",
+            userID: "user-1",
+            placeID: "place-1",
+            rating: "solid",
+            createdAt: fixedDate(),
+            updatedAt: fixedDate()
+        )
+
+        try engine.mergeRemoteLogs([remote], remotePlaces: [])
+
+        let logs = try context.fetch(FetchDescriptor<Log>())
+        #expect(logs.count == 1)
+        #expect(logs[0].rating == .okay)
     }
 }

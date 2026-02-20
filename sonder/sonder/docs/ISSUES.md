@@ -308,6 +308,21 @@ The city extraction logic is implemented independently in 4 places with divergin
 
 ---
 
+## 14. Pre-Launch TODOs
+
+### 14a. Update App Store URL in invite flow
+
+`Views/Social/SMSInviteView.swift:34` — `InviteLinkItem.appStoreURL` is currently a placeholder (`https://apps.apple.com/app/sonder`). Once the app is published to the App Store, update this to the real URL (e.g. `https://apps.apple.com/app/sonder/id1234567890`).
+
+**Files referencing this URL:**
+- `SMSInviteView.swift` — `InviteLinkItem.appStoreURL` (single source of truth)
+
+### 14b. Rich link preview for invite recipients
+
+The `InviteShareSheet` uses `LPLinkMetadata` to show the invite card image in the sender's share sheet. However, the **recipient** sees whatever link preview iMessage's crawler generates from the App Store URL. For a custom rich preview on the recipient side, host an HTML page with OG tags on a proper domain (Vercel/Cloudflare Pages, both free) that serves `text/html`. Supabase Storage and Edge Functions rewrite `text/html` to `text/plain`, so they cannot be used for this.
+
+---
+
 ## Recommended Fix Order
 
 1. ~~**Quick wins (30 min):** Fix nil-check-then-force-unwrap pattern (5 locations), fix `UIWindowScene.windows` deprecation (2 locations)~~ **DONE**

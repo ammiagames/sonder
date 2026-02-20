@@ -11,7 +11,7 @@ struct ProfileStatsServiceTests {
     func tasteDNA_allFood() {
         let place = TestData.place(id: "p1", types: ["restaurant"])
         let logs = (0..<5).map { i in
-            TestData.log(id: "log-\(i)", placeID: "p1", rating: .solid, createdAt: fixedDate())
+            TestData.log(id: "log-\(i)", placeID: "p1", rating: .okay, createdAt: fixedDate())
         }
         let placeMap = ["p1": place]
 
@@ -30,15 +30,15 @@ struct ProfileStatsServiceTests {
         let restaurant = TestData.place(id: "p1", types: ["restaurant"])
         let cafe = TestData.place(id: "p2", types: ["cafe"])
         let logs = [
-            TestData.log(id: "l1", placeID: "p1", rating: .solid, createdAt: fixedDate()),
-            TestData.log(id: "l2", placeID: "p1", rating: .solid, createdAt: fixedDate()),
-            TestData.log(id: "l3", placeID: "p2", rating: .solid, createdAt: fixedDate()),
+            TestData.log(id: "l1", placeID: "p1", rating: .okay, createdAt: fixedDate()),
+            TestData.log(id: "l2", placeID: "p1", rating: .okay, createdAt: fixedDate()),
+            TestData.log(id: "l3", placeID: "p2", rating: .okay, createdAt: fixedDate()),
         ]
         let placeMap = ["p1": restaurant, "p2": cafe]
 
         let dna = ProfileStatsService.computeTasteDNA(logs: logs, placeMap: placeMap)
 
-        // Food: 2 logs * weight 2 = 4, Coffee: 1 log * weight 2 = 2 → food=1.0, coffee=0.5
+        // Food: 2 logs * weight 1.5 = 3, Coffee: 1 log * weight 1.5 = 1.5 → food=1.0, coffee=0.5
         #expect(dna.food == 1.0)
         #expect(dna.coffee == 0.5)
     }
@@ -136,7 +136,7 @@ struct ProfileStatsServiceTests {
             TestData.log(id: "l1", rating: .mustSee, createdAt: fixedDate()),
             TestData.log(id: "l2", rating: .mustSee, createdAt: fixedDate()),
             TestData.log(id: "l3", rating: .mustSee, createdAt: fixedDate()),
-            TestData.log(id: "l4", rating: .solid, createdAt: fixedDate()),
+            TestData.log(id: "l4", rating: .okay, createdAt: fixedDate()),
         ]
         let dist = ProfileStatsService.computeRatingDistribution(logs: logs)
         #expect(dist.philosophy.contains("generous"))
@@ -148,22 +148,22 @@ struct ProfileStatsServiceTests {
             TestData.log(id: "l1", rating: .skip, createdAt: fixedDate()),
             TestData.log(id: "l2", rating: .skip, createdAt: fixedDate()),
             TestData.log(id: "l3", rating: .skip, createdAt: fixedDate()),
-            TestData.log(id: "l4", rating: .solid, createdAt: fixedDate()),
+            TestData.log(id: "l4", rating: .okay, createdAt: fixedDate()),
             TestData.log(id: "l5", rating: .mustSee, createdAt: fixedDate()),
         ]
         let dist = ProfileStatsService.computeRatingDistribution(logs: logs)
         #expect(dist.philosophy.contains("high standards"))
     }
 
-    @Test("Equal thirds → balanced")
-    func philosophy_balanced() {
+    @Test("Even spread → story fallback")
+    func philosophy_evenSpread() {
         let logs = [
             TestData.log(id: "l1", rating: .skip, createdAt: fixedDate()),
-            TestData.log(id: "l2", rating: .solid, createdAt: fixedDate()),
+            TestData.log(id: "l2", rating: .okay, createdAt: fixedDate()),
             TestData.log(id: "l3", rating: .mustSee, createdAt: fixedDate()),
         ]
         let dist = ProfileStatsService.computeRatingDistribution(logs: logs)
-        #expect(dist.philosophy.contains("balanced"))
+        #expect(dist.philosophy.contains("story"))
     }
 
     // MARK: - Category Breakdown
@@ -209,7 +209,7 @@ struct ProfileStatsServiceTests {
         let logs = [
             TestData.log(id: "l1", placeID: "p1", rating: .mustSee, note: "Amazing", tags: ["sushi"],
                         createdAt: today),
-            TestData.log(id: "l2", placeID: "p2", rating: .solid,
+            TestData.log(id: "l2", placeID: "p2", rating: .okay,
                         createdAt: calendar.date(byAdding: .day, value: -1, to: today)!),
         ]
 
@@ -219,6 +219,6 @@ struct ProfileStatsServiceTests {
         #expect(!stats.tasteDNA.isEmpty)
         #expect(stats.ratingDistribution.total == 2)
         #expect(stats.ratingDistribution.mustSeeCount == 1)
-        #expect(stats.ratingDistribution.solidCount == 1)
+        #expect(stats.ratingDistribution.okayCount == 1)
     }
 }

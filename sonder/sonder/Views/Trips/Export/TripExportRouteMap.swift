@@ -58,8 +58,11 @@ struct TripExportRouteMap: View {
                         if data.ratingCounts.mustSee > 0 {
                             Text("\(Rating.mustSee.emoji) \(data.ratingCounts.mustSee)")
                         }
-                        if data.ratingCounts.solid > 0 {
-                            Text("\(Rating.solid.emoji) \(data.ratingCounts.solid)")
+                        if data.ratingCounts.great > 0 {
+                            Text("\(Rating.great.emoji) \(data.ratingCounts.great)")
+                        }
+                        if data.ratingCounts.okay > 0 {
+                            Text("\(Rating.okay.emoji) \(data.ratingCounts.okay)")
                         }
                         if data.ratingCounts.skip > 0 {
                             Text("\(Rating.skip.emoji) \(data.ratingCounts.skip)")
@@ -285,7 +288,7 @@ enum TripMapSnapshotGenerator {
             context.setLineDash(phase: 0, lengths: [])
             for (index, point) in points.enumerated() {
                 let photo: UIImage? = index < logPhotos.count ? logPhotos[index].image : nil
-                let hasPhoto = photo != nil && photo!.size.width > 1
+                let hasPhoto = (photo?.size.width ?? 0) > 1
 
                 let rect = CGRect(
                     x: point.x - pinSize / 2,

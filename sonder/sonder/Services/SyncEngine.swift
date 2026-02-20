@@ -581,7 +581,7 @@ final class SyncEngine {
             // Advance cursor to the latest updatedAt from this batch
             let maxUpdatedAt = allRemoteTrips.map(\.updatedAt).max()
             if let maxDate = maxUpdatedAt {
-                if lastPullTripUpdatedAt == nil || maxDate > lastPullTripUpdatedAt! {
+                if lastPullTripUpdatedAt.map({ maxDate > $0 }) ?? true {
                     lastPullTripUpdatedAt = maxDate
                 }
             }
@@ -684,7 +684,7 @@ final class SyncEngine {
         // Advance cursor to the latest updatedAt from this batch
         let maxUpdatedAt = remoteLogs.map(\.updatedAt).max()
         if let maxDate = maxUpdatedAt {
-            if lastPullLogUpdatedAt == nil || maxDate > lastPullLogUpdatedAt! {
+            if lastPullLogUpdatedAt.map({ maxDate > $0 }) ?? true {
                 lastPullLogUpdatedAt = maxDate
             }
         }
@@ -747,7 +747,7 @@ final class SyncEngine {
                     id: remote.id,
                     userID: remote.userID,
                     placeID: remote.placeID,
-                    rating: Rating(rawValue: remote.rating) ?? .solid,
+                    rating: Rating(rawValue: remote.rating) ?? .okay,
                     photoURLs: remote.photoURLs,
                     note: remote.note,
                     tags: remote.tags,
@@ -813,7 +813,7 @@ final class SyncEngine {
                     id: remote.id,
                     userID: remote.userID,
                     placeID: remote.placeID,
-                    rating: Rating(rawValue: remote.rating) ?? .solid,
+                    rating: Rating(rawValue: remote.rating) ?? .okay,
                     photoURLs: remote.photoURLs,
                     note: remote.note,
                     tags: remote.tags,
@@ -866,6 +866,23 @@ final class SyncEngine {
         } catch {
             logger.error("Failed to delete log \(logID) from Supabase: \(error.localizedDescription)")
             // Stays in pendingDeletions for retry on next sync
+        }
+    }
+
+    /// Push a log deletion to Supabase only (local delete already done by caller).
+    /// Tracks the ID in pendingDeletions for offline retry.
+    func pushLogDeletion(id logID: String) async {
+        pendingDeletions.insert(logID.lowercased())
+
+        do {
+            try await supabase
+                .from("logs")
+                .delete()
+                .eq("id", value: logID)
+                .execute()
+            pendingDeletions.remove(logID.lowercased())
+        } catch {
+            logger.error("Failed to delete log \(logID) from Supabase: \(error.localizedDescription)")
         }
     }
 

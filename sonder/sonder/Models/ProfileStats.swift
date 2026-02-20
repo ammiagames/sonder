@@ -113,16 +113,20 @@ struct CategoryStat: Identifiable {
 
 struct RatingDistribution {
     let skipCount: Int
-    let solidCount: Int
+    let okayCount: Int
+    let greatCount: Int
     let mustSeeCount: Int
 
-    var total: Int { skipCount + solidCount + mustSeeCount }
+    var total: Int { skipCount + okayCount + greatCount + mustSeeCount }
 
     var skipPercentage: Double {
         total == 0 ? 0 : Double(skipCount) / Double(total)
     }
-    var solidPercentage: Double {
-        total == 0 ? 0 : Double(solidCount) / Double(total)
+    var okayPercentage: Double {
+        total == 0 ? 0 : Double(okayCount) / Double(total)
+    }
+    var greatPercentage: Double {
+        total == 0 ? 0 : Double(greatCount) / Double(total)
     }
     var mustSeePercentage: Double {
         total == 0 ? 0 : Double(mustSeeCount) / Double(total)

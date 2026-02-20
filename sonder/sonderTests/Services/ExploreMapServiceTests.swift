@@ -20,7 +20,7 @@ struct ExploreMapServiceTests {
         let context = container.mainContext
 
         let place = TestData.place(id: "p1", name: "Coffee Shop", latitude: 37.77, longitude: -122.41)
-        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .solid)
+        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .okay)
         context.insert(place)
         context.insert(log)
         try context.save()
@@ -103,7 +103,7 @@ struct ExploreMapServiceTests {
         let context = container.mainContext
 
         let place = TestData.place(id: "p1", name: "Coffee Shop", latitude: 37.77, longitude: -122.41)
-        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .solid)
+        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .okay)
         context.insert(place)
         context.insert(log)
         try context.save()
@@ -125,7 +125,7 @@ struct ExploreMapServiceTests {
         let context = container.mainContext
 
         let place = TestData.place(id: "p1", name: "Coffee Shop", latitude: 37.77, longitude: -122.41)
-        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .solid)
+        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .okay)
         context.insert(place)
         context.insert(log)
         try context.save()
@@ -213,7 +213,7 @@ struct ExploreMapServiceTests {
         let context = container.mainContext
 
         let place = TestData.place(id: "p1", name: "Coffee Shop", latitude: 37.77, longitude: -122.41)
-        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .solid)
+        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .okay)
         context.insert(place)
         context.insert(log)
         try context.save()
@@ -319,7 +319,7 @@ struct ExploreMapServiceTests {
 
         // Create a personal pin at place p1
         let place = TestData.place(id: "p1", name: "Coffee Shop", latitude: 37.77, longitude: -122.41)
-        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .solid)
+        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .okay)
         context.insert(place)
         context.insert(log)
         try context.save()
@@ -375,7 +375,7 @@ struct ExploreMapServiceTests {
         // Create personal pins at p1 and p2
         let place1 = TestData.place(id: "p1", name: "Coffee Shop", latitude: 37.77, longitude: -122.41)
         let place2 = TestData.place(id: "p2", name: "Bakery", latitude: 37.78, longitude: -122.42)
-        let log1 = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .solid)
+        let log1 = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .okay)
         let log2 = TestData.log(id: "log2", userID: "u1", placeID: "p2", rating: .mustSee)
         context.insert(place1)
         context.insert(place2)
@@ -409,7 +409,7 @@ struct ExploreMapServiceTests {
         let context = container.mainContext
 
         let place = TestData.place(id: "p1", latitude: 37.77, longitude: -122.41)
-        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .solid)
+        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .okay)
         context.insert(place)
         context.insert(log)
         try context.save()
@@ -436,7 +436,7 @@ struct ExploreMapServiceTests {
 
         let place1 = TestData.place(id: "p1", name: "Coffee Shop", latitude: 37.77, longitude: -122.41)
         let place2 = TestData.place(id: "p2", name: "Bakery", latitude: 37.78, longitude: -122.42)
-        let log1 = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .solid)
+        let log1 = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .okay)
         let log2 = TestData.log(id: "log2", userID: "u1", placeID: "p2", rating: .mustSee)
         context.insert(place1)
         context.insert(place2)
@@ -503,7 +503,7 @@ struct ExploreMapServiceTests {
         let container = try makeTestModelContainer()
         let context = container.mainContext
 
-        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .solid)
+        let log = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .okay)
         context.insert(log)
         try context.save()
 
@@ -561,7 +561,7 @@ struct ExploreMapServiceTests {
         let context = container.mainContext
 
         let place = TestData.place(id: "p1", name: "Coffee Shop", latitude: 37.77, longitude: -122.41)
-        let log1 = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .solid,
+        let log1 = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .okay,
                                 createdAt: fixedDate())
         let log2 = TestData.log(id: "log2", userID: "u1", placeID: "p1", rating: .mustSee,
                                 createdAt: fixedDate().addingTimeInterval(86400))
@@ -601,7 +601,7 @@ struct ExploreMapServiceTests {
         let context = container.mainContext
 
         let place = TestData.place(id: "p1", name: "Coffee Shop", latitude: 37.77, longitude: -122.41)
-        let log1 = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .solid,
+        let log1 = TestData.log(id: "log1", userID: "u1", placeID: "p1", rating: .okay,
                                 createdAt: fixedDate())
         let log2 = TestData.log(id: "log2", userID: "u1", placeID: "p1", rating: .mustSee,
                                 createdAt: fixedDate().addingTimeInterval(86400))

@@ -118,17 +118,20 @@ enum UnifiedMapPin: Identifiable {
         switch self {
         case .personal(let logs, _):
             if logs.contains(where: { $0.rating == .mustSee }) { return .mustSee }
-            if logs.contains(where: { $0.rating == .solid }) { return .solid }
+            if logs.contains(where: { $0.rating == .great }) { return .great }
+            if logs.contains(where: { $0.rating == .okay }) { return .okay }
             return .skip
         case .friends(let place): return place.bestRating
         case .combined(let logs, _, let friendPlace):
             let friendBest = friendPlace.bestRating
             let personalBest: Rating
             if logs.contains(where: { $0.rating == .mustSee }) { personalBest = .mustSee }
-            else if logs.contains(where: { $0.rating == .solid }) { personalBest = .solid }
+            else if logs.contains(where: { $0.rating == .great }) { personalBest = .great }
+            else if logs.contains(where: { $0.rating == .okay }) { personalBest = .okay }
             else { personalBest = .skip }
             if personalBest == .mustSee || friendBest == .mustSee { return .mustSee }
-            if personalBest == .solid || friendBest == .solid { return .solid }
+            if personalBest == .great || friendBest == .great { return .great }
+            if personalBest == .okay || friendBest == .okay { return .okay }
             return .skip
         }
     }
@@ -173,13 +176,14 @@ struct ExploreMapPlace: Identifiable {
     /// Highest rating among all logs for this place
     var bestRating: Rating {
         if logs.contains(where: { $0.rating == .mustSee }) { return .mustSee }
-        if logs.contains(where: { $0.rating == .solid }) { return .solid }
+        if logs.contains(where: { $0.rating == .great }) { return .great }
+        if logs.contains(where: { $0.rating == .okay }) { return .okay }
         return .skip
     }
 
     /// True when any friend log has a written note
     var hasNote: Bool {
-        logs.contains { $0.log.note != nil && !$0.log.note!.isEmpty }
+        logs.contains { $0.log.note?.isEmpty == false }
     }
 
     /// True when 2+ friends rated must-see
@@ -205,9 +209,11 @@ struct ExploreMapFilter: Equatable {
     var showFriendsPlaces: Bool = true
     /// Empty set means show all friends. Non-empty means only show these friend IDs.
     var selectedFriendIDs: Set<String> = []
+    /// Empty set means show all saved lists. Non-empty means only show these list IDs.
+    var selectedSavedListIDs: Set<String> = []
 
     var isActive: Bool {
-        rating != .all || !categories.isEmpty || recency != .allTime || !showMyPlaces || !showFriendsPlaces || !selectedFriendIDs.isEmpty
+        rating != .all || !categories.isEmpty || recency != .allTime || !showWantToGo || !showMyPlaces || !showFriendsPlaces || !selectedFriendIDs.isEmpty || !selectedSavedListIDs.isEmpty
     }
 
     mutating func toggleCategory(_ cat: CategoryFilter) {
@@ -225,12 +231,13 @@ struct ExploreMapFilter: Equatable {
     // MARK: - Rating Filter
 
     enum RatingFilter: CaseIterable {
-        case all, solidPlus, mustSeeOnly
+        case all, okayPlus, greatPlus, mustSeeOnly
 
         var label: String {
             switch self {
             case .all: return "All"
-            case .solidPlus: return "Solid+"
+            case .okayPlus: return "Okay+"
+            case .greatPlus: return "Great+"
             case .mustSeeOnly: return "Must-See"
             }
         }
@@ -238,7 +245,8 @@ struct ExploreMapFilter: Equatable {
         func matches(_ rating: Rating) -> Bool {
             switch self {
             case .all: return true
-            case .solidPlus: return rating == .solid || rating == .mustSee
+            case .okayPlus: return rating == .okay || rating == .great || rating == .mustSee
+            case .greatPlus: return rating == .great || rating == .mustSee
             case .mustSeeOnly: return rating == .mustSee
             }
         }

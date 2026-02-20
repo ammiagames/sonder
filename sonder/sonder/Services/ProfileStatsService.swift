@@ -146,12 +146,14 @@ enum ProfileStatsService {
 
     static func computeRatingDistribution(logs: [Log]) -> RatingDistribution {
         var skipCount = 0
-        var solidCount = 0
+        var okayCount = 0
+        var greatCount = 0
         var mustSeeCount = 0
         for log in logs {
             switch log.rating {
             case .skip: skipCount += 1
-            case .solid: solidCount += 1
+            case .okay: okayCount += 1
+            case .great: greatCount += 1
             case .mustSee: mustSeeCount += 1
             }
         }
@@ -163,17 +165,15 @@ enum ProfileStatsService {
         } else {
             let mustSeePct = Double(mustSeeCount) / Double(total)
             let skipPct = Double(skipCount) / Double(total)
-            let solidPct = Double(solidCount) / Double(total)
+            let positivePct = Double(greatCount + mustSeeCount) / Double(total)
 
-            if mustSeePct > 0.6 {
+            if mustSeePct > 0.5 {
                 philosophy = "You're generous — \(Int(mustSeePct * 100))% of your places are Must-See"
             } else if skipPct > 0.4 {
                 philosophy = "You have high standards — only the best make the cut"
             } else if mustSeePct < 0.15 && total >= 3 {
                 philosophy = "A discerning palate — you save Must-See for the truly special"
-            } else if abs(solidPct - mustSeePct) < 0.1 && abs(solidPct - skipPct) < 0.1 && total >= 3 {
-                philosophy = "A balanced critic — you appreciate the full spectrum"
-            } else if solidPct > 0.5 {
+            } else if positivePct > 0.6 && total >= 3 {
                 philosophy = "You find the good in most places — a true optimist"
             } else {
                 philosophy = "Every place tells a story in your journal"
@@ -182,7 +182,8 @@ enum ProfileStatsService {
 
         return RatingDistribution(
             skipCount: skipCount,
-            solidCount: solidCount,
+            okayCount: okayCount,
+            greatCount: greatCount,
             mustSeeCount: mustSeeCount,
             philosophy: philosophy
         )
@@ -193,7 +194,8 @@ enum ProfileStatsService {
     static func ratingWeight(_ rating: Rating) -> Double {
         switch rating {
         case .skip: return 1.0
-        case .solid: return 2.0
+        case .okay: return 1.5
+        case .great: return 2.5
         case .mustSee: return 3.0
         }
     }

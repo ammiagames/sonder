@@ -18,6 +18,7 @@ struct AssignLogsToTripSheet: View {
 
     @State private var selectedIDs: Set<String> = []
     @State private var isSaving = false
+    @State private var assignError: String?
 
     var body: some View {
         NavigationStack {
@@ -37,6 +38,14 @@ struct AssignLogsToTripSheet: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .alert("Some Logs Failed", isPresented: Binding(
+            get: { assignError != nil },
+            set: { if !$0 { assignError = nil } }
+        )) {
+            Button("OK", role: .cancel) { assignError = nil }
+        } message: {
+            Text(assignError ?? "An unknown error occurred.")
+        }
     }
 
     // MARK: - Header
@@ -235,14 +244,23 @@ struct AssignLogsToTripSheet: View {
         isSaving = true
 
         Task {
+            var failCount = 0
             for log in orphanedLogs where selectedIDs.contains(log.id) {
-                try? await tripService.associateLog(log, with: trip)
+                do {
+                    try await tripService.associateLog(log, with: trip)
+                } catch {
+                    failCount += 1
+                }
             }
 
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.success)
-
-            dismiss()
+            if failCount > 0 {
+                isSaving = false
+                assignError = "\(failCount) log\(failCount == 1 ? "" : "s") couldn't be saved. Please try again."
+            } else {
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.success)
+                dismiss()
+            }
         }
     }
 }

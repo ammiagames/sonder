@@ -22,6 +22,8 @@
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Sonder uses your location to show nearby places and help you log places you visit.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Sonder uses your contacts to help you find friends who are already on the app.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Sonder uses your photo library to suggest nearby photos and add them to your place logs.</string>
 </dict>

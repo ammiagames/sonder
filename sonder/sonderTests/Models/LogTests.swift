@@ -5,7 +5,7 @@ import Foundation
 struct LogTests {
 
     @Test func initDefaults() {
-        let log = Log(userID: "u1", placeID: "p1", rating: .solid)
+        let log = Log(userID: "u1", placeID: "p1", rating: .okay)
 
         #expect(!log.id.isEmpty)
         #expect(log.syncStatus == .pending)
@@ -18,27 +18,45 @@ struct LogTests {
 
     @Test func ratingEmoji() {
         #expect(Rating.skip.emoji == "👎")
-        #expect(Rating.solid.emoji == "👍")
+        #expect(Rating.okay.emoji == "👌")
+        #expect(Rating.great.emoji == "⭐")
         #expect(Rating.mustSee.emoji == "🔥")
     }
 
     @Test func ratingDisplayName() {
         #expect(Rating.skip.displayName == "Skip")
-        #expect(Rating.solid.displayName == "Solid")
+        #expect(Rating.okay.displayName == "Okay")
+        #expect(Rating.great.displayName == "Great")
         #expect(Rating.mustSee.displayName == "Must-See")
     }
 
     @Test func ratingRawValues() {
         #expect(Rating.skip.rawValue == "skip")
-        #expect(Rating.solid.rawValue == "solid")
+        #expect(Rating.okay.rawValue == "okay")
+        #expect(Rating.great.rawValue == "great")
         #expect(Rating.mustSee.rawValue == "must_see")
     }
 
     @Test func ratingCaseIterable() {
-        #expect(Rating.allCases.count == 3)
+        #expect(Rating.allCases.count == 4)
         #expect(Rating.allCases.contains(.skip))
-        #expect(Rating.allCases.contains(.solid))
+        #expect(Rating.allCases.contains(.okay))
+        #expect(Rating.allCases.contains(.great))
         #expect(Rating.allCases.contains(.mustSee))
+    }
+
+    @Test func legacySolidDecodesAsOkay() throws {
+        let json = """
+        {
+            "id": "log-legacy-solid",
+            "user_id": "u1",
+            "place_id": "p1",
+            "rating": "solid"
+        }
+        """.data(using: .utf8)!
+
+        let log = try makeDecoder().decode(Log.self, from: json)
+        #expect(log.rating == .okay)
     }
 
     @Test func syncStatusRawValues() {

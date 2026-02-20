@@ -175,7 +175,7 @@ struct TripExportDataTests {
             dateRangeText: nil,
             placeCount: 3,
             dayCount: 2,
-            ratingCounts: (mustSee: 1, solid: 1, skip: 1),
+            ratingCounts: (mustSee: 1, great: 0, okay: 1, skip: 1),
             topTags: [],
             heroImage: nil,
             logPhotos: [],
@@ -193,7 +193,7 @@ struct TripExportDataTests {
             dateRangeText: nil,
             placeCount: 0,
             dayCount: 1,
-            ratingCounts: (mustSee: 0, solid: 0, skip: 0),
+            ratingCounts: (mustSee: 0, great: 0, okay: 0, skip: 0),
             topTags: [],
             heroImage: nil,
             logPhotos: [],
@@ -232,7 +232,7 @@ struct TripExportDataTests {
 
     @Test func exportStopDefaultsNoteAndTagsToEmpty() {
         let coord = CLLocationCoordinate2D(latitude: 0, longitude: 0)
-        let stop = ExportStop(placeName: "Test", coordinate: coord, rating: .solid)
+        let stop = ExportStop(placeName: "Test", coordinate: coord, rating: .okay)
         #expect(stop.note == nil)
         #expect(stop.tags.isEmpty)
     }
@@ -242,7 +242,7 @@ struct TripExportDataTests {
         let photo = LogPhotoData(
             image: image,
             placeName: "Shibuya",
-            rating: .solid,
+            rating: .okay,
             placeID: "abc",
             note: "Iconic crossing",
             tags: ["nightlife", "iconic"]
@@ -265,7 +265,7 @@ struct TripExportDataTests {
             dateRangeText: nil,
             placeCount: 1,
             dayCount: 1,
-            ratingCounts: (mustSee: 1, solid: 0, skip: 0),
+            ratingCounts: (mustSee: 1, great: 0, okay: 0, skip: 0),
             topTags: [],
             heroImage: nil,
             logPhotos: [],
@@ -282,7 +282,7 @@ struct TripExportDataTests {
             dateRangeText: nil,
             placeCount: 5,
             dayCount: 3,
-            ratingCounts: (mustSee: 2, solid: 2, skip: 1),
+            ratingCounts: (mustSee: 2, great: 0, okay: 2, skip: 1),
             topTags: [],
             heroImage: nil,
             logPhotos: [],

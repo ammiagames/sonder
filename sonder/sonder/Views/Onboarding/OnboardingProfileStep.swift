@@ -21,6 +21,7 @@ struct OnboardingProfileStep: View {
     @State private var username = ""
     @State private var firstName = ""
     @State private var bio = ""
+    @State private var phoneNumber = ""
     @State private var selectedImage: UIImage?
     @State private var showImagePicker = false
     @State private var isUploading = false
@@ -67,6 +68,9 @@ struct OnboardingProfileStep: View {
 
                 // Bio (optional)
                 bioSection
+
+                // Phone number (optional)
+                phoneNumberSection
 
                 // Save button
                 Button(action: saveAndContinue) {
@@ -292,12 +296,36 @@ struct OnboardingProfileStep: View {
         }
     }
 
+    // MARK: - Phone Number
+
+    private var phoneNumberSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            Text("Phone Number")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            TextField("(555) 123-4567", text: $phoneNumber)
+                .font(SonderTypography.body)
+                .padding(SonderSpacing.md)
+                .background(SonderColors.warmGray)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                .keyboardType(.phonePad)
+
+            Text("Used to help friends find you. Never shared publicly.")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkLight)
+        }
+    }
+
     // MARK: - Actions
 
     private func loadCurrentValues() {
         if let user = authService.currentUser {
             username = user.username
             firstName = user.firstName ?? ""
+            phoneNumber = user.phoneNumber ?? ""
             // Trigger initial validation for the pre-filled username
             validateUsername(user.username)
         }
@@ -390,6 +418,17 @@ struct OnboardingProfileStep: View {
             user.username = trimmedUsername
             user.bio = bio.isEmpty ? nil : bio
             user.avatarURL = newAvatarURL
+
+            // Normalize and hash phone number
+            let normalizedPhone = ContactsService.normalizePhoneNumber(phoneNumber)
+            if !normalizedPhone.isEmpty {
+                user.phoneNumber = normalizedPhone
+                user.phoneNumberHash = ContactsService.sha256Hash(normalizedPhone)
+            } else {
+                user.phoneNumber = nil
+                user.phoneNumberHash = nil
+            }
+
             user.updatedAt = Date()
 
             do {
@@ -414,6 +453,8 @@ struct OnboardingProfileStep: View {
             let username: String
             let bio: String?
             let avatar_url: String?
+            let phone_number: String?
+            let phone_number_hash: String?
             let updated_at: Date
         }
 
@@ -422,6 +463,8 @@ struct OnboardingProfileStep: View {
             username: user.username,
             bio: user.bio,
             avatar_url: user.avatarURL,
+            phone_number: user.phoneNumber,
+            phone_number_hash: user.phoneNumberHash,
             updated_at: user.updatedAt
         )
 

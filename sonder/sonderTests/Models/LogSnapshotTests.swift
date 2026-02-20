@@ -65,7 +65,7 @@ struct LogSnapshotTests {
         let container = try makeTestModelContainer()
         let context = container.mainContext
 
-        let log = TestData.log(id: "log-1", rating: .solid, note: "Great")
+        let log = TestData.log(id: "log-1", rating: .okay, note: "Great")
         context.insert(log)
         try context.save()
 
@@ -79,7 +79,7 @@ struct LogSnapshotTests {
         let container = try makeTestModelContainer()
         let context = container.mainContext
 
-        let log1 = TestData.log(id: "log-1", rating: .solid)
+        let log1 = TestData.log(id: "log-1", rating: .okay)
         let log2 = TestData.log(id: "log-2", rating: .mustSee)
         context.insert(log1)
         context.insert(log2)

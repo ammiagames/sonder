@@ -23,6 +23,9 @@ struct UnifiedBottomCard: View {
     @State private var scrollCooldown = false
     @State private var selectedTab: CombinedTab = .you
     @State private var tabPickerHeight: CGFloat = 0
+    // Frozen heights — captured at drag start to prevent measurement feedback loops
+    @State private var frozenCompactHeight: CGFloat = 0
+    @State private var frozenExpandedHeight: CGFloat = 0
 
     private enum CombinedTab: String, CaseIterable {
         case you = "You"
@@ -55,16 +58,18 @@ struct UnifiedBottomCard: View {
 
     /// Height interpolated between compact and expanded based on drag translation.
     /// Negative dragTranslation = dragging up (expand), positive = dragging down (collapse/dismiss).
+    /// Uses frozen heights during drag to prevent measurement feedback loops.
     private var displayHeight: CGFloat {
-        let baseCompact = compactHeight > 0 ? compactHeight : 120
+        let baseCompact = isDragging ? frozenCompactHeight : (compactHeight > 0 ? compactHeight : 120)
+        let targetExpanded = isDragging ? frozenExpandedHeight : expandedHeight
         if isExpandedState {
             // Expanded: drag down (positive translation) shrinks toward compact
-            let h = expandedHeight - dragTranslation
-            return max(baseCompact, min(expandedHeight, h))
+            let h = targetExpanded - dragTranslation
+            return max(baseCompact, min(targetExpanded, h))
         } else {
             // Compact: drag up grows toward expanded
             let h = baseCompact - dragTranslation
-            return max(baseCompact, min(expandedHeight, h))
+            return max(baseCompact, min(targetExpanded, h))
         }
     }
 
@@ -78,8 +83,9 @@ struct UnifiedBottomCard: View {
 
     /// Progress from 0 (compact) to 1 (expanded) for interpolating visual properties.
     private var dragProgress: CGFloat {
-        let baseCompact = compactHeight > 0 ? compactHeight : 120
-        let range = expandedHeight - baseCompact
+        let baseCompact = isDragging ? frozenCompactHeight : (compactHeight > 0 ? compactHeight : 120)
+        let targetExpanded = isDragging ? frozenExpandedHeight : expandedHeight
+        let range = targetExpanded - baseCompact
         guard range > 0 else { return isExpandedState ? 1 : 0 }
         return (displayHeight - baseCompact) / range
     }
@@ -136,6 +142,9 @@ struct UnifiedBottomCard: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: isDragging ? displayHeight : (isExpanded ? expandedHeight : (compactHeight > 0 ? compactHeight : 120)), alignment: .top)
+        .transaction { t in
+            if isDragging { t.animation = nil }
+        }
         .background(SonderColors.cream)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(color: .black.opacity(isExpandedState ? 0.08 : 0.12), radius: 12, y: 4)
@@ -163,7 +172,7 @@ struct UnifiedBottomCard: View {
             }
         }
         .onPreferenceChange(ExpandedContentHeightKey.self) { value in
-            if value > 0 {
+            if value > 0 && !isDragging {
                 measuredExpandedHeight = value
             }
         }
@@ -180,7 +189,16 @@ struct UnifiedBottomCard: View {
     private var cardDragGesture: some Gesture {
         DragGesture(minimumDistance: 10)
             .onChanged { value in
-                dragTranslation = value.translation.height
+                if dragTranslation == 0 {
+                    // First frame — freeze heights to prevent measurement feedback
+                    frozenCompactHeight = compactHeight > 0 ? compactHeight : 120
+                    frozenExpandedHeight = expandedHeight
+                }
+                var t = Transaction()
+                t.animation = nil
+                withTransaction(t) {
+                    dragTranslation = value.translation.height
+                }
             }
             .onEnded { value in
                 let ty = value.translation.height
@@ -238,7 +256,15 @@ struct UnifiedBottomCard: View {
                     }
                     return
                 }
-                dragTranslation = value.translation.height
+                if dragTranslation == 0 {
+                    frozenCompactHeight = compactHeight > 0 ? compactHeight : 120
+                    frozenExpandedHeight = expandedHeight
+                }
+                var t = Transaction()
+                t.animation = nil
+                withTransaction(t) {
+                    dragTranslation = value.translation.height
+                }
             }
             .onEnded { value in
                 guard isExpandedState else { return }

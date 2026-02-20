@@ -10,7 +10,9 @@ import os
 
 private let logger = Logger(subsystem: "com.sonder.app", category: "WantToGoButton")
 
-/// Bookmark toggle button for saving places to Want to Go list
+/// Bookmark toggle button for saving places to Want to Go list.
+/// Tap: if not saved → add to default list. If already saved → open list picker.
+/// Long press: always opens list picker.
 struct WantToGoButton: View {
     let placeID: String
     let placeName: String?
@@ -22,6 +24,7 @@ struct WantToGoButton: View {
     @Environment(WantToGoService.self) private var wantToGoService
 
     @State private var isLoading = false
+    @State private var showListPicker = false
 
     init(placeID: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil, sourceLogID: String? = nil) {
         self.placeID = placeID
@@ -39,7 +42,7 @@ struct WantToGoButton: View {
 
     var body: some View {
         Button {
-            toggle()
+            handleTap()
         } label: {
             Group {
                 if isLoading {
@@ -54,16 +57,38 @@ struct WantToGoButton: View {
             }
         }
         .disabled(isLoading)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .onEnded { _ in showListPicker = true }
+        )
+        .sheet(isPresented: $showListPicker) {
+            AddToListSheet(
+                placeID: placeID,
+                placeName: placeName,
+                placeAddress: placeAddress,
+                photoReference: photoReference,
+                sourceLogID: sourceLogID
+            )
+        }
     }
 
-    private func toggle() {
+    private func handleTap() {
+        if isWantToGo {
+            // Already saved — open list picker to manage lists or unsave
+            showListPicker = true
+        } else {
+            addToSaved()
+        }
+    }
+
+    private func addToSaved() {
         guard let userID = authService.currentUser?.id else { return }
 
         isLoading = true
 
         Task {
             do {
-                try await wantToGoService.toggleWantToGo(
+                try await wantToGoService.addToWantToGo(
                     placeID: placeID,
                     userID: userID,
                     placeName: placeName,
@@ -72,11 +97,10 @@ struct WantToGoButton: View {
                     sourceLogID: sourceLogID
                 )
 
-                // Haptic feedback
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
             } catch {
-                logger.error("Error toggling want to go: \(error.localizedDescription)")
+                logger.error("Error adding to want to go: \(error.localizedDescription)")
             }
             isLoading = false
         }
@@ -85,7 +109,9 @@ struct WantToGoButton: View {
 
 // MARK: - Large Want to Go Button
 
-/// A larger version for inline use with label
+/// A larger version for inline use with label.
+/// Tap: if not saved → add. If already saved → open list picker.
+/// Long press: always opens list picker.
 struct WantToGoButtonLarge: View {
     let placeID: String
     let placeName: String?
@@ -97,6 +123,7 @@ struct WantToGoButtonLarge: View {
     @Environment(WantToGoService.self) private var wantToGoService
 
     @State private var isLoading = false
+    @State private var showListPicker = false
 
     init(placeID: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil, sourceLogID: String? = nil) {
         self.placeID = placeID
@@ -114,7 +141,7 @@ struct WantToGoButtonLarge: View {
 
     var body: some View {
         Button {
-            toggle()
+            handleTap()
         } label: {
             HStack {
                 if isLoading {
@@ -133,16 +160,38 @@ struct WantToGoButtonLarge: View {
             .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         }
         .disabled(isLoading)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .onEnded { _ in showListPicker = true }
+        )
+        .sheet(isPresented: $showListPicker) {
+            AddToListSheet(
+                placeID: placeID,
+                placeName: placeName,
+                placeAddress: placeAddress,
+                photoReference: photoReference,
+                sourceLogID: sourceLogID
+            )
+        }
     }
 
-    private func toggle() {
+    private func handleTap() {
+        if isWantToGo {
+            // Already saved — open list picker to manage lists or unsave
+            showListPicker = true
+        } else {
+            addToSaved()
+        }
+    }
+
+    private func addToSaved() {
         guard let userID = authService.currentUser?.id else { return }
 
         isLoading = true
 
         Task {
             do {
-                try await wantToGoService.toggleWantToGo(
+                try await wantToGoService.addToWantToGo(
                     placeID: placeID,
                     userID: userID,
                     placeName: placeName,
@@ -151,11 +200,10 @@ struct WantToGoButtonLarge: View {
                     sourceLogID: sourceLogID
                 )
 
-                // Haptic feedback
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
             } catch {
-                logger.error("Error toggling want to go: \(error.localizedDescription)")
+                logger.error("Error adding to want to go: \(error.localizedDescription)")
             }
             isLoading = false
         }

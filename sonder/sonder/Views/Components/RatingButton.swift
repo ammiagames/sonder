@@ -17,58 +17,25 @@ struct RatingButton: View {
     let action: () -> Void
 
     private var emoji: String {
-        switch rating {
-        case .skip:
-            return "👎"
-        case .solid:
-            return "👍"
-        case .mustSee:
-            return "🔥"
-        }
+        rating.emoji
     }
 
     private var label: String {
-        switch rating {
-        case .skip:
-            return "Skip"
-        case .solid:
-            return "Solid"
-        case .mustSee:
-            return "Must-See"
-        }
+        rating.displayName
     }
 
     private var subtitle: String {
-        switch rating {
-        case .skip:
-            return "Wouldn't recommend"
-        case .solid:
-            return "Good, would go again"
-        case .mustSee:
-            return "Exceptional, go out of your way"
-        }
+        rating.subtitle
     }
 
     private var backgroundColor: Color {
-        switch rating {
-        case .skip:
-            return isSelected ? SonderColors.ratingSkip.opacity(0.2) : SonderColors.warmGray
-        case .solid:
-            return isSelected ? SonderColors.ratingSolid.opacity(0.2) : SonderColors.warmGray
-        case .mustSee:
-            return isSelected ? SonderColors.ratingMustSee.opacity(0.2) : SonderColors.warmGray
-        }
+        let color = SonderColors.pinColor(for: rating)
+        return isSelected ? color.opacity(0.2) : SonderColors.warmGray
     }
 
     private var borderColor: Color {
-        switch rating {
-        case .skip:
-            return isSelected ? SonderColors.ratingSkip : Color.clear
-        case .solid:
-            return isSelected ? SonderColors.ratingSolid : Color.clear
-        case .mustSee:
-            return isSelected ? SonderColors.ratingMustSee : Color.clear
-        }
+        let color = SonderColors.pinColor(for: rating)
+        return isSelected ? color : Color.clear
     }
 
     var body: some View {
@@ -119,8 +86,11 @@ struct ScaleButtonStyle: ButtonStyle {
         RatingButton(rating: .skip, isSelected: false) {
             logger.debug("Skip tapped")
         }
-        RatingButton(rating: .solid, isSelected: true) {
-            logger.debug("Solid tapped")
+        RatingButton(rating: .okay, isSelected: true) {
+            logger.debug("Okay tapped")
+        }
+        RatingButton(rating: .great, isSelected: false) {
+            logger.debug("Great tapped")
         }
         RatingButton(rating: .mustSee, isSelected: false) {
             logger.debug("Must-See tapped")

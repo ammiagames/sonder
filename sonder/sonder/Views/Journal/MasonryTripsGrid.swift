@@ -60,7 +60,7 @@ struct MasonryTripsGrid: View {
     /// Logs not belonging to any trip (includes stale tripIDs pointing to deleted trips)
     private var unassignedLogs: [Log] {
         let tripIDs = Set(trips.map(\.id))
-        return filteredLogs.filter { $0.hasNoTrip || (!tripIDs.contains($0.tripID!)) }
+        return filteredLogs.filter { $0.tripID.map { !tripIDs.contains($0) } ?? true }
     }
 
     // MARK: - Body

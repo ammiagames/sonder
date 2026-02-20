@@ -162,10 +162,11 @@ final class ProximityNotificationService: NSObject {
 
         let distanceText = distance < 100 ? "very close to" : "near"
 
+        let listSuffix = item.listName.map { " (\($0))" } ?? ""
         if let sourceUser = item.sourceUser {
-            content.body = "You're \(distanceText) \(item.place.name) - saved from @\(sourceUser.username)"
+            content.body = "You're \(distanceText) \(item.place.name)\(listSuffix) - saved from @\(sourceUser.username)"
         } else {
-            content.body = "You're \(distanceText) \(item.place.name)"
+            content.body = "You're \(distanceText) \(item.place.name)\(listSuffix)"
         }
 
         content.sound = .default

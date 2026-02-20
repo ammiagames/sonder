@@ -113,7 +113,7 @@ struct FeedItem: Identifiable, Codable {
 
 extension FeedItem {
     var rating: Rating {
-        Rating(rawValue: log.rating) ?? .solid
+        Rating(rawValue: log.rating) ?? .okay
     }
 
     var createdAt: Date {

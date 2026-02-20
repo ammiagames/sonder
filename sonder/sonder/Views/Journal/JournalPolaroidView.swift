@@ -47,7 +47,7 @@ struct JournalPolaroidView: View {
 
     /// Pre-grouped logs by tripID, built once per render pass.
     private var logsByTripID: [String: [Log]] {
-        Dictionary(grouping: allLogs.filter { $0.tripID != nil }, by: { $0.tripID! })
+        Dictionary(grouping: allLogs.filter { $0.tripID != nil }, by: { $0.tripID ?? "" })
     }
 
     private func logsForTrip(_ trip: Trip) -> [Log] {
@@ -105,7 +105,6 @@ struct JournalPolaroidView: View {
                                             .opacity(opacity)
                                             .offset(y: yShift)
                                             .rotationEffect(.degrees(edgeRotation(for: index, trip: trip)))
-                                            .animation(.interpolatingSpring(stiffness: 280, damping: 22), value: scale)
                                             .onAppear {
                                                 updateCardCenter(index: index, from: cardGeo)
                                             }
@@ -128,7 +127,7 @@ struct JournalPolaroidView: View {
                         }
                     }
                 }
-                .scrollTargetBehavior(PolaroidSnapBehavior(
+                .scrollTargetBehavior(GentleCenterSnap(
                     cardHeight: cardHeight,
                     cardSpacing: cardSpacing,
                     cardCount: trips.count
@@ -907,7 +906,8 @@ struct JournalPolaroidView: View {
             let tint: Color
             switch rating {
             case .mustSee: tint = Color(red: 0.85, green: 0.62, blue: 0.35)
-            case .solid:   tint = Color(red: 0.62, green: 0.76, blue: 0.65)
+            case .great:   tint = Color(red: 0.82, green: 0.68, blue: 0.38)
+            case .okay:    tint = Color(red: 0.62, green: 0.76, blue: 0.65)
             case .skip:    tint = Color(red: 0.74, green: 0.72, blue: 0.69)
             }
 
@@ -971,7 +971,8 @@ struct JournalPolaroidView: View {
         let ink: Color
         switch rating {
         case .mustSee: ink = Color(red: 0.72, green: 0.28, blue: 0.22)
-        case .solid:   ink = Color(red: 0.22, green: 0.32, blue: 0.58)
+        case .great:   ink = Color(red: 0.65, green: 0.50, blue: 0.20)
+        case .okay:    ink = Color(red: 0.22, green: 0.32, blue: 0.58)
         case .skip:    ink = Color(red: 0.50, green: 0.48, blue: 0.45)
         }
 
@@ -1063,7 +1064,8 @@ struct JournalPolaroidView: View {
         let tint: Color
         switch rating {
         case .mustSee: tint = Color(red: 0.78, green: 0.42, blue: 0.30)
-        case .solid:   tint = Color(red: 0.45, green: 0.58, blue: 0.48)
+        case .great:   tint = Color(red: 0.72, green: 0.58, blue: 0.30)
+        case .okay:    tint = Color(red: 0.45, green: 0.58, blue: 0.48)
         case .skip:    tint = Color(red: 0.58, green: 0.55, blue: 0.52)
         }
 
@@ -1144,61 +1146,31 @@ struct JournalPolaroidView: View {
     }
 }
 
-// MARK: - Polaroid Snap Behavior
+// MARK: - Gentle Center Snap
 
-/// Snaps to card boundaries with low velocity & displacement thresholds so small
-/// flicks reliably advance one card instead of bouncing back.
-private struct PolaroidSnapBehavior: ScrollTargetBehavior {
+/// Lets scroll physics determine how far the content travels, then nudges
+/// the final resting position to the nearest card center.  No velocity
+/// thresholds, no one-card limits — momentum is fully respected.
+private struct GentleCenterSnap: ScrollTargetBehavior {
     let cardHeight: CGFloat
     let cardSpacing: CGFloat
     let cardCount: Int
-
-    /// Minimum flick speed (pts/sec) that forces an advance.
-    private let velocityThreshold: CGFloat = 60
-
-    /// Fraction of stride the user must drag before we advance (0.15 = 15%).
-    private let displacementFraction: CGFloat = 0.15
 
     func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
         let stride = cardHeight + cardSpacing
         guard stride > 0, cardCount > 0 else { return }
 
         let contentOffset = target.rect.minY
-        let velocity = context.velocity.dy  // pts/sec, negative = scrolling down
 
-        // If the user scrolled past all cards into the orphaned-logs tail,
-        // let momentum carry naturally — no snapping.
+        // Past the card region — let scroll freely into orphaned logs
         let maxSnappableOffset = stride * CGFloat(cardCount - 1)
-        if contentOffset > maxSnappableOffset + stride * 0.25 {
+        if contentOffset > maxSnappableOffset + stride * 0.5 {
             return
         }
 
-        // Nearest card index (clamped).
-        let rawIndex = contentOffset / stride
-        let nearestIndex = round(rawIndex)
-
-        // Determine direction bias from velocity or displacement.
-        let displacement = rawIndex - nearestIndex
-        let hasVelocity = abs(velocity) > velocityThreshold
-        let hasDrag = abs(displacement) > displacementFraction
-
-        let snappedIndex: CGFloat
-        if hasVelocity {
-            // Flick detected — advance in that direction.
-            snappedIndex = velocity < 0
-                ? ceil(rawIndex)   // scrolling down → next card
-                : floor(rawIndex)  // scrolling up   → previous card
-        } else if hasDrag {
-            // Slow drag past threshold — advance toward drag direction.
-            snappedIndex = displacement > 0
-                ? ceil(rawIndex)
-                : floor(rawIndex)
-        } else {
-            // Tiny movement — snap back to nearest.
-            snappedIndex = nearestIndex
-        }
-
-        let clamped = max(0, min(CGFloat(cardCount - 1), snappedIndex))
+        // Round to the nearest card — physics already decided how far to go
+        let nearestIndex = round(contentOffset / stride)
+        let clamped = max(0, min(CGFloat(cardCount - 1), nearestIndex))
         target.rect.origin.y = clamped * stride
     }
 }

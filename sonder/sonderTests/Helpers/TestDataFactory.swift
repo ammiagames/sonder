@@ -15,6 +15,8 @@ enum TestData {
         bio: String? = nil,
         isPublic: Bool = true,
         pinnedPlaceIDs: [String] = [],
+        phoneNumber: String? = nil,
+        phoneNumberHash: String? = nil,
         createdAt: Date = fixedDate(),
         updatedAt: Date = fixedDate()
     ) -> User {
@@ -27,6 +29,8 @@ enum TestData {
             bio: bio,
             isPublic: isPublic,
             pinnedPlaceIDs: pinnedPlaceIDs,
+            phoneNumber: phoneNumber,
+            phoneNumberHash: phoneNumberHash,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
@@ -62,7 +66,7 @@ enum TestData {
         id: String = UUID().uuidString,
         userID: String = "user-1",
         placeID: String = "place-1",
-        rating: Rating = .solid,
+        rating: Rating = .okay,
         photoURLs: [String] = [],
         note: String? = nil,
         tags: [String] = [],
@@ -163,6 +167,7 @@ enum TestData {
         placeAddress: String? = nil,
         photoReference: String? = nil,
         sourceLogID: String? = nil,
+        listID: String? = "list-1",
         createdAt: Date = fixedDate()
     ) -> WantToGo {
         WantToGo(
@@ -173,7 +178,32 @@ enum TestData {
             placeAddress: placeAddress,
             photoReference: photoReference,
             sourceLogID: sourceLogID,
+            listID: listID,
             createdAt: createdAt
+        )
+    }
+
+    // MARK: - SavedList
+
+    static func savedList(
+        id: String = "list-1",
+        userID: String = "user-1",
+        name: String = "Want to Go",
+        emoji: String = "\u{1F516}",
+        isDefault: Bool = true,
+        sortOrder: Int = 0,
+        createdAt: Date = fixedDate(),
+        updatedAt: Date = fixedDate()
+    ) -> SavedList {
+        SavedList(
+            id: id,
+            userID: userID,
+            name: name,
+            emoji: emoji,
+            isDefault: isDefault,
+            sortOrder: sortOrder,
+            createdAt: createdAt,
+            updatedAt: updatedAt
         )
     }
 
@@ -211,7 +241,7 @@ enum TestData {
 
     static func feedLog(
         id: String = "log-1",
-        rating: String = "solid",
+        rating: String = "okay",
         photoURLs: [String] = [],
         note: String? = "Great spot",
         tags: [String] = ["food"],

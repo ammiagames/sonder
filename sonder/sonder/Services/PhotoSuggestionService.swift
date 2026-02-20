@@ -31,7 +31,7 @@ final class PhotoSuggestionService {
     private let cachingManager = PHCachingImageManager()
     private let thumbnailSize = CGSize(width: 200, height: 200) // 2x for 100pt display
     private let radiusMeters: CLLocationDistance = 200
-    private let maxSuggestions = 5
+    private let maxSuggestions = 15
 
     private var enumerationTask: Task<[PHAsset], Never>?
     private var libraryObserver: LibraryChangeObserver?

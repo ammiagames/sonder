@@ -251,7 +251,7 @@ private struct StoryPage: View {
             Log(
                 userID: "user1",
                 placeID: "place2",
-                rating: .solid,
+                rating: .okay,
                 note: "Great ramen spot.",
                 tags: ["ramen", "japanese"]
             )

@@ -370,20 +370,22 @@ struct OtherUserProfileView: View {
             .sorted { $0.count > $1.count }
     }
 
-    private var ratingCounts: (skip: Int, solid: Int, mustSee: Int) {
-        var skip = 0, solid = 0, mustSee = 0
+    private var ratingCounts: (skip: Int, okay: Int, great: Int, mustSee: Int) {
+        var skip = 0, okay = 0, great = 0, mustSee = 0
         for item in userLogs {
             switch item.rating {
             case .skip: skip += 1
-            case .solid: solid += 1
+            case .okay: okay += 1
+            case .great: great += 1
             case .mustSee: mustSee += 1
             }
         }
-        return (skip, solid, mustSee)
+        return (skip, okay, great, mustSee)
     }
 
     private var skipCount: Int { ratingCounts.skip }
-    private var solidCount: Int { ratingCounts.solid }
+    private var okayCount: Int { ratingCounts.okay }
+    private var greatCount: Int { ratingCounts.great }
     private var mustSeeCount: Int { ratingCounts.mustSee }
 
     private var ratingPhilosophy: String {
@@ -392,17 +394,15 @@ struct OtherUserProfileView: View {
         let counts = ratingCounts
         let mustSeePct = Double(counts.mustSee) / Double(total)
         let skipPct = Double(counts.skip) / Double(total)
-        let solidPct = Double(counts.solid) / Double(total)
+        let positivePct = Double(counts.great + counts.mustSee) / Double(total)
 
-        if mustSeePct > 0.6 {
+        if mustSeePct > 0.5 {
             return "Generous — \(Int(mustSeePct * 100))% of their places are Must-See"
         } else if skipPct > 0.4 {
             return "High standards — only the best make the cut"
         } else if mustSeePct < 0.15 && total >= 3 {
             return "A discerning palate — saves Must-See for the truly special"
-        } else if abs(solidPct - mustSeePct) < 0.1 && abs(solidPct - skipPct) < 0.1 && total >= 3 {
-            return "A balanced critic — appreciates the full spectrum"
-        } else if solidPct > 0.5 {
+        } else if positivePct > 0.6 && total >= 3 {
             return "Finds the good in most places — a true optimist"
         } else {
             return "Every place tells a story"
@@ -599,10 +599,15 @@ struct OtherUserProfileView: View {
                                 .fill(SonderColors.ratingSkip)
                                 .frame(width: geo.size.width * Double(skipCount) / Double(total))
                         }
-                        if solidCount > 0 {
+                        if okayCount > 0 {
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(SonderColors.ratingSolid)
-                                .frame(width: geo.size.width * Double(solidCount) / Double(total))
+                                .fill(SonderColors.ratingOkay)
+                                .frame(width: geo.size.width * Double(okayCount) / Double(total))
+                        }
+                        if greatCount > 0 {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(SonderColors.ratingGreat)
+                                .frame(width: geo.size.width * Double(greatCount) / Double(total))
                         }
                         if mustSeeCount > 0 {
                             RoundedRectangle(cornerRadius: 4)
@@ -615,9 +620,10 @@ struct OtherUserProfileView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
                 // Legend
-                HStack(spacing: SonderSpacing.md) {
+                HStack(spacing: SonderSpacing.sm) {
                     ratingLegendItem(emoji: "👎", count: skipCount, color: SonderColors.ratingSkip)
-                    ratingLegendItem(emoji: "👍", count: solidCount, color: SonderColors.ratingSolid)
+                    ratingLegendItem(emoji: "👌", count: okayCount, color: SonderColors.ratingOkay)
+                    ratingLegendItem(emoji: "⭐", count: greatCount, color: SonderColors.ratingGreat)
                     ratingLegendItem(emoji: "🔥", count: mustSeeCount, color: SonderColors.ratingMustSee)
                 }
             }

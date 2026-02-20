@@ -65,9 +65,14 @@ final class WantToGoService {
     /// Add a place to Want to Go list.
     /// Writes to SwiftData immediately, then pushes to Supabase.
     /// Data survives app kill; unsynced adds are pushed on next sync.
-    func addToWantToGo(placeID: String, userID: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil, sourceLogID: String? = nil) async throws {
+    /// When `listID` is nil, the place is saved without a list assignment.
+    func addToWantToGo(placeID: String, userID: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil, sourceLogID: String? = nil, listID: String? = nil) async throws {
         // Check if already saved
-        guard !isInWantToGo(placeID: placeID, userID: userID) else { return }
+        if let listID {
+            guard !isInList(placeID: placeID, userID: userID, listID: listID) else { return }
+        } else {
+            guard !isInWantToGo(placeID: placeID, userID: userID) else { return }
+        }
 
         let item = WantToGo(
             userID: userID,
@@ -75,7 +80,8 @@ final class WantToGoService {
             placeName: placeName,
             placeAddress: placeAddress,
             photoReference: photoReference,
-            sourceLogID: sourceLogID
+            sourceLogID: sourceLogID,
+            listID: listID
         )
 
         // Cancel any pending remote deletion for this place
@@ -98,35 +104,40 @@ final class WantToGoService {
     }
 
     /// Remove a place from Want to Go list.
-    /// Deletes from SwiftData immediately, then deletes from Supabase.
-    /// Pending deletion is persisted so it survives app kill.
-    func removeFromWantToGo(placeID: String, userID: String) async throws {
+    /// When `listID` is nil, removes from ALL lists (preserves auto-remove-on-log behavior).
+    /// When `listID` is provided, removes only from that specific list.
+    func removeFromWantToGo(placeID: String, userID: String, listID: String? = nil) async throws {
         // Local first — immediate UI update
-        removeLocalBookmark(placeID: placeID, userID: userID)
+        removeLocalBookmark(placeID: placeID, userID: userID, listID: listID)
 
         // Track for remote deletion (persisted across app restarts)
-        addPendingDeletion(placeID)
+        let deletionKey = pendingDeletionKey(placeID: placeID, listID: listID)
+        addPendingDeletion(deletionKey)
 
         // Then delete from Supabase (failure is non-fatal; retried on next sync)
         do {
-            try await supabase
+            var query = supabase
                 .from("want_to_go")
                 .delete()
                 .eq("user_id", value: userID)
                 .eq("place_id", value: placeID)
-                .execute()
-            removePendingDeletion(placeID)
+            if let listID {
+                query = query.eq("list_id", value: listID)
+            }
+            try await query.execute()
+            removePendingDeletion(deletionKey)
         } catch {
             logger.warning("WTG remote delete deferred: \(error.localizedDescription)")
         }
     }
 
-    /// Toggle want-to-go status for a place
-    func toggleWantToGo(placeID: String, userID: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil, sourceLogID: String? = nil) async throws {
+    /// Toggle want-to-go status for a place.
+    /// When `listID` is nil, toggles against the default list.
+    func toggleWantToGo(placeID: String, userID: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil, sourceLogID: String? = nil, listID: String? = nil) async throws {
         if isInWantToGo(placeID: placeID, userID: userID) {
             try await removeFromWantToGo(placeID: placeID, userID: userID)
         } else {
-            try await addToWantToGo(placeID: placeID, userID: userID, placeName: placeName, placeAddress: placeAddress, photoReference: photoReference, sourceLogID: sourceLogID)
+            try await addToWantToGo(placeID: placeID, userID: userID, placeName: placeName, placeAddress: placeAddress, photoReference: photoReference, sourceLogID: sourceLogID, listID: listID)
         }
     }
 
@@ -147,21 +158,6 @@ final class WantToGoService {
             return (try? modelContext.fetch(descriptor).first) != nil
         }
         return items.contains { $0.placeID == placeID && $0.userID == userID }
-    }
-
-    // MARK: - Fetch List
-
-    /// Get the user's Want to Go list
-    func getWantToGoList(for userID: String) -> [WantToGo] {
-        let userIDCopy = userID
-        let descriptor = FetchDescriptor<WantToGo>(
-            predicate: #Predicate { item in
-                item.userID == userIDCopy
-            },
-            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
-        )
-
-        return (try? modelContext.fetch(descriptor)) ?? []
     }
 
     /// Refresh the cached items list
@@ -197,21 +193,82 @@ final class WantToGoService {
     }
 
     /// Removes a bookmark from the local SwiftData store and updates the cached items array.
-    func removeLocalBookmark(placeID: String, userID: String) {
+    /// When `listID` is nil, removes ALL bookmarks for this place (all lists).
+    /// When `listID` is provided, removes only from that specific list.
+    func removeLocalBookmark(placeID: String, userID: String, listID: String? = nil) {
         let userIDCopy = userID
         let placeIDCopy = placeID
-        let descriptor = FetchDescriptor<WantToGo>(
-            predicate: #Predicate { item in
-                item.userID == userIDCopy && item.placeID == placeIDCopy
+
+        if let listID {
+            let listIDCopy = listID
+            let descriptor = FetchDescriptor<WantToGo>(
+                predicate: #Predicate { item in
+                    item.userID == userIDCopy && item.placeID == placeIDCopy && item.listID == listIDCopy
+                }
+            )
+            if let cached = try? modelContext.fetch(descriptor).first {
+                modelContext.delete(cached)
+                try? modelContext.save()
             }
-        )
-
-        if let cached = try? modelContext.fetch(descriptor).first {
-            modelContext.delete(cached)
-            try? modelContext.save()
+            items.removeAll { $0.placeID == placeID && $0.userID == userID && $0.listID == listID }
+        } else {
+            // Remove from ALL lists
+            let descriptor = FetchDescriptor<WantToGo>(
+                predicate: #Predicate { item in
+                    item.userID == userIDCopy && item.placeID == placeIDCopy
+                }
+            )
+            if let cached = try? modelContext.fetch(descriptor) {
+                for item in cached {
+                    modelContext.delete(item)
+                }
+                try? modelContext.save()
+            }
+            items.removeAll { $0.placeID == placeID && $0.userID == userID }
         }
+    }
 
-        items.removeAll { $0.placeID == placeID && $0.userID == userID }
+    // MARK: - List-scoped Queries
+
+    /// Check if a place is in a specific list
+    func isInList(placeID: String, userID: String, listID: String) -> Bool {
+        items.contains { $0.placeID == placeID && $0.userID == userID && $0.listID == listID }
+    }
+
+    /// Returns list IDs containing this place
+    func listsContaining(placeID: String, userID: String) -> [String] {
+        items.filter { $0.placeID == placeID && $0.userID == userID }.compactMap(\.listID)
+    }
+
+    /// Get the user's Want to Go list, optionally filtered by listID
+    func getWantToGoList(for userID: String, listID: String? = nil) -> [WantToGo] {
+        let userIDCopy = userID
+        if let listID {
+            let listIDCopy = listID
+            let descriptor = FetchDescriptor<WantToGo>(
+                predicate: #Predicate { item in
+                    item.userID == userIDCopy && item.listID == listIDCopy
+                },
+                sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+            )
+            return (try? modelContext.fetch(descriptor)) ?? []
+        } else {
+            let descriptor = FetchDescriptor<WantToGo>(
+                predicate: #Predicate { item in
+                    item.userID == userIDCopy
+                },
+                sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+            )
+            return (try? modelContext.fetch(descriptor)) ?? []
+        }
+    }
+
+    /// Pending deletion key format: "placeID" for all-lists, "placeID::listID" for list-scoped
+    private func pendingDeletionKey(placeID: String, listID: String?) -> String {
+        if let listID {
+            return "\(placeID)::\(listID)"
+        }
+        return placeID
     }
 
     // MARK: - Sync
@@ -279,25 +336,30 @@ struct WantToGoWithPlace: Identifiable {
     let wantToGo: WantToGo
     let place: FeedItem.FeedPlace
     let sourceUser: FeedItem.FeedUser?
+    let listID: String
+    let listName: String?
 
     /// Convenience accessor for creation date
     var createdAt: Date {
         wantToGo.createdAt
     }
 
-    init(wantToGo: WantToGo, place: FeedItem.FeedPlace, sourceUser: FeedItem.FeedUser? = nil) {
+    init(wantToGo: WantToGo, place: FeedItem.FeedPlace, sourceUser: FeedItem.FeedUser? = nil, listID: String = "", listName: String? = nil) {
         self.id = wantToGo.id
         self.wantToGo = wantToGo
         self.place = place
         self.sourceUser = sourceUser
+        self.listID = listID
+        self.listName = listName
     }
 }
 
 // MARK: - Extended Service Methods
 
 extension WantToGoService {
-    /// Fetch want-to-go list with place details from Supabase
-    func fetchWantToGoWithPlaces(for userID: String) async throws -> [WantToGoWithPlace] {
+    /// Fetch want-to-go list with place details from Supabase.
+    /// When `listID` is provided, filters to that list. When nil, returns all lists.
+    func fetchWantToGoWithPlaces(for userID: String, listID: String? = nil) async throws -> [WantToGoWithPlace] {
         struct WantToGoResponse: Codable {
             let id: String
             let user_id: String
@@ -306,15 +368,21 @@ extension WantToGoService {
             let place_address: String?
             let photo_reference: String?
             let source_log_id: String?
+            let list_id: String?
             let created_at: Date
             let source_log: SourceLog?
+            let saved_list: SavedListRef?
 
             struct SourceLog: Codable {
                 let users: FeedItem.FeedUser
             }
+
+            struct SavedListRef: Codable {
+                let name: String
+            }
         }
 
-        let response: [WantToGoResponse] = try await supabase
+        var query = supabase
             .from("want_to_go")
             .select("""
                 id,
@@ -324,10 +392,16 @@ extension WantToGoService {
                 place_address,
                 photo_reference,
                 source_log_id,
+                list_id,
                 created_at,
-                source_log:logs!want_to_go_source_log_id_fkey(users!logs_user_id_fkey(id, username, avatar_url, is_public))
+                source_log:logs!want_to_go_source_log_id_fkey(users!logs_user_id_fkey(id, username, avatar_url, is_public)),
+                saved_list:saved_lists(name)
             """)
             .eq("user_id", value: userID)
+        if let listID {
+            query = query.eq("list_id", value: listID)
+        }
+        let response: [WantToGoResponse] = try await query
             .order("created_at", ascending: false)
             .execute()
             .value
@@ -341,9 +415,9 @@ extension WantToGoService {
                 placeAddress: item.place_address,
                 photoReference: item.photo_reference,
                 sourceLogID: item.source_log_id,
+                listID: item.list_id ?? "",
                 createdAt: item.created_at
             )
-            // Create a simple FeedPlace from stored data
             let place = FeedItem.FeedPlace(
                 id: item.place_id,
                 name: item.place_name ?? "Unknown Place",
@@ -355,7 +429,9 @@ extension WantToGoService {
             return WantToGoWithPlace(
                 wantToGo: wantToGo,
                 place: place,
-                sourceUser: item.source_log?.users
+                sourceUser: item.source_log?.users,
+                listID: item.list_id ?? "",
+                listName: item.saved_list?.name
             )
         }
     }
@@ -369,11 +445,17 @@ extension WantToGoService {
             let place_name: String?
             let place_address: String?
             let photo_reference: String?
+            let list_id: String?
             let place: PlaceCoord?
+            let saved_list: SavedListRef?
 
             struct PlaceCoord: Codable {
                 let lat: Double
                 let lng: Double
+            }
+
+            struct SavedListRef: Codable {
+                let name: String
             }
         }
 
@@ -388,7 +470,9 @@ extension WantToGoService {
                     place_name,
                     place_address,
                     photo_reference,
-                    place:places(lat, lng)
+                    list_id,
+                    place:places(lat, lng),
+                    saved_list:saved_lists(name)
                 """)
                 .eq("user_id", value: userID)
                 .execute()
@@ -405,7 +489,9 @@ extension WantToGoService {
                         placeName: item.place_name ?? "Saved Place",
                         placeAddress: item.place_address,
                         photoReference: item.photo_reference,
-                        coordinate: CLLocationCoordinate2D(latitude: place.lat, longitude: place.lng)
+                        coordinate: CLLocationCoordinate2D(latitude: place.lat, longitude: place.lng),
+                        listID: item.list_id,
+                        listName: item.saved_list?.name
                     ))
                 } else {
                     missingPlaceIDs.insert(item.place_id)
@@ -427,7 +513,9 @@ extension WantToGoService {
                         placeName: item?.place_name ?? cachedPlace.name,
                         placeAddress: item?.place_address ?? cachedPlace.address,
                         photoReference: item?.photo_reference ?? cachedPlace.photoReference,
-                        coordinate: cachedPlace.coordinate
+                        coordinate: cachedPlace.coordinate,
+                        listID: item?.list_id,
+                        listName: item?.saved_list?.name
                     ))
                 } else {
                     stillMissing.insert(placeID)
@@ -451,7 +539,9 @@ extension WantToGoService {
                         placeName: item?.place_name ?? place.name,
                         placeAddress: item?.place_address ?? place.address,
                         photoReference: item?.photo_reference ?? place.photoReference,
-                        coordinate: place.coordinate
+                        coordinate: place.coordinate,
+                        listID: item?.list_id,
+                        listName: item?.saved_list?.name
                     ))
                     // Cache locally for future use
                     modelContext.insert(place)

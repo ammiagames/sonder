@@ -23,7 +23,7 @@ struct JournalBoardingPassView: View {
     }
 
     private var logsByTripID: [String: [Log]] {
-        Dictionary(grouping: allLogs.filter { $0.tripID != nil }, by: { $0.tripID! })
+        Dictionary(grouping: allLogs.filter { $0.tripID != nil }, by: { $0.tripID ?? "" })
     }
 
     private func logsForTrip(_ trip: Trip) -> [Log] {

@@ -428,7 +428,7 @@ final class TripService {
         let allLogs = try modelContext.fetch(FetchDescriptor<Log>())
         let allTripIDs = Set(try modelContext.fetch(FetchDescriptor<Trip>()).map(\.id))
         let logsToAssign = allLogs.filter {
-            logIDs.contains($0.id) && ($0.hasNoTrip || !allTripIDs.contains($0.tripID!))
+            logIDs.contains($0.id) && ($0.tripID.map { !allTripIDs.contains($0) } ?? true)
         }
 
         for log in logsToAssign {

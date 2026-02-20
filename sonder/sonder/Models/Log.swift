@@ -10,21 +10,24 @@ import SwiftData
 
 enum Rating: String, Codable, CaseIterable {
     case skip = "skip"
-    case solid = "solid"
+    case okay = "okay"
+    case great = "great"
     case mustSee = "must_see"
-    
+
     var emoji: String {
         switch self {
-        case .skip: return "👎"
-        case .solid: return "👍"
+        case .skip: return "💤"
+        case .okay: return "👌"
+        case .great: return "💛"
         case .mustSee: return "🔥"
         }
     }
-    
+
     var displayName: String {
         switch self {
         case .skip: return "Skip"
-        case .solid: return "Solid"
+        case .okay: return "Okay"
+        case .great: return "Great"
         case .mustSee: return "Must-See"
         }
     }
@@ -32,8 +35,21 @@ enum Rating: String, Codable, CaseIterable {
     var subtitle: String {
         switch self {
         case .skip: return "Wouldn't recommend"
-        case .solid: return "Good, would go again"
+        case .okay: return "Fine, nothing remarkable"
+        case .great: return "Impressed, would recommend"
         case .mustSee: return "Go out of your way"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        if raw == "solid" {
+            self = .okay
+        } else if let value = Rating(rawValue: raw) {
+            self = value
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown rating: \(raw)")
         }
     }
 }

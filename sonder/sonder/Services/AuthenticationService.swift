@@ -114,6 +114,8 @@ final class AuthenticationService {
             existing.bio = user.bio
             existing.isPublic = user.isPublic
             existing.pinnedPlaceIDs = user.pinnedPlaceIDs
+            existing.phoneNumber = user.phoneNumber
+            existing.phoneNumberHash = user.phoneNumberHash
             existing.updatedAt = user.updatedAt
         } else {
             ctx.insert(user)

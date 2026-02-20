@@ -20,8 +20,9 @@ struct LogConfirmationView: View {
     @State private var contentScale: CGFloat = 0.6
     @State private var showParticles = false
     @State private var showNudge = false
+    @State private var message: String = ""
 
-    private let messages = [
+    private static let messages = [
         "Another one for the journal",
         "Memory saved",
         "Noted and logged",
@@ -29,16 +30,15 @@ struct LogConfirmationView: View {
         "One more for the books",
     ]
 
-    private var randomMessage: String {
-        messages[Int.random(in: 0..<messages.count)]
-    }
-
     var body: some View {
         ZStack {
-            // Warm gradient background
+            // Opaque base so the overlay fully covers content behind it
+            SonderColors.cream.ignoresSafeArea()
+
+            // Warm gradient accent on top
             LinearGradient(
                 colors: [
-                    SonderColors.cream,
+                    Color.clear,
                     SonderColors.ochre.opacity(0.25),
                     SonderColors.terracotta.opacity(0.15),
                 ],
@@ -76,7 +76,7 @@ struct LogConfirmationView: View {
                         .font(SonderTypography.largeTitle)
                         .foregroundStyle(SonderColors.inkDark)
 
-                    Text(randomMessage)
+                    Text(message)
                         .font(SonderTypography.subheadline)
                         .foregroundStyle(SonderColors.inkMuted)
                 }
@@ -121,6 +121,9 @@ struct LogConfirmationView: View {
             }
         }
         .onAppear {
+            // Pick a stable message once
+            message = Self.messages.randomElement() ?? Self.messages[0]
+
             let notificationFeedback = UINotificationFeedbackGenerator()
             notificationFeedback.notificationOccurred(.success)
 

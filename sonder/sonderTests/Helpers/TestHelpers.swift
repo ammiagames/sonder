@@ -15,7 +15,7 @@ func makeTestModelContainer() throws -> ModelContainer {
     return try ModelContainer(
         for: User.self, Place.self, Log.self, Trip.self,
         TripInvitation.self, Follow.self, WantToGo.self, RecentSearch.self,
-        PhotoLocationIndex.self,
+        PhotoLocationIndex.self, SavedList.self,
         configurations: config
     )
 }

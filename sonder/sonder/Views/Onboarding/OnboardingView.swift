@@ -4,20 +4,17 @@
 //
 
 import SwiftUI
-import SwiftData
 
-/// 4-step onboarding container: Welcome → Profile → Log → Friends
+/// 2-step onboarding container: Profile → Friends
 struct OnboardingView: View {
-    let onComplete: (OnboardingResult) -> Void
+    let onComplete: () -> Void
 
     @State private var currentStep = 0
-    @State private var didLogPlace = false
-    @State private var didFollowSomeone = false
 
     /// Tracks whether to animate forward or backward
     @State private var isForward = true
 
-    private let totalSteps = 4
+    private let totalSteps = 2
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,30 +25,12 @@ struct OnboardingView: View {
             ZStack {
                 switch currentStep {
                 case 0:
-                    OnboardingWelcomeStep {
-                        goForward()
-                    }
-                    .transition(slideTransition)
-
-                case 1:
                     OnboardingProfileStep {
                         goForward()
                     }
                     .transition(slideTransition)
 
-                case 2:
-                    OnboardingLogStep(
-                        onContinue: {
-                            didLogPlace = true
-                            goForward()
-                        },
-                        onSkip: {
-                            goForward()
-                        }
-                    )
-                    .transition(slideTransition)
-
-                case 3:
+                case 1:
                     OnboardingFriendsStep {
                         finish()
                     }
@@ -131,16 +110,6 @@ struct OnboardingView: View {
     }
 
     private func finish() {
-        let result = OnboardingResult(
-            didLogPlace: didLogPlace,
-            didFollowSomeone: didFollowSomeone
-        )
-        onComplete(result)
+        onComplete()
     }
-}
-
-/// Result of the onboarding flow — used to decide initial tab
-struct OnboardingResult {
-    let didLogPlace: Bool
-    let didFollowSomeone: Bool
 }

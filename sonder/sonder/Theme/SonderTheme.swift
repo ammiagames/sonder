@@ -53,8 +53,11 @@ enum SonderColors {
     /// Skip - muted, neutral stone
     static let ratingSkip = Color(red: 0.62, green: 0.60, blue: 0.56)
 
-    /// Solid - reliable sage
-    static let ratingSolid = Color(red: 0.55, green: 0.65, blue: 0.52)
+    /// Okay - reliable sage green
+    static let ratingOkay = Color(red: 0.55, green: 0.65, blue: 0.52)
+
+    /// Great - golden ochre
+    static let ratingGreat = Color(red: 0.82, green: 0.68, blue: 0.38)
 
     /// Must See - exciting terracotta/amber
     static let ratingMustSee = Color(red: 0.85, green: 0.55, blue: 0.35)
@@ -71,7 +74,8 @@ enum SonderColors {
     static func pinColor(for rating: Rating) -> Color {
         switch rating {
         case .skip: return ratingSkip
-        case .solid: return ratingSolid
+        case .okay: return ratingOkay
+        case .great: return ratingGreat
         case .mustSee: return ratingMustSee
         }
     }

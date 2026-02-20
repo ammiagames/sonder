@@ -117,7 +117,7 @@ struct FeedView: View {
     private var greetingText: String {
         let hour = Calendar.current.component(.hour, from: Date())
         let firstName = authService.currentUser?.firstName
-        let name = (firstName != nil && !firstName!.isEmpty) ? firstName! : "traveler"
+        let name = firstName?.isEmpty == false ? firstName! : "traveler"
         switch hour {
         case 5..<12: return "Good morning, \(name)"
         case 12..<17: return "Good afternoon, \(name)"

@@ -19,6 +19,7 @@ final class WantToGo {
     var placeAddress: String?
     var photoReference: String?
     var sourceLogID: String?
+    var listID: String?
     var createdAt: Date
 
     init(
@@ -29,6 +30,7 @@ final class WantToGo {
         placeAddress: String? = nil,
         photoReference: String? = nil,
         sourceLogID: String? = nil,
+        listID: String? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -38,6 +40,7 @@ final class WantToGo {
         self.placeAddress = placeAddress
         self.photoReference = photoReference
         self.sourceLogID = sourceLogID
+        self.listID = listID
         self.createdAt = createdAt
     }
 }
@@ -52,6 +55,7 @@ extension WantToGo: Codable {
         case placeAddress = "place_address"
         case photoReference = "photo_reference"
         case sourceLogID = "source_log_id"
+        case listID = "list_id"
         case createdAt = "created_at"
     }
 
@@ -64,6 +68,7 @@ extension WantToGo: Codable {
         let placeAddress = try container.decodeIfPresent(String.self, forKey: .placeAddress)
         let photoReference = try container.decodeIfPresent(String.self, forKey: .photoReference)
         let sourceLogID = try container.decodeIfPresent(String.self, forKey: .sourceLogID)
+        let listID = try container.decodeIfPresent(String.self, forKey: .listID)
         let createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         self.init(
             id: id,
@@ -73,6 +78,7 @@ extension WantToGo: Codable {
             placeAddress: placeAddress,
             photoReference: photoReference,
             sourceLogID: sourceLogID,
+            listID: listID,
             createdAt: createdAt
         )
     }
@@ -86,6 +92,7 @@ extension WantToGo: Codable {
         try container.encodeIfPresent(placeAddress, forKey: .placeAddress)
         try container.encodeIfPresent(photoReference, forKey: .photoReference)
         try container.encodeIfPresent(sourceLogID, forKey: .sourceLogID)
+        try container.encodeIfPresent(listID, forKey: .listID)
         try container.encode(createdAt, forKey: .createdAt)
     }
 }

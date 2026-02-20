@@ -107,16 +107,17 @@ struct TripDetailView: View {
         return max(1, Set(tripLogs.map { Calendar.current.startOfDay(for: $0.createdAt) }).count)
     }
 
-    private var ratingCounts: (mustSee: Int, solid: Int, skip: Int) {
-        var mustSee = 0, solid = 0, skip = 0
+    private var ratingCounts: (mustSee: Int, great: Int, okay: Int, skip: Int) {
+        var mustSee = 0, great = 0, okay = 0, skip = 0
         for log in tripLogs {
             switch log.rating {
             case .mustSee: mustSee += 1
-            case .solid: solid += 1
+            case .great: great += 1
+            case .okay: okay += 1
             case .skip: skip += 1
             }
         }
-        return (mustSee, solid, skip)
+        return (mustSee, great, okay, skip)
     }
 
     var body: some View {
@@ -650,7 +651,7 @@ struct TripDetailView: View {
             }
             .navigationDestination(isPresented: $showRouteLogDetail) {
                 if let log = routeDetailLog, let place = routeDetailPlace {
-                    LogDetailView(log: log, place: place)
+                    LogViewScreen(log: log, place: place)
                 }
             }
         }
@@ -1071,7 +1072,7 @@ struct TripDetailView: View {
                     ForEach(Array(tripLogs.enumerated()), id: \.element.id) { index, log in
                         if let place = placesByID[log.placeID] {
                             NavigationLink {
-                                LogDetailView(log: log, place: place)
+                                LogViewScreen(log: log, place: place)
                             } label: {
                                 EditorialRailEntry(log: log, place: place, stopNumber: index + 1)
                             }
@@ -1143,7 +1144,7 @@ struct TripDetailView: View {
 
                 if let place = placesByID[log.placeID] {
                     NavigationLink {
-                        LogDetailView(log: log, place: place)
+                        LogViewScreen(log: log, place: place)
                     } label: {
                         EditorialRailEntry(log: log, place: place)
                     }
@@ -1310,18 +1311,20 @@ struct TripDetailView: View {
     }
 
     private func dayEndSummaryText(logs: [Log]) -> String {
-        var mustSees = 0, solids = 0, skips = 0
+        var mustSees = 0, greats = 0, okays = 0, skips = 0
         for log in logs {
             switch log.rating {
             case .mustSee: mustSees += 1
-            case .solid: solids += 1
+            case .great: greats += 1
+            case .okay: okays += 1
             case .skip: skips += 1
             }
         }
 
         var parts: [String] = []
         if mustSees > 0 { parts.append("\(mustSees) must-\(mustSees == 1 ? "see" : "sees")") }
-        if solids > 0 { parts.append("\(solids) solid") }
+        if greats > 0 { parts.append("\(greats) great") }
+        if okays > 0 { parts.append("\(okays) okay") }
         if skips > 0 { parts.append("\(skips) \(skips == 1 ? "skip" : "skips")") }
 
         guard !parts.isEmpty else { return "" }
@@ -1543,10 +1546,11 @@ struct TripDetailView: View {
         return sorted.enumerated().map { index, log in
             let x = count == 1 ? size.width / 2 : insetX + usableWidth * CGFloat(index) / CGFloat(count - 1)
 
-            // Map rating to y position: mustSee = top, solid = middle, skip = bottom
+            // Map rating to y position: mustSee = top, skip = bottom
             let yNormalized: CGFloat = switch log.rating {
             case .mustSee: 0.0
-            case .solid: 0.5
+            case .great: 0.3
+            case .okay: 0.6
             case .skip: 1.0
             }
 
@@ -1676,8 +1680,11 @@ struct TripDetailView: View {
                 if ratingCounts.mustSee > 0 {
                     closingRatingRow(emoji: Rating.mustSee.emoji, count: ratingCounts.mustSee, label: "must-sees")
                 }
-                if ratingCounts.solid > 0 {
-                    closingRatingRow(emoji: Rating.solid.emoji, count: ratingCounts.solid, label: "solid finds")
+                if ratingCounts.great > 0 {
+                    closingRatingRow(emoji: Rating.great.emoji, count: ratingCounts.great, label: "great finds")
+                }
+                if ratingCounts.okay > 0 {
+                    closingRatingRow(emoji: Rating.okay.emoji, count: ratingCounts.okay, label: "okay")
                 }
                 if ratingCounts.skip > 0 {
                     closingRatingRow(emoji: Rating.skip.emoji, count: ratingCounts.skip, label: ratingCounts.skip == 1 ? "skip" : "skips")
@@ -1779,11 +1786,13 @@ private struct EditorialRailEntry: View {
     let place: Place
     var stopNumber: Int? = nil
 
+    @State private var photoPageIndex = 0
+
     private let railColumnWidth: CGFloat = 48
     private let nodeSize: CGFloat = 12
 
     private var hasPhoto: Bool {
-        log.photoURL != nil || place.photoReference != nil
+        !log.userPhotoURLs.isEmpty
     }
 
     private var shortAddress: String {
@@ -1813,11 +1822,7 @@ private struct EditorialRailEntry: View {
     }
 
     private var nodeColor: Color {
-        switch log.rating {
-        case .mustSee: return SonderColors.terracotta
-        case .solid: return SonderColors.ratingSolid
-        case .skip: return SonderColors.ratingSkip
-        }
+        SonderColors.pinColor(for: log.rating)
     }
 
     var body: some View {
@@ -1857,24 +1862,33 @@ private struct EditorialRailEntry: View {
             VStack(alignment: .leading, spacing: 0) {
                 // Photo with atmospheric tint
                 if hasPhoto {
-                    ZStack(alignment: .bottomLeading) {
-                        ZStack {
-                            photoView
-                                .frame(maxWidth: .infinity)
-
-                            // Time-of-day atmospheric tint
-                            LinearGradient(
-                                colors: [
-                                    atmosphereTint.color.opacity(atmosphereTint.opacity),
-                                    atmosphereTint.color.opacity(atmosphereTint.opacity * 0.3),
-                                    .clear
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .allowsHitTesting(false)
+                    ZStack(alignment: .topLeading) {
+                        // Photo content: carousel for multi-photo, single image otherwise
+                        Group {
+                            if log.userPhotoURLs.count > 1 {
+                                FeedItemCardShared.photoCarousel(
+                                    photoURLs: log.userPhotoURLs,
+                                    pageIndex: $photoPageIndex,
+                                    height: 200,
+                                    targetImageWidth: 300
+                                )
+                            } else {
+                                photoView
+                                    .frame(maxWidth: .infinity)
+                            }
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+
+                        // Time-of-day atmospheric tint
+                        LinearGradient(
+                            colors: [
+                                atmosphereTint.color.opacity(atmosphereTint.opacity),
+                                atmosphereTint.color.opacity(atmosphereTint.opacity * 0.3),
+                                .clear
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .allowsHitTesting(false)
 
                         // Frosted place name overlay — always visible
                         HStack(spacing: SonderSpacing.xxs) {
@@ -1890,12 +1904,7 @@ private struct EditorialRailEntry: View {
                         .clipShape(Capsule())
                         .padding(SonderSpacing.xs)
                     }
-                } else {
-                    // No photo — terracotta rule + text
-                    Rectangle()
-                        .fill(SonderColors.terracotta.opacity(0.4))
-                        .frame(width: 32, height: 1)
-                        .padding(.bottom, SonderSpacing.xxs)
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                 }
 
                 // Text content
@@ -1948,7 +1957,14 @@ private struct EditorialRailEntry: View {
                         }
                     }
                 }
-                .padding(.top, SonderSpacing.xxs)
+                .padding(hasPhoto ? 0 : SonderSpacing.md)
+                .padding(.top, hasPhoto ? SonderSpacing.xxs : 0)
+                .background {
+                    if !hasPhoto {
+                        RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
+                            .fill(SonderColors.warmGray)
+                    }
+                }
             }
             .padding(.trailing, SonderSpacing.md)
             .padding(.top, SonderSpacing.xxs)

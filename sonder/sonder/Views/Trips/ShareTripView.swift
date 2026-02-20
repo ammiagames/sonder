@@ -17,7 +17,7 @@ struct TripExportData {
     let dateRangeText: String?
     let placeCount: Int
     let dayCount: Int
-    let ratingCounts: (mustSee: Int, solid: Int, skip: Int)
+    let ratingCounts: (mustSee: Int, great: Int, okay: Int, skip: Int)
     let topTags: [String]
     var heroImage: UIImage?
     var logPhotos: [LogPhotoData]
@@ -661,7 +661,7 @@ struct ShareTripView: View {
         let placesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
 
         let sortedLogs = tripLogs.sorted { a, b in
-            let ratingOrder: [Rating: Int] = [.mustSee: 0, .solid: 1, .skip: 2]
+            let ratingOrder: [Rating: Int] = [.mustSee: 0, .great: 1, .okay: 2, .skip: 3]
             let aOrder = ratingOrder[a.rating] ?? 1
             let bOrder = ratingOrder[b.rating] ?? 1
             if aOrder != bOrder { return aOrder < bOrder }
@@ -766,7 +766,8 @@ struct ShareTripView: View {
 
         let ratingCounts = (
             mustSee: tripLogs.filter { $0.rating == .mustSee }.count,
-            solid: tripLogs.filter { $0.rating == .solid }.count,
+            great: tripLogs.filter { $0.rating == .great }.count,
+            okay: tripLogs.filter { $0.rating == .okay }.count,
             skip: tripLogs.filter { $0.rating == .skip }.count
         )
 

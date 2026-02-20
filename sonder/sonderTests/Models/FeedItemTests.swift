@@ -11,7 +11,7 @@ struct FeedItemTests {
 
     @Test func ratingFallback() {
         let item = TestData.feedItem(log: TestData.feedLog(rating: "unknown_value"))
-        #expect(item.rating == .solid) // default fallback
+        #expect(item.rating == .okay) // default fallback
     }
 
     @Test func createdAtDelegation() {

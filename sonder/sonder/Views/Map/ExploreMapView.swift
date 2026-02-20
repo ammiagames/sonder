@@ -103,7 +103,7 @@ struct ExploreMapView: View {
                     if let logID = detailLogID,
                        let log = allLogs.first(where: { $0.id == logID }),
                        let place = detailPlace {
-                        LogDetailView(log: log, place: place, onDelete: {
+                        LogViewScreen(log: log, place: place, onDelete: {
                             showDetail = false
                             detailLogID = nil
                             detailPlace = nil
@@ -327,7 +327,7 @@ struct ExploreMapView: View {
                                 insertion: .move(edge: .top).combined(with: .opacity),
                                 removal: .opacity
                             ))
-                            .padding(.top, 60)
+                            .padding(.top, 10)
                     }
                 }
                 .animation(.easeInOut(duration: 0.35), value: pinDropToast != nil)
@@ -345,24 +345,23 @@ struct ExploreMapView: View {
         Button {
             showFilterSheet = true
         } label: {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: filter.isActive
-                    ? "line.3.horizontal.decrease.circle.fill"
-                    : "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 18))
-                    .foregroundStyle(filter.isActive ? SonderColors.terracotta : SonderColors.inkDark)
-
-                if filter.isActive {
-                    Text("\(filter.activeCount)")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 16, height: 16)
-                        .background(SonderColors.terracotta)
-                        .clipShape(Circle())
-                        .offset(x: 6, y: -6)
+            Image(systemName: filter.isActive
+                ? "line.3.horizontal.decrease.circle.fill"
+                : "line.3.horizontal.decrease.circle")
+                .font(.system(size: 18))
+                .foregroundStyle(filter.isActive ? SonderColors.terracotta : SonderColors.inkDark)
+                .overlay(alignment: .topTrailing) {
+                    if filter.isActive {
+                        Text("\(filter.activeCount)")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 14, height: 14)
+                            .background(SonderColors.terracotta)
+                            .clipShape(Circle())
+                            .offset(x: 4, y: -4)
+                    }
                 }
-            }
-            .toolbarIcon()
+                .toolbarIcon()
         }
     }
 
@@ -462,11 +461,13 @@ struct ExploreMapView: View {
                         .fixedSize()
                 }
             }
-            .padding(.horizontal, isOn ? 8 : 7)
-            .padding(.vertical, isOn ? 5 : 7)
+            .padding(.horizontal, isOn ? 8 : 10)
+            .padding(.vertical, isOn ? 5 : 8)
+            .frame(minWidth: 36, minHeight: 32)
             .background(isOn ? SonderColors.terracotta : Color.clear)
             .foregroundStyle(isOn ? .white : SonderColors.inkMuted)
             .clipShape(Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .animation(.easeInOut(duration: 0.2), value: isOn)
@@ -706,10 +707,15 @@ struct ExploreMapView: View {
             return (pin: pin, isWantToGo: isWtg, identity: pin.id)
         }
 
-        // Standalone WTG pins
+        // Standalone WTG pins (filtered by selected saved list IDs if any)
         let unifiedPlaceIDs = Set(unified.map(\.placeID))
+        let selectedListIDs = filter.selectedSavedListIDs
         let newStandaloneWTG = wantToGoMapItems.filter { item in
-            !unifiedPlaceIDs.contains(item.placeID) && filter.matchesCategories(placeName: item.placeName)
+            guard !unifiedPlaceIDs.contains(item.placeID) && filter.matchesCategories(placeName: item.placeName) else { return false }
+            if !selectedListIDs.isEmpty, let listID = item.listID {
+                return selectedListIDs.contains(listID)
+            }
+            return true
         }
 
         let newWTGIDs = Set(newStandaloneWTG.map(\.id))
@@ -926,16 +932,14 @@ struct ExploreMapView: View {
             showPulseRings = true
         }
 
-        // Show context toast with place name + rating
+        // Show context toast immediately (Supabase insertion already complete)
         if let match {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) {
-                pinDropToast = PinDropToastInfo(
-                    placeName: match.placeName,
-                    ratingEmoji: match.userRating?.emoji ?? "📍"
-                )
-            }
+            pinDropToast = PinDropToastInfo(
+                placeName: match.placeName,
+                ratingEmoji: match.userRating?.emoji ?? "📍"
+            )
             // Dismiss toast
-            DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
                 pinDropToast = nil
             }
         }
@@ -1146,7 +1150,8 @@ struct ExploreMapView: View {
                         let rating = logs.first?.rating
                         switch rating {
                         case .mustSee: color = UIColor(red: 0.85, green: 0.55, blue: 0.35, alpha: 1)
-                        case .solid:   color = UIColor(red: 0.55, green: 0.65, blue: 0.52, alpha: 1)
+                        case .great:   color = UIColor(red: 0.82, green: 0.68, blue: 0.38, alpha: 1)
+                        case .okay:    color = UIColor(red: 0.55, green: 0.65, blue: 0.52, alpha: 1)
                         case .skip:    color = UIColor(red: 0.62, green: 0.60, blue: 0.56, alpha: 1)
                         case .none:    color = UIColor(red: 0.80, green: 0.45, blue: 0.35, alpha: 1)
                         }
@@ -1294,6 +1299,8 @@ struct WantToGoMapItem: Identifiable {
     let placeAddress: String?
     let photoReference: String?
     let coordinate: CLLocationCoordinate2D
+    var listID: String?
+    var listName: String?
 }
 
 // MARK: - Want to Go Sheet Content
@@ -1330,7 +1337,7 @@ struct WantToGoSheetContent: View {
                         Image(systemName: "bookmark.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(SonderColors.wantToGoPin)
-                        Text("On your Want to Go list")
+                        Text("On your \(item.listName ?? "Want to Go") list")
                             .font(SonderTypography.caption)
                             .foregroundStyle(SonderColors.inkMuted)
                     }

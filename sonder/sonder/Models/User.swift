@@ -18,6 +18,8 @@ final class User {
     var bio: String?
     var isPublic: Bool
     var pinnedPlaceIDs: [String]
+    var phoneNumber: String?
+    var phoneNumberHash: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -30,6 +32,8 @@ final class User {
         bio: String? = nil,
         isPublic: Bool = true,
         pinnedPlaceIDs: [String] = [],
+        phoneNumber: String? = nil,
+        phoneNumberHash: String? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -41,6 +45,8 @@ final class User {
         self.bio = bio
         self.isPublic = isPublic
         self.pinnedPlaceIDs = pinnedPlaceIDs
+        self.phoneNumber = phoneNumber
+        self.phoneNumberHash = phoneNumberHash
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -57,6 +63,8 @@ extension User: Codable {
         case bio
         case isPublic = "is_public"
         case pinnedPlaceIDs = "pinned_place_ids"
+        case phoneNumber = "phone_number"
+        case phoneNumberHash = "phone_number_hash"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -71,6 +79,8 @@ extension User: Codable {
         let bio = try container.decodeIfPresent(String.self, forKey: .bio)
         let isPublic = try container.decodeIfPresent(Bool.self, forKey: .isPublic) ?? false
         let pinnedPlaceIDs = try container.decodeIfPresent([String].self, forKey: .pinnedPlaceIDs) ?? []
+        let phoneNumber = try container.decodeIfPresent(String.self, forKey: .phoneNumber)
+        let phoneNumberHash = try container.decodeIfPresent(String.self, forKey: .phoneNumberHash)
         let createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         let updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
         self.init(
@@ -82,6 +92,8 @@ extension User: Codable {
             bio: bio,
             isPublic: isPublic,
             pinnedPlaceIDs: pinnedPlaceIDs,
+            phoneNumber: phoneNumber,
+            phoneNumberHash: phoneNumberHash,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
@@ -97,6 +109,8 @@ extension User: Codable {
         try container.encodeIfPresent(bio, forKey: .bio)
         try container.encode(isPublic, forKey: .isPublic)
         try container.encode(pinnedPlaceIDs, forKey: .pinnedPlaceIDs)
+        try container.encodeIfPresent(phoneNumber, forKey: .phoneNumber)
+        try container.encodeIfPresent(phoneNumberHash, forKey: .phoneNumberHash)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
     }

@@ -8,7 +8,6 @@
 import SwiftUI
 import SwiftData
 import CoreLocation
-import Photos
 import os
 
 private let logger = Logger(subsystem: "com.sonder.app", category: "AddDetailsView")
@@ -48,8 +47,7 @@ struct AddDetailsView: View {
     @State private var tripWasCreatedThisSession = false
     @State private var coverNudgeTrip: Trip?
     @State private var showCoverImagePicker = false
-    @State private var suggestionThumbnails: [String: UIImage] = [:] // asset localIdentifier -> thumbnail
-    @State private var loadingSuggestion: String? = nil
+    @State private var tripSaveError: String?
 
     private let maxPhotos = 5
 
@@ -114,18 +112,21 @@ struct AddDetailsView: View {
         .navigationTitle("Add Details")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(showImagePicker ? .hidden : .automatic, for: .tabBar)
-        .fullScreenCover(isPresented: $showConfirmation) {
-            LogConfirmationView(
-                onDismiss: {
-                    showConfirmation = false
-                    onLogComplete(place.coordinate)
-                },
-                tripName: coverNudgeTrip?.name,
-                onAddCover: {
-                    showConfirmation = false
-                    showCoverImagePicker = true
-                }
-            )
+        .overlay {
+            if showConfirmation {
+                LogConfirmationView(
+                    onDismiss: {
+                        showConfirmation = false
+                        onLogComplete(place.coordinate)
+                    },
+                    tripName: coverNudgeTrip?.name,
+                    onAddCover: {
+                        showConfirmation = false
+                        showCoverImagePicker = true
+                    }
+                )
+                .ignoresSafeArea()
+            }
         }
         .sheet(isPresented: $showCoverImagePicker) {
             EditableImagePicker { image in
@@ -235,7 +236,14 @@ struct AddDetailsView: View {
                     .foregroundStyle(SonderColors.inkLight)
             }
 
-            photoSuggestionsRow
+            PhotoSuggestionsRow(
+                thumbnailSize: 100,
+                canAddMore: selectedImages.count < maxPhotos
+            ) { image in
+                withAnimation(.spring(duration: 0.35, bounce: 0.2)) {
+                    selectedImages.append(IdentifiedImage(image: image))
+                }
+            }
 
             if selectedImages.isEmpty {
                 Button { showImagePicker = true } label: {
@@ -299,147 +307,6 @@ struct AddDetailsView: View {
         }
     }
 
-    // MARK: - Photo Suggestions
-
-    @ViewBuilder
-    private var photoSuggestionsRow: some View {
-        let suggestions = photoSuggestionService.suggestions
-        let authLevel = photoSuggestionService.authorizationLevel
-
-        // Denied state: prompt to open Settings
-        if authLevel == .denied {
-            photoAccessPrompt(
-                icon: "photo.on.rectangle.angled",
-                message: "Allow photo access for nearby suggestions",
-                buttonLabel: "Settings"
-            )
-        }
-        // Limited + no results: hint to upgrade
-        else if authLevel == .limited && suggestions.isEmpty && !photoSuggestionService.isLoading {
-            photoAccessPrompt(
-                icon: "photo.badge.exclamationmark",
-                message: "Allow full access for better suggestions",
-                buttonLabel: "Settings"
-            )
-        }
-        // Loading shimmer
-        else if photoSuggestionService.isLoading && suggestions.isEmpty {
-            VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
-                HStack(spacing: 4) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11))
-                        .foregroundStyle(SonderColors.terracotta)
-                    Text("Finding nearby photos…")
-                        .font(SonderTypography.caption)
-                        .foregroundStyle(SonderColors.inkMuted)
-                }
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: SonderSpacing.xs) {
-                        ForEach(0..<3, id: \.self) { _ in
-                            RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
-                                .fill(SonderColors.warmGray)
-                                .frame(width: 100, height: 100)
-                                .overlay(ShimmerOverlay())
-                                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                        }
-                    }
-                }
-            }
-        }
-        // Actual suggestions
-        else if !suggestions.isEmpty && selectedImages.count < maxPhotos {
-            VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
-                HStack(spacing: 4) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11))
-                        .foregroundStyle(SonderColors.terracotta)
-                    Text("Nearby photos")
-                        .font(SonderTypography.caption)
-                        .foregroundStyle(SonderColors.inkMuted)
-                }
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: SonderSpacing.xs) {
-                        ForEach(suggestions, id: \.localIdentifier) { asset in
-                            Button {
-                                addSuggestion(asset)
-                            } label: {
-                                ZStack(alignment: .bottomTrailing) {
-                                    Group {
-                                        if let thumb = suggestionThumbnails[asset.localIdentifier] {
-                                            Image(uiImage: thumb)
-                                                .resizable()
-                                                .scaledToFill()
-                                        } else {
-                                            Rectangle()
-                                                .fill(SonderColors.warmGray)
-                                        }
-                                    }
-                                    .frame(width: 100, height: 100)
-                                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-
-                                    if loadingSuggestion == asset.localIdentifier {
-                                        ProgressView()
-                                            .tint(.white)
-                                            .frame(width: 100, height: 100)
-                                            .background(.black.opacity(0.3))
-                                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                                    } else {
-                                        Image(systemName: "plus.circle.fill")
-                                            .font(.system(size: 20))
-                                            .foregroundStyle(.white, SonderColors.terracotta)
-                                            .shadow(radius: 2)
-                                            .padding(4)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(loadingSuggestion != nil)
-                            .transition(.scale(scale: 0.5).combined(with: .opacity))
-                            .task {
-                                guard suggestionThumbnails[asset.localIdentifier] == nil else { return }
-                                if let thumb = await photoSuggestionService.loadThumbnail(for: asset) {
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        suggestionThumbnails[asset.localIdentifier] = thumb
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func photoAccessPrompt(icon: String, message: String, buttonLabel: String) -> some View {
-        HStack(spacing: SonderSpacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: 16))
-                .foregroundStyle(SonderColors.inkMuted)
-
-            Text(message)
-                .font(SonderTypography.caption)
-                .foregroundStyle(SonderColors.inkMuted)
-
-            Spacer()
-
-            Button {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            } label: {
-                Text(buttonLabel)
-                    .font(SonderTypography.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(SonderColors.terracotta)
-            }
-        }
-        .padding(SonderSpacing.sm)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-    }
-
     private func fetchPhotoSuggestions() async {
         var tripContext: PhotoSuggestionService.TripContext?
         if let trip = selectedTrip {
@@ -455,26 +322,6 @@ struct AddDetailsView: View {
             near: place.coordinate,
             tripContext: tripContext
         )
-    }
-
-    private func addSuggestion(_ asset: PHAsset) {
-        guard selectedImages.count < maxPhotos, loadingSuggestion == nil else { return }
-        loadingSuggestion = asset.localIdentifier
-
-        Task {
-            if let image = await photoSuggestionService.loadFullImage(for: asset) {
-                withAnimation(.spring(duration: 0.35, bounce: 0.2)) {
-                    if selectedImages.count < maxPhotos {
-                        selectedImages.append(IdentifiedImage(image: image))
-                    }
-                    // Remove this asset from suggestions
-                    photoSuggestionService.suggestions.removeAll { $0.localIdentifier == asset.localIdentifier }
-                    suggestionThumbnails.removeValue(forKey: asset.localIdentifier)
-                }
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            }
-            loadingSuggestion = nil
-        }
     }
 
     // MARK: - Note Section
@@ -630,6 +477,14 @@ struct AddDetailsView: View {
         .sheet(isPresented: $showNewTripSheet) {
             newTripSheet
         }
+        .alert("Couldn't Save Trip", isPresented: Binding(
+            get: { tripSaveError != nil },
+            set: { if !$0 { tripSaveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { tripSaveError = nil }
+        } message: {
+            Text(tripSaveError ?? "An unknown error occurred.")
+        }
     }
 
     private func tripChip(_ trip: Trip) -> some View {
@@ -760,7 +615,13 @@ struct AddDetailsView: View {
         }
 
         modelContext.insert(trip)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.delete(trip)
+            tripSaveError = error.localizedDescription
+            return
+        }
 
         selectedTrip = trip
         tripWasCreatedThisSession = true
@@ -975,40 +836,6 @@ struct AllTripsPickerSheet: View {
     }
 }
 
-// MARK: - Shimmer Overlay
-
-private struct ShimmerOverlay: View {
-    @State private var phase: CGFloat = -1
-
-    var body: some View {
-        GeometryReader { geo in
-            let width = geo.size.width
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: Color.white.opacity(0.25), location: 0.4),
-                    .init(color: Color.white.opacity(0.35), location: 0.5),
-                    .init(color: Color.white.opacity(0.25), location: 0.6),
-                    .init(color: .clear, location: 1),
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: width * 1.5)
-            .offset(x: phase * width * 1.5)
-            .onAppear {
-                withAnimation(
-                    .easeInOut(duration: 1.2)
-                    .repeatForever(autoreverses: false)
-                ) {
-                    phase = 1
-                }
-            }
-        }
-        .clipped()
-    }
-}
-
 #Preview {
     NavigationStack {
         AddDetailsView(
@@ -1019,7 +846,7 @@ private struct ShimmerOverlay: View {
                 latitude: 37.7749,
                 longitude: -122.4194
             ),
-            rating: .solid
+            rating: .okay
         ) { _ in
             logger.debug("Log complete")
         }
