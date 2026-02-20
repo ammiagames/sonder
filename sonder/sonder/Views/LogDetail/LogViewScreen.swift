@@ -12,6 +12,28 @@ import os
 
 private let logger = Logger(subsystem: "com.sonder.app", category: "LogViewScreen")
 
+/// A photo in the edit strip — either a remote URL or a local image with its original.
+private struct EditPhoto: Identifiable {
+    let id = UUID()
+    var source: Source
+    var cropState: CropState?
+    /// When a remote photo is cropped, preserves the original URL so we don't re-upload.
+    var originalURL: String?
+
+    enum Source {
+        case remote(url: String)
+        case local(display: UIImage, original: UIImage)
+    }
+}
+
+/// Persisted crop states for a log, keyed by URL with positional fallback.
+private struct SavedCropStates: Codable {
+    let byURL: [String: CropState]
+    let ordered: [CropState?]
+    var originalURLs: [String: String]?   // displayURL → originalURL
+    var orderedOriginals: [String?]?      // positional: index → originalURL
+}
+
 /// Magazine-spread view for the current user's log with seamless view/edit toggle.
 struct LogViewScreen: View {
     @Environment(GooglePlacesService.self) private var placesService
@@ -22,10 +44,13 @@ struct LogViewScreen: View {
     @Environment(PhotoService.self) private var photoService
     @Environment(AuthenticationService.self) private var authService
     @Environment(PhotoSuggestionService.self) private var photoSuggestionService
+    @Environment(WantToGoService.self) private var wantToGoService
 
     let log: Log
     let place: Place
     var onDelete: (() -> Void)?
+    var isNewLog: Bool = false
+    var onLogComplete: ((CLLocationCoordinate2D) -> Void)? = nil
 
     @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
     @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
@@ -53,9 +78,9 @@ struct LogViewScreen: View {
     @State private var editTags: [String] = []
     @State private var editSelectedTripID: String?
     @State private var editVisitedAt: Date = Date()
-    @State private var editSelectedImages: [UIImage] = []
-    @State private var editOriginalImages: [UIImage] = []  // originals for re-cropping
-    @State private var editCurrentPhotoURLs: [String] = []
+    @State private var editPhotos: [EditPhoto] = []
+    @State private var draggingPhotoID: UUID?
+    @State private var dragOffset: CGFloat = 0
 
     // MARK: - Edit UI state
 
@@ -71,6 +96,7 @@ struct LogViewScreen: View {
     @State private var showCropSheet = false
     @State private var cropSourceImage: UIImage?
     @State private var cropSourceIndex: Int?
+    @State private var cropSourceState: CropState?
     @State private var isDownloadingForCrop = false
 
     // Photo suggestions
@@ -81,6 +107,12 @@ struct LogViewScreen: View {
     @State private var showNewTripAlert = false
     @State private var newTripName = ""
     @State private var showAllTrips = false
+
+    // New-log mode
+    @State private var newLogSaved = false
+    @State private var showNewLogConfirmation = false
+    @State private var coverNudgeTrip: Trip?
+    @State private var showCoverImagePicker = false
 
     private let maxPhotos = 5
     private let maxNoteLength = 280
@@ -135,7 +167,7 @@ struct LogViewScreen: View {
 
     /// Total photo count across existing URLs and newly selected images
     private var editTotalPhotoCount: Int {
-        editCurrentPhotoURLs.count + editSelectedImages.count
+        editPhotos.count
     }
 
     private var editSelectedTripBinding: Binding<Trip?> {
@@ -179,6 +211,9 @@ struct LogViewScreen: View {
     private var mainContent: some View {
         mainContentBody
             .onAppear {
+                if isNewLog && !isEditing {
+                    enterEditMode()
+                }
                 withAnimation(.easeOut(duration: 0.6).delay(0.2)) {
                     contentAppeared = true
                 }
@@ -187,7 +222,7 @@ struct LogViewScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(isEditing)
             .toolbar { toolbarContent }
-            .preference(key: HideTabBarGradientKey.self, value: (isEditing && hasChanges) || showSavedToast)
+            .preference(key: HideTabBarGradientKey.self, value: (isEditing && (hasChanges || isNewLog)) || showSavedToast)
             .overlay { loadingOverlay }
             .modifier(ViewModeSheets(
                 selectedPlaceDetails: $selectedPlaceDetails,
@@ -208,6 +243,7 @@ struct LogViewScreen: View {
                 showCropSheet: $showCropSheet,
                 newTripName: $newTripName,
                 cropSourceImage: cropSourceImage,
+                cropSourceState: cropSourceState,
                 availableTrips: availableTrips,
                 editSelectedTripBinding: editSelectedTripBinding,
                 onDeleteLog: deleteLog,
@@ -218,8 +254,53 @@ struct LogViewScreen: View {
                     showCropSheet = false
                     cropSourceImage = nil
                     cropSourceIndex = nil
+                    cropSourceState = nil
                 }
             ))
+            .overlay {
+                if showNewLogConfirmation {
+                    LogConfirmationView(
+                        onDismiss: {
+                            showNewLogConfirmation = false
+                            onLogComplete?(place.coordinate)
+                        },
+                        tripName: coverNudgeTrip?.name,
+                        onAddCover: {
+                            showNewLogConfirmation = false
+                            showCoverImagePicker = true
+                        }
+                    )
+                    .ignoresSafeArea()
+                }
+            }
+            .sheet(isPresented: $showCoverImagePicker) {
+                EditableImagePicker { image in
+                    showCoverImagePicker = false
+                    if let trip = coverNudgeTrip, let userId = authService.currentUser?.id {
+                        Task {
+                            if let url = await photoService.uploadPhoto(image, for: userId) {
+                                trip.coverPhotoURL = url
+                                trip.updatedAt = Date()
+                                trip.syncStatus = .pending
+                                try? modelContext.save()
+                            }
+                        }
+                    }
+                    coverNudgeTrip = nil
+                    onLogComplete?(place.coordinate)
+                } onCancel: {
+                    showCoverImagePicker = false
+                    coverNudgeTrip = nil
+                    onLogComplete?(place.coordinate)
+                }
+                .ignoresSafeArea()
+            }
+            .onDisappear {
+                if isNewLog && !newLogSaved {
+                    modelContext.delete(log)
+                    try? modelContext.save()
+                }
+            }
             .onChange(of: editableFieldsSnapshot) { _, _ in
                 if isEditing && editModeInitialized {
                     hasChanges = true
@@ -231,19 +312,11 @@ struct LogViewScreen: View {
                     for item in newItems {
                         if let data = try? await item.loadTransferable(type: Data.self),
                            let image = UIImage(data: data) {
-                            editSelectedImages.append(image)
-                            editOriginalImages.append(image)
+                            editPhotos.append(EditPhoto(source: .local(display: image, original: image)))
                         }
                     }
                     hasChanges = true
                     selectedPhotoItems = []
-                }
-            }
-            .onChange(of: log.isDeleted ? [] as [String] : log.photoURLs) { _, newURLs in
-                guard !log.isDeleted else { return }
-                let filtered = newURLs.filter { !$0.contains("googleapis.com") }
-                if isEditing {
-                    editCurrentPhotoURLs = filtered
                 }
             }
     }
@@ -266,7 +339,7 @@ struct LogViewScreen: View {
             .background(SonderColors.cream)
             .scrollContentBackground(.hidden)
 
-            if isEditing || showSavedToast {
+            if isEditing || showSavedToast || (isNewLog && !showNewLogConfirmation) {
                 saveToastOverlay
             }
         }
@@ -323,13 +396,12 @@ struct LogViewScreen: View {
 
     private var editHeroSection: some View {
         Group {
-            if editTotalPhotoCount == 0 {
+            if editPhotos.isEmpty {
                 PhotoPlaceholderView(icon: placeholderIcon, prompt: placeholderPrompt)
             } else {
-                let allPhotos = editCurrentPhotoURLs.count + editSelectedImages.count
-                let index = min(highlightedPhotoIndex, allPhotos - 1)
-                if index < editCurrentPhotoURLs.count {
-                    let urlString = editCurrentPhotoURLs[index]
+                let index = min(highlightedPhotoIndex, editPhotos.count - 1)
+                switch editPhotos[index].source {
+                case .remote(let urlString):
                     if urlString.hasPrefix("pending-upload:") {
                         Rectangle()
                             .fill(SonderColors.warmGray)
@@ -350,16 +422,13 @@ struct LogViewScreen: View {
                         }
                         .clipped()
                     }
-                } else {
-                    let imgIndex = index - editCurrentPhotoURLs.count
-                    if imgIndex < editSelectedImages.count {
-                        Color.clear.overlay {
-                            Image(uiImage: editSelectedImages[imgIndex])
-                                .resizable()
-                                .scaledToFill()
-                        }
-                        .clipped()
+                case .local(let display, _):
+                    Color.clear.overlay {
+                        Image(uiImage: display)
+                            .resizable()
+                            .scaledToFill()
                     }
+                    .clipped()
                 }
             }
         }
@@ -429,24 +498,35 @@ struct LogViewScreen: View {
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: SonderSpacing.xs) {
-                        // Existing remote photo thumbnails
-                        ForEach(Array(editCurrentPhotoURLs.enumerated()), id: \.offset) { index, urlString in
-                            photoThumbnail(combinedIndex: index) {
-                                if let url = URL(string: urlString) {
-                                    DownsampledAsyncImage(url: url, targetSize: CGSize(width: 128, height: 128)) {
-                                        Color(SonderColors.warmGray)
-                                    }
-                                }
-                            }
-                        }
-
-                        // Newly selected image thumbnails
-                        ForEach(Array(editSelectedImages.enumerated()), id: \.offset) { index, image in
-                            photoThumbnail(combinedIndex: editCurrentPhotoURLs.count + index) {
-                                Image(uiImage: image)
-                                    .resizable()
-                                    .scaledToFill()
-                            }
+                        ForEach(Array(editPhotos.enumerated()), id: \.element.id) { index, photo in
+                            photoThumbnail(at: index, photo: photo)
+                                .zIndex(draggingPhotoID == photo.id ? 1 : 0)
+                                .shadow(color: draggingPhotoID == photo.id ? .black.opacity(0.2) : .clear, radius: 6, y: 2)
+                                .offset(x: draggingPhotoID == photo.id ? dragOffset : 0)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.75), value: editPhotos.map(\.id))
+                                .gesture(
+                                    LongPressGesture(minimumDuration: 0.15)
+                                        .sequenced(before: DragGesture())
+                                        .onChanged { value in
+                                            switch value {
+                                            case .second(true, let drag):
+                                                if draggingPhotoID == nil {
+                                                    draggingPhotoID = photo.id
+                                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                                }
+                                                guard draggingPhotoID == photo.id else { return }
+                                                dragOffset = drag?.translation.width ?? 0
+                                                checkPhotoReorder()
+                                            default: break
+                                            }
+                                        }
+                                        .onEnded { _ in
+                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                                draggingPhotoID = nil
+                                                dragOffset = 0
+                                            }
+                                        }
+                                )
                         }
 
                         // Add button (if under limit)
@@ -473,6 +553,7 @@ struct LogViewScreen: View {
 
                     }
                 }
+                .scrollDisabled(draggingPhotoID != nil)
             }
 
             // Collapsible suggestions row
@@ -483,9 +564,8 @@ struct LogViewScreen: View {
                     showEmptyState: suggestionsLoaded
                 ) { image in
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                        editSelectedImages.append(image)
-                        editOriginalImages.append(image)
-                        highlightedPhotoIndex = editCurrentPhotoURLs.count + editSelectedImages.count - 1
+                        editPhotos.append(EditPhoto(source: .local(display: image, original: image)))
+                        highlightedPhotoIndex = editPhotos.count - 1
                     }
                     hasChanges = true
                     // Auto-hide suggestions if at max
@@ -499,38 +579,51 @@ struct LogViewScreen: View {
         }
     }
 
-    private func photoThumbnail<Content: View>(combinedIndex: Int, @ViewBuilder content: () -> Content) -> some View {
+    private func photoThumbnail(at index: Int, photo: EditPhoto) -> some View {
         ZStack(alignment: .topTrailing) {
-            content()
-                .frame(width: 64, height: 64)
-                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-                .overlay(
-                    RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
-                        .stroke(highlightedPhotoIndex == combinedIndex ? SonderColors.terracotta : Color.clear, lineWidth: 2)
-                )
-                .overlay {
-                    if isDownloadingForCrop && cropSourceIndex == combinedIndex {
-                        ProgressView()
-                            .tint(.white)
-                            .frame(width: 64, height: 64)
-                            .background(.black.opacity(0.3))
-                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-                    }
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    if highlightedPhotoIndex == combinedIndex {
-                        openCropSheet(for: combinedIndex)
-                    } else {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            highlightedPhotoIndex = combinedIndex
+            Group {
+                switch photo.source {
+                case .remote(let urlString):
+                    if let url = URL(string: urlString) {
+                        DownsampledAsyncImage(url: url, targetSize: CGSize(width: 128, height: 128)) {
+                            Color(SonderColors.warmGray)
                         }
                     }
+                case .local(let display, _):
+                    Image(uiImage: display)
+                        .resizable()
+                        .scaledToFill()
                 }
+            }
+            .frame(width: 64, height: 64)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+            .overlay(
+                RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
+                    .stroke(highlightedPhotoIndex == index ? SonderColors.terracotta : Color.clear, lineWidth: 2)
+            )
+            .overlay {
+                if isDownloadingForCrop && cropSourceIndex == index {
+                    ProgressView()
+                        .tint(.white)
+                        .frame(width: 64, height: 64)
+                        .background(.black.opacity(0.3))
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if highlightedPhotoIndex == index {
+                    openCropSheet(for: index)
+                } else {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        highlightedPhotoIndex = index
+                    }
+                }
+            }
 
             Button {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    removePhoto(at: combinedIndex)
+                    removePhoto(at: index)
                 }
             } label: {
                 Image(systemName: "xmark.circle.fill")
@@ -540,6 +633,21 @@ struct LogViewScreen: View {
             }
             .offset(x: 6, y: -6)
         }
+    }
+
+    private func checkPhotoReorder() {
+        guard let id = draggingPhotoID,
+              let currentIndex = editPhotos.firstIndex(where: { $0.id == id }) else { return }
+        let itemWidth: CGFloat = 64 + 8 // thumbnail + spacing
+        // Only swap when dragged past half the item width
+        let steps = Int(round(dragOffset / itemWidth))
+        guard steps != 0 else { return }
+        let targetIndex = min(max(currentIndex + steps, 0), editPhotos.count - 1)
+        guard currentIndex != targetIndex else { return }
+        editPhotos.move(fromOffsets: IndexSet(integer: currentIndex), toOffset: targetIndex > currentIndex ? targetIndex + 1 : targetIndex)
+        dragOffset -= CGFloat(steps) * itemWidth
+        hasChanges = true
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
     private var noPhotoHero: some View {
@@ -640,7 +748,9 @@ struct LogViewScreen: View {
         editTripSection
         sectionDivider
         editMetaSection
-        editDeleteSection
+        if !isNewLog {
+            editDeleteSection
+        }
     }
 
     // MARK: - View-mode Sections
@@ -997,7 +1107,7 @@ struct LogViewScreen: View {
                 .background(SonderColors.warmGray)
                 .clipShape(Capsule())
                 .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
-            } else if hasChanges {
+            } else if hasChanges || isNewLog {
                 Button {
                     save()
                 } label: {
@@ -1028,17 +1138,25 @@ struct LogViewScreen: View {
         if isEditing {
             ToolbarItem(placement: .navigation) {
                 Button {
-                    if hasChanges {
-                        showDiscardAlert = true
+                    if isNewLog {
+                        if hasChanges {
+                            showDiscardAlert = true
+                        } else {
+                            cancelNewLog()
+                        }
                     } else {
-                        exitEditMode()
+                        if hasChanges {
+                            showDiscardAlert = true
+                        } else {
+                            exitEditMode()
+                        }
                     }
                 } label: {
                     Text("Cancel")
                         .foregroundStyle(SonderColors.inkMuted)
                 }
             }
-            if !hasChanges {
+            if !isNewLog && !hasChanges {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         exitEditMode()
@@ -1083,9 +1201,18 @@ struct LogViewScreen: View {
         editTags = log.tags
         editSelectedTripID = log.tripID
         editVisitedAt = log.visitedAt
-        editCurrentPhotoURLs = log.userPhotoURLs
-        editSelectedImages = []
-        editOriginalImages = []
+        let savedStates = loadCropStates()
+        editPhotos = log.userPhotoURLs.enumerated().map { index, url in
+            var photo = EditPhoto(source: .remote(url: url))
+            if let saved = savedStates {
+                photo.cropState = saved.byURL[url] ?? (index < saved.ordered.count ? saved.ordered[index] : nil)
+                photo.originalURL = saved.originalURLs?[url] ?? {
+                    guard let arr = saved.orderedOriginals, index < arr.count else { return nil }
+                    return arr[index]
+                }()
+            }
+            return photo
+        }
         selectedPhotoItems = []
         highlightedPhotoIndex = 0
         hasChanges = false
@@ -1109,9 +1236,20 @@ struct LogViewScreen: View {
         showSuggestions = false
         photoSuggestionService.clearSuggestions()
         suggestionsLoaded = false
-        withAnimation(.easeInOut(duration: 0.35)) {
-            isEditing = false
+        editPhotos = []
+        if isNewLog {
+            // For new logs, exiting edit mode means discarding — dismiss to trigger onDisappear cleanup
+            dismiss()
+        } else {
+            withAnimation(.easeInOut(duration: 0.35)) {
+                isEditing = false
+            }
         }
+    }
+
+    private func cancelNewLog() {
+        editPhotos = []
+        dismiss()
     }
 
     // MARK: - Actions
@@ -1121,14 +1259,30 @@ struct LogViewScreen: View {
 
         isNoteFocused = false
 
+        // Separate remote URLs and local images, preserving order
+        var finalPhotoURLs: [String] = []
+        var imagesToUpload: [UIImage] = []
+        var uploadSlots: [Int] = []
+
+        for photo in editPhotos {
+            switch photo.source {
+            case .remote(let url):
+                finalPhotoURLs.append(url)
+            case .local(let display, let original):
+                // Always upload — cropped display or uncropped original
+                uploadSlots.append(finalPhotoURLs.count)
+                finalPhotoURLs.append("")
+                imagesToUpload.append(photo.cropState != nil ? display : original)
+            }
+        }
+
         // Queue new photos for background upload
-        var newURLs: [String] = []
-        if !editSelectedImages.isEmpty {
+        if !imagesToUpload.isEmpty {
             let logID = log.id
             let context = modelContext
             let engine = syncEngine
-            newURLs = photoService.queueBatchUpload(
-                images: editSelectedImages,
+            let newURLs = photoService.queueBatchUpload(
+                images: imagesToUpload,
                 for: userId,
                 logID: logID
             ) { results in
@@ -1148,11 +1302,44 @@ struct LogViewScreen: View {
                 log.updatedAt = Date()
                 try? context.save()
 
+                // Update crop state keys from pending-upload to real URLs
+                if let cropData = UserDefaults.standard.data(forKey: "cropStates:\(idToFind)"),
+                   let saved = try? JSONDecoder().decode(SavedCropStates.self, from: cropData) {
+                    var updatedByURL = saved.byURL
+                    var updatedOriginalURLs = saved.originalURLs ?? [:]
+                    let currentURLs = log.photoURLs
+
+                    for (i, entry) in saved.ordered.enumerated() {
+                        guard i < currentURLs.count else { continue }
+                        let url = currentURLs[i]
+                        guard !url.hasPrefix("pending-upload:") else { continue }
+                        if let state = entry { updatedByURL[url] = state }
+                        if let orderedOriginals = saved.orderedOriginals,
+                           i < orderedOriginals.count,
+                           let orig = orderedOriginals[i] {
+                            updatedOriginalURLs[url] = orig
+                        }
+                    }
+
+                    let updated = SavedCropStates(
+                        byURL: updatedByURL, ordered: saved.ordered,
+                        originalURLs: updatedOriginalURLs, orderedOriginals: saved.orderedOriginals
+                    )
+                    if let data = try? JSONEncoder().encode(updated) {
+                        UserDefaults.standard.set(data, forKey: "cropStates:\(idToFind)")
+                    }
+                }
+
                 Task { await engine.syncNow() }
             }
-        }
 
-        let finalPhotoURLs = editCurrentPhotoURLs + newURLs
+            // Fill pending-upload URLs at the correct positions
+            for (i, slot) in uploadSlots.enumerated() {
+                if i < newURLs.count {
+                    finalPhotoURLs[slot] = newURLs[i]
+                }
+            }
+        }
 
         let trimmedNote = editNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedTags = editTags.compactMap { tag -> String? in
@@ -1172,46 +1359,86 @@ struct LogViewScreen: View {
         do {
             try modelContext.save()
 
-            editCurrentPhotoURLs = finalPhotoURLs
-            editSelectedImages = []
-        editOriginalImages = []
-            hasChanges = false
+            // Persist crop states for next edit session
+            persistCropStates(finalURLs: finalPhotoURLs)
 
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            if isNewLog {
+                newLogSaved = true
 
-            // Exit edit mode and show toast simultaneously
-            isNoteFocused = false
-            editModeInitialized = false
-            withAnimation(.easeInOut(duration: 0.35)) {
-                isEditing = false
-                showSavedToast = true
-            }
-            Task {
-                try? await Task.sleep(for: .seconds(1.5))
-                withAnimation { showSavedToast = false }
-            }
+                // Auto-assign trip cover if needed
+                if let tripID = editSelectedTripID,
+                   let trip = allTrips.first(where: { $0.id == tripID }) {
+                    if trip.coverPhotoURL == nil || (trip.coverPhotoURL?.contains("googleapis.com") == true) {
+                        if let firstLocalPhoto = editPhotos.first(where: { photo in
+                            if case .local = photo.source { return true }
+                            return false
+                        }), case .local(_, let original) = firstLocalPhoto.source {
+                            let tripToUpdate = trip
+                            Task {
+                                if let url = await photoService.uploadPhoto(original, for: userId) {
+                                    tripToUpdate.coverPhotoURL = url
+                                    tripToUpdate.updatedAt = Date()
+                                    tripToUpdate.syncStatus = .pending
+                                    try? modelContext.save()
+                                }
+                            }
+                        } else if trip.coverPhotoURL == nil,
+                                  let ref = place.photoReference,
+                                  let url = GooglePlacesService.photoURL(for: ref) {
+                            trip.coverPhotoURL = url.absoluteString
+                            trip.updatedAt = Date()
+                            trip.syncStatus = .pending
+                            try? modelContext.save()
+                            coverNudgeTrip = trip
+                        }
+                    }
+                }
 
-            if newURLs.isEmpty {
-                Task { await syncEngine.syncNow() }
+                editPhotos = []
+                hasChanges = false
+
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+                // Remove WantToGo bookmark
+                Task { await wantToGoService.removeBookmarkIfLoggedPlace(placeID: place.id, userID: userId) }
+
+                if imagesToUpload.isEmpty {
+                    Task { await syncEngine.syncNow() }
+                }
+
+                showNewLogConfirmation = true
+            } else {
+                editPhotos = []
+                hasChanges = false
+
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+                // Exit edit mode and show toast simultaneously
+                isNoteFocused = false
+                editModeInitialized = false
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    isEditing = false
+                    showSavedToast = true
+                }
+                Task {
+                    try? await Task.sleep(for: .seconds(1.5))
+                    withAnimation { showSavedToast = false }
+                }
+
+                if imagesToUpload.isEmpty {
+                    Task { await syncEngine.syncNow() }
+                }
             }
         } catch {
             logger.error("Failed to save log: \(error.localizedDescription)")
         }
     }
 
-    private func removePhoto(at combinedIndex: Int) {
-        if combinedIndex < editCurrentPhotoURLs.count {
-            editCurrentPhotoURLs.remove(at: combinedIndex)
-        } else {
-            let i = combinedIndex - editCurrentPhotoURLs.count
-            if i < editSelectedImages.count {
-                editSelectedImages.remove(at: i)
-                editOriginalImages.remove(at: i)
-            }
-        }
-        let total = editTotalPhotoCount
-        if highlightedPhotoIndex >= total && total > 0 {
-            highlightedPhotoIndex = total - 1
+    private func removePhoto(at index: Int) {
+        guard index < editPhotos.count else { return }
+        editPhotos.remove(at: index)
+        if highlightedPhotoIndex >= editPhotos.count && !editPhotos.isEmpty {
+            highlightedPhotoIndex = editPhotos.count - 1
         }
         hasChanges = true
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -1219,15 +1446,18 @@ struct LogViewScreen: View {
 
     // MARK: - Crop
 
-    private func openCropSheet(for combinedIndex: Int) {
-        if combinedIndex < editCurrentPhotoURLs.count {
-            let urlString = editCurrentPhotoURLs[combinedIndex]
-            // Skip pending uploads
-            guard !urlString.hasPrefix("pending-upload:"),
-                  let url = URL(string: urlString) else { return }
+    private func openCropSheet(for index: Int) {
+        guard index < editPhotos.count else { return }
+        let photo = editPhotos[index]
 
+        switch photo.source {
+        case .remote(let urlString):
+            let downloadURL = photo.originalURL ?? urlString
+            guard !urlString.hasPrefix("pending-upload:"),
+                  let url = URL(string: downloadURL) else { return }
             isDownloadingForCrop = true
-            cropSourceIndex = combinedIndex
+            cropSourceIndex = index
+            cropSourceState = photo.cropState
             Task {
                 defer { isDownloadingForCrop = false }
                 guard let (data, _) = try? await URLSession.shared.data(from: url),
@@ -1235,36 +1465,33 @@ struct LogViewScreen: View {
                 cropSourceImage = image
                 showCropSheet = true
             }
-        } else {
-            let imgIndex = combinedIndex - editCurrentPhotoURLs.count
-            guard imgIndex < editOriginalImages.count else { return }
-            cropSourceImage = editOriginalImages[imgIndex]
-            cropSourceIndex = combinedIndex
+        case .local(_, let original):
+            cropSourceImage = original
+            cropSourceIndex = index
+            cropSourceState = photo.cropState
             showCropSheet = true
         }
     }
 
-    private func handleCropResult(_ croppedImage: UIImage) {
-        guard let index = cropSourceIndex else { return }
+    private func handleCropResult(_ croppedImage: UIImage, _ state: CropState) {
+        guard let index = cropSourceIndex, index < editPhotos.count else { return }
 
-        if index < editCurrentPhotoURLs.count {
-            // Remote photo: remove URL, append cropped image + keep downloaded original
-            let originalDownloaded = cropSourceImage!
-            editCurrentPhotoURLs.remove(at: index)
-            editSelectedImages.append(croppedImage)
-            editOriginalImages.append(originalDownloaded)
-            highlightedPhotoIndex = editCurrentPhotoURLs.count + editSelectedImages.count - 1
-        } else {
-            // Local photo: replace cropped display version, original stays
-            let imgIndex = index - editCurrentPhotoURLs.count
-            if imgIndex < editSelectedImages.count {
-                editSelectedImages[imgIndex] = croppedImage
-            }
+        switch editPhotos[index].source {
+        case .remote(let urlString):
+            let original = cropSourceImage!
+            // Preserve existing originalURL, or set to current URL (first-time crop)
+            editPhotos[index].originalURL = editPhotos[index].originalURL ?? urlString
+            editPhotos[index].source = .local(display: croppedImage, original: original)
+        case .local(_, let original):
+            // Update display, keep original
+            editPhotos[index].source = .local(display: croppedImage, original: original)
         }
+        editPhotos[index].cropState = state
 
         hasChanges = true
         cropSourceImage = nil
         cropSourceIndex = nil
+        cropSourceState = nil
     }
 
     // MARK: - Photo Suggestions
@@ -1277,9 +1504,45 @@ struct LogViewScreen: View {
         suggestionsLoaded = true
     }
 
+    // MARK: - Crop State Persistence
+
+    private func persistCropStates(finalURLs: [String]) {
+        var byURL: [String: CropState] = [:]
+        var ordered: [CropState?] = []
+        var originalURLs: [String: String] = [:]
+        var orderedOriginals: [String?] = []
+
+        for (i, photo) in editPhotos.enumerated() {
+            ordered.append(photo.cropState)
+            orderedOriginals.append(photo.originalURL)
+            if i < finalURLs.count {
+                let url = finalURLs[i]
+                if !url.isEmpty && !url.hasPrefix("pending-upload:") {
+                    if let state = photo.cropState { byURL[url] = state }
+                    if let orig = photo.originalURL { originalURLs[url] = orig }
+                }
+            }
+        }
+
+        let store = SavedCropStates(
+            byURL: byURL, ordered: ordered,
+            originalURLs: originalURLs, orderedOriginals: orderedOriginals
+        )
+        if let data = try? JSONEncoder().encode(store) {
+            UserDefaults.standard.set(data, forKey: "cropStates:\(log.id)")
+        }
+    }
+
+    private func loadCropStates() -> SavedCropStates? {
+        guard let data = UserDefaults.standard.data(forKey: "cropStates:\(log.id)") else { return nil }
+        return try? JSONDecoder().decode(SavedCropStates.self, from: data)
+    }
+
     private func deleteLog() {
         let logID = log.id
         let engine = syncEngine
+
+        UserDefaults.standard.removeObject(forKey: "cropStates:\(logID)")
 
         // Delete locally first so log.isDeleted becomes true immediately,
         // preventing SwiftUI from accessing stale model properties.
@@ -1375,12 +1638,13 @@ private struct EditModeSheets: ViewModifier {
     @Binding var showCropSheet: Bool
     @Binding var newTripName: String
     let cropSourceImage: UIImage?
+    let cropSourceState: CropState?
     let availableTrips: [Trip]
     let editSelectedTripBinding: Binding<Trip?>
     let onDeleteLog: () -> Void
     let onExitEditMode: () -> Void
     let onCreateTrip: () -> Void
-    let onCropDone: (UIImage) -> Void
+    let onCropDone: (UIImage, CropState) -> Void
     let onCropCancel: () -> Void
 
     func body(content: Content) -> some View {
@@ -1396,14 +1660,17 @@ private struct EditModeSheets: ViewModifier {
                 if let image = cropSourceImage {
                     ImageCropSheet(
                         image: image,
-                        onDone: { cropped in
+                        initialCropState: cropSourceState,
+                        onDone: { cropped, state in
                             showCropSheet = false
-                            onCropDone(cropped)
+                            onCropDone(cropped, state)
                         },
                         onCancel: {
                             onCropCancel()
                         }
                     )
+                    .ignoresSafeArea()
+                    .background(Color(red: 0.14, green: 0.12, blue: 0.11).ignoresSafeArea())
                 }
             }
             .alert("Delete Log", isPresented: $showDeleteAlert) {

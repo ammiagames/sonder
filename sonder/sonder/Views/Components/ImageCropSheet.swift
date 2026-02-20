@@ -8,273 +8,316 @@
 import SwiftUI
 import UIKit
 
-/// Fullscreen Move & Scale crop view using a native UIScrollView for proper
-/// pinch-to-zoom anchoring. The image fills a square crop frame at minimum zoom;
-/// the user can zoom in further and pan, then tap Done to get a cropped UIImage.
-struct ImageCropSheet: View {
+/// Saved zoom/offset so a re-crop starts where the user left off.
+struct CropState: Codable {
+    let zoomScale: CGFloat
+    let contentOffset: CGPoint
+}
+
+/// Fullscreen "Move and Scale" crop sheet backed by a pure-UIKit view controller.
+/// Matches the native iOS crop UX from UIImagePickerController(allowsEditing: true).
+struct ImageCropSheet: UIViewControllerRepresentable {
     let image: UIImage
-    let onDone: (UIImage) -> Void
+    let initialCropState: CropState?
+    let onDone: (UIImage, CropState) -> Void
     let onCancel: () -> Void
 
-    private let cropSize: CGFloat = 300
+    func makeUIViewController(context: Context) -> CropViewController {
+        CropViewController(image: image, initialCropState: initialCropState, onDone: onDone, onCancel: onCancel)
+    }
 
-    var body: some View {
-        GeometryReader { geo in
-            let viewSize = geo.size
-            let safeTop = geo.safeAreaInsets.top
-            let safeBottom = geo.safeAreaInsets.bottom
+    func updateUIViewController(_ vc: CropViewController, context: Context) {}
+}
 
-            ZStack {
-                Color.black
+// MARK: - ScrollViewContainer
 
-                // Native UIScrollView-based zoomable image
-                CropScrollView(image: image, cropSize: cropSize, viewSize: viewSize)
-
-                // Semi-transparent overlay with clear square hole
-                CropOverlayView(cropSize: cropSize, viewSize: viewSize)
-                    .allowsHitTesting(false)
-
-                // Controls
-                VStack {
-                    HStack {
-                        Button("Cancel") { onCancel() }
-                            .foregroundStyle(.white)
-                            .font(.system(size: 17))
-
-                        Spacer()
-
-                        Text("Move and Scale")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.white)
-
-                        Spacer()
-
-                        Text("Cancel").opacity(0)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, safeTop + 12)
-
-                    Spacer()
-
-                    Button {
-                        // Find the scroll view and extract the crop
-                        NotificationCenter.default.post(
-                            name: .cropRequested,
-                            object: nil
-                        )
-                    } label: {
-                        Text("Done")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 40)
-                            .padding(.vertical, 12)
-                            .background(SonderColors.terracotta)
-                            .clipShape(Capsule())
-                    }
-                    .padding(.bottom, safeBottom + 20)
-                }
-            }
-        }
-        .ignoresSafeArea()
-        .statusBarHidden()
-        .onReceive(NotificationCenter.default.publisher(for: .cropCompleted)) { notification in
-            if let cropped = notification.object as? UIImage {
-                onDone(cropped)
-            }
-        }
+/// Forwards all touches to the scroll view so panning/zooming works from
+/// outside the crop rect (i.e. from the dimmed overlay area).
+private class ScrollViewContainer: UIView {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard let scrollView = subviews.first else { return super.hitTest(point, with: event) }
+        let converted = convert(point, to: scrollView)
+        return scrollView.hitTest(converted, with: event) ?? super.hitTest(point, with: event)
     }
 }
 
-// MARK: - Crop Overlay
+// MARK: - CropViewController
 
-private struct CropOverlayView: View {
-    let cropSize: CGFloat
-    let viewSize: CGSize
+/// Pure UIKit crop controller with UIScrollView for native pinch/pan behavior.
+final class CropViewController: UIViewController, UIScrollViewDelegate {
+    private let sourceImage: UIImage
+    private let initialCropState: CropState?
+    private let onDone: (UIImage, CropState) -> Void
+    private let onCancel: () -> Void
 
-    var body: some View {
-        let centerX = viewSize.width / 2
-        let centerY = viewSize.height / 2
-        let half = cropSize / 2
+    private let scrollViewContainer = ScrollViewContainer()
+    private let scrollView = UIScrollView()
+    private let imageView = UIImageView()
+    private let borderView = UIView()
+    private let dimmingView = UIView()
 
-        Canvas { context, size in
-            var path = Path()
-            path.addRect(CGRect(origin: .zero, size: size))
-            path.addRoundedRect(
-                in: CGRect(x: centerX - half, y: centerY - half, width: cropSize, height: cropSize),
-                cornerSize: CGSize(width: 4, height: 4)
-            )
-            context.fill(path, with: .color(.black.opacity(0.55)), style: FillStyle(eoFill: true))
+    private var cropRect: CGRect = .zero
+    private var hasConfigured = false
 
-            let borderRect = CGRect(x: centerX - half, y: centerY - half, width: cropSize, height: cropSize)
-            context.stroke(
-                Path(roundedRect: borderRect, cornerRadius: 4),
-                with: .color(.white.opacity(0.6)),
-                lineWidth: 1
-            )
-        }
-    }
-}
-
-// MARK: - UIScrollView-based Crop View
-
-private struct CropScrollView: UIViewRepresentable {
-    let image: UIImage
-    let cropSize: CGFloat
-    let viewSize: CGSize
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(image: image, cropSize: cropSize)
+    init(image: UIImage, initialCropState: CropState?, onDone: @escaping (UIImage, CropState) -> Void, onCancel: @escaping () -> Void) {
+        self.sourceImage = image
+        self.initialCropState = initialCropState
+        self.onDone = onDone
+        self.onCancel = onCancel
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .fullScreen
     }
 
-    func makeUIView(context: Context) -> UIScrollView {
-        let scrollView = UIScrollView()
-        scrollView.backgroundColor = .clear
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var prefersStatusBarHidden: Bool { true }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        overrideUserInterfaceStyle = .dark
+        setupScrollView()
+        setupDimming()
+        setupBorder()
+        setupControls()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard !hasConfigured else { return }
+        hasConfigured = true
+        configureCrop()
+    }
+
+    // MARK: - Setup
+
+    private func setupScrollView() {
+        scrollView.delegate = self
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.showsVerticalScrollIndicator = false
         scrollView.bounces = true
         scrollView.bouncesZoom = true
-        scrollView.delegate = context.coordinator
+        scrollView.clipsToBounds = false
+        scrollView.backgroundColor = .clear
+        scrollView.decelerationRate = .normal
 
-        let imageView = UIImageView(image: image)
-        imageView.contentMode = .scaleAspectFit
+        imageView.image = sourceImage
+        imageView.contentMode = .scaleToFill
         scrollView.addSubview(imageView)
-        context.coordinator.imageView = imageView
-        context.coordinator.scrollView = scrollView
 
-        // Set up the scroll view frame and zoom after layout
-        DispatchQueue.main.async {
-            configureScrollView(scrollView, imageView: imageView, coordinator: context.coordinator)
-        }
+        scrollViewContainer.backgroundColor = .clear
+        scrollViewContainer.addSubview(scrollView)
+        view.addSubview(scrollViewContainer)
 
-        // Listen for crop request
-        context.coordinator.cropObserver = NotificationCenter.default.addObserver(
-            forName: .cropRequested,
-            object: nil,
-            queue: .main
-        ) { _ in
-            context.coordinator.performCrop()
-        }
-
-        return scrollView
+        // Double-tap to toggle between min and max zoom
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        scrollView.addGestureRecognizer(doubleTap)
     }
 
-    func updateUIView(_ scrollView: UIScrollView, context: Context) {}
+    private func setupDimming() {
+        dimmingView.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+        dimmingView.isUserInteractionEnabled = false
+        view.addSubview(dimmingView)
+    }
 
-    private func configureScrollView(_ scrollView: UIScrollView, imageView: UIImageView, coordinator: Coordinator) {
-        let imgW = image.size.width
-        let imgH = image.size.height
+    private func setupBorder() {
+        borderView.backgroundColor = .clear
+        borderView.layer.borderColor = UIColor.white.withAlphaComponent(0.25).cgColor
+        borderView.layer.borderWidth = 0.5
+        borderView.layer.cornerRadius = 2
+        borderView.isUserInteractionEnabled = false
+        view.addSubview(borderView)
+    }
+
+    private func setupControls() {
+        let titleLabel = UILabel()
+        titleLabel.text = "Move and Scale"
+        titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+        titleLabel.textColor = .white
+        titleLabel.textAlignment = .center
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(titleLabel)
+
+        let cancelButton = UIButton(type: .system)
+        cancelButton.setTitle("Cancel", for: .normal)
+        cancelButton.titleLabel?.font = .systemFont(ofSize: 17)
+        cancelButton.setTitleColor(.white.withAlphaComponent(0.85), for: .normal)
+        cancelButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
+        cancelButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(cancelButton)
+
+        let doneButton = UIButton(type: .system)
+        doneButton.setTitle("Choose", for: .normal)
+        doneButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+        doneButton.setTitleColor(.white, for: .normal)
+        doneButton.backgroundColor = UIColor(SonderColors.terracotta)
+        doneButton.layer.cornerRadius = 22
+        doneButton.contentEdgeInsets = UIEdgeInsets(top: 12, left: 36, bottom: 12, right: 36)
+        doneButton.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
+        doneButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(doneButton)
+
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 14),
+            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+
+            cancelButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            cancelButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+
+            doneButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            doneButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+        ])
+    }
+
+    // MARK: - Configure crop geometry
+
+    private func configureCrop() {
+        let viewW = view.bounds.width
+        let viewH = view.bounds.height
+        let safeTop = view.safeAreaInsets.top
+        let safeBottom = view.safeAreaInsets.bottom
+
+        // Header and footer heights for controls
+        let headerH = safeTop + 52
+        let footerH = safeBottom + 72
+
+        // Crop square: full width, vertically centered in the remaining space
+        let cropSize = viewW
+        let availableH = viewH - headerH - footerH
+        let cropY = headerH + max(0, (availableH - cropSize) / 2)
+
+        cropRect = CGRect(x: 0, y: cropY, width: cropSize, height: cropSize)
+
+        // Container fills the screen; scroll view sits at crop rect inside it
+        scrollViewContainer.frame = view.bounds
+        scrollView.frame = cropRect
+
+        // Dimming overlay: full screen with transparent cutout at crop rect
+        dimmingView.frame = view.bounds
+        let path = UIBezierPath(rect: dimmingView.bounds)
+        path.append(UIBezierPath(roundedRect: cropRect, cornerRadius: 2).reversing())
+        let mask = CAShapeLayer()
+        mask.path = path.cgPath
+        dimmingView.layer.mask = mask
+
+        // Border sits on the crop edge
+        borderView.frame = cropRect
+
+        // Size image view to natural image dimensions (zoom handles scaling)
+        let imgW = sourceImage.size.width
+        let imgH = sourceImage.size.height
         guard imgW > 0, imgH > 0 else { return }
 
-        // The scroll view's frame = the crop square, centered in the view
-        let cropOriginX = (viewSize.width - cropSize) / 2
-        let cropOriginY = (viewSize.height - cropSize) / 2
-        scrollView.frame = CGRect(x: cropOriginX, y: cropOriginY, width: cropSize, height: cropSize)
-
-        // Allow scrolling beyond the crop frame so the image can pan fully
-        scrollView.clipsToBounds = false
-
-        // Image view size = natural image size (we'll use zoom to scale it)
         imageView.frame = CGRect(x: 0, y: 0, width: imgW, height: imgH)
         scrollView.contentSize = CGSize(width: imgW, height: imgH)
 
-        // Calculate minimum zoom so the image fills the crop square
+        // Min zoom: image fills the crop square (no gaps)
         let scaleW = cropSize / imgW
         let scaleH = cropSize / imgH
         let minZoom = max(scaleW, scaleH)
 
         scrollView.minimumZoomScale = minZoom
-        scrollView.maximumZoomScale = minZoom * 5
-        scrollView.zoomScale = minZoom
+        scrollView.maximumZoomScale = max(minZoom * 5, 1.0)
 
-        // Center the image
-        coordinator.centerContent(in: scrollView)
+        // Restore previous crop position or default to min zoom centered
+        if let state = initialCropState {
+            let clampedZoom = max(state.zoomScale, minZoom)
+            scrollView.zoomScale = clampedZoom
+            centerContent()
+            // Defer offset restore to next runloop so layout settles first
+            DispatchQueue.main.async { [weak self] in
+                self?.scrollView.contentOffset = state.contentOffset
+            }
+        } else {
+            scrollView.zoomScale = minZoom
+            centerContent()
+        }
     }
 
-    final class Coordinator: NSObject, UIScrollViewDelegate {
-        let sourceImage: UIImage
-        let cropSize: CGFloat
-        weak var imageView: UIImageView?
-        weak var scrollView: UIScrollView?
-        var cropObserver: Any?
+    // MARK: - UIScrollViewDelegate
 
-        init(image: UIImage, cropSize: CGFloat) {
-            self.sourceImage = image
-            self.cropSize = cropSize
-        }
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
 
-        deinit {
-            if let observer = cropObserver {
-                NotificationCenter.default.removeObserver(observer)
-            }
-        }
+    func scrollViewDidZoom(_ scrollView: UIScrollView) { centerContent() }
 
-        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
-            imageView
-        }
+    private func centerContent() {
+        let contentW = scrollView.contentSize.width
+        let contentH = scrollView.contentSize.height
+        let boundsW = scrollView.bounds.width
+        let boundsH = scrollView.bounds.height
 
-        func scrollViewDidZoom(_ scrollView: UIScrollView) {
-            centerContent(in: scrollView)
-        }
+        let offsetX = max(0, (boundsW - contentW) / 2)
+        let offsetY = max(0, (boundsH - contentH) / 2)
+        imageView.frame.origin = CGPoint(x: offsetX, y: offsetY)
+    }
 
-        func centerContent(in scrollView: UIScrollView) {
-            guard let imageView else { return }
-            let contentW = scrollView.contentSize.width
-            let contentH = scrollView.contentSize.height
-            let boundsW = scrollView.bounds.width
-            let boundsH = scrollView.bounds.height
+    // MARK: - Double tap
 
-            let offsetX = max(0, (boundsW - contentW) / 2)
-            let offsetY = max(0, (boundsH - contentH) / 2)
-
-            imageView.frame.origin = CGPoint(x: offsetX, y: offsetY)
-        }
-
-        func performCrop() {
-            guard let scrollView,
-                  let cgImage = sourceImage.cgImage else { return }
-
-            let zoomScale = scrollView.zoomScale
-            let offset = scrollView.contentOffset
-
-            // The visible rect in content coordinates = the crop square
-            let visibleRect = CGRect(
-                x: offset.x / zoomScale,
-                y: offset.y / zoomScale,
-                width: cropSize / zoomScale,
-                height: cropSize / zoomScale
+    @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
+        if scrollView.zoomScale > scrollView.minimumZoomScale {
+            scrollView.setZoomScale(scrollView.minimumZoomScale, animated: true)
+        } else {
+            let point = recognizer.location(in: imageView)
+            let newZoom = min(scrollView.minimumZoomScale * 2.5, scrollView.maximumZoomScale)
+            let size = CGSize(
+                width: scrollView.bounds.width / newZoom,
+                height: scrollView.bounds.height / newZoom
             )
-
-            // Convert from image-view coordinates to source pixel coordinates
-            let imgW = sourceImage.size.width
-            let imgH = sourceImage.size.height
-            guard imgW > 0, imgH > 0 else { return }
-
-            let pixelRect = CGRect(
-                x: visibleRect.origin.x * CGFloat(cgImage.width) / imgW,
-                y: visibleRect.origin.y * CGFloat(cgImage.height) / imgH,
-                width: visibleRect.width * CGFloat(cgImage.width) / imgW,
-                height: visibleRect.height * CGFloat(cgImage.height) / imgH
-            )
-
-            let bounds = CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height)
-            let clampedRect = pixelRect.intersection(bounds)
-
-            guard !clampedRect.isNull,
-                  clampedRect.width > 0, clampedRect.height > 0,
-                  let cropped = cgImage.cropping(to: clampedRect) else {
-                NotificationCenter.default.post(name: .cropCompleted, object: sourceImage)
-                return
-            }
-
-            let result = UIImage(cgImage: cropped, scale: sourceImage.scale, orientation: sourceImage.imageOrientation)
-            NotificationCenter.default.post(name: .cropCompleted, object: result)
+            let origin = CGPoint(x: point.x - size.width / 2, y: point.y - size.height / 2)
+            scrollView.zoom(to: CGRect(origin: origin, size: size), animated: true)
         }
     }
-}
 
-// MARK: - Notification Names
+    // MARK: - Actions
 
-extension Notification.Name {
-    fileprivate static let cropRequested = Notification.Name("ImageCropSheet.cropRequested")
-    fileprivate static let cropCompleted = Notification.Name("ImageCropSheet.cropCompleted")
+    @objc private func cancelTapped() {
+        onCancel()
+    }
+
+    @objc private func doneTapped() {
+        let state = CropState(zoomScale: scrollView.zoomScale, contentOffset: scrollView.contentOffset)
+        let cropped = performCrop()
+        onDone(cropped, state)
+    }
+
+    private func performCrop() -> UIImage {
+        guard let cgImage = sourceImage.cgImage else { return sourceImage }
+
+        let zoomScale = scrollView.zoomScale
+        let offset = scrollView.contentOffset
+        let cropSize = cropRect.width
+
+        // Visible rect in content (image-view) coordinates
+        let visibleRect = CGRect(
+            x: offset.x / zoomScale,
+            y: offset.y / zoomScale,
+            width: cropSize / zoomScale,
+            height: cropSize / zoomScale
+        )
+
+        // Convert to source pixel coordinates
+        let imgW = sourceImage.size.width
+        let imgH = sourceImage.size.height
+        guard imgW > 0, imgH > 0 else { return sourceImage }
+
+        let pixelRect = CGRect(
+            x: visibleRect.origin.x * CGFloat(cgImage.width) / imgW,
+            y: visibleRect.origin.y * CGFloat(cgImage.height) / imgH,
+            width: visibleRect.width * CGFloat(cgImage.width) / imgW,
+            height: visibleRect.height * CGFloat(cgImage.height) / imgH
+        )
+
+        let imageBounds = CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height)
+        let clampedRect = pixelRect.intersection(imageBounds)
+
+        guard !clampedRect.isNull,
+              clampedRect.width > 0, clampedRect.height > 0,
+              let cropped = cgImage.cropping(to: clampedRect) else {
+            return sourceImage
+        }
+
+        return UIImage(cgImage: cropped, scale: sourceImage.scale, orientation: sourceImage.imageOrientation)
+    }
 }

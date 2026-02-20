@@ -81,6 +81,16 @@ struct UnifiedBottomCard: View {
         return 0
     }
 
+    /// Stable layout height for content during drag.
+    /// Always uses frozen expanded height during drag so the inner VStack/ScrollView
+    /// layout doesn't churn on every frame — only the outer clip frame changes.
+    private var stableContentHeight: CGFloat {
+        if isDragging {
+            return frozenExpandedHeight
+        }
+        return isExpandedState ? expandedHeight : (compactHeight > 0 ? compactHeight : 120)
+    }
+
     /// Progress from 0 (compact) to 1 (expanded) for interpolating visual properties.
     private var dragProgress: CGFloat {
         let baseCompact = isDragging ? frozenCompactHeight : (compactHeight > 0 ? compactHeight : 120)
@@ -127,7 +137,7 @@ struct UnifiedBottomCard: View {
                                 )
                                 .preference(
                                     key: ExpandedContentHeightKey.self,
-                                    value: showExpandedContent ? geo.size.height + 40 + tabPickerHeight : 0
+                                    value: (showExpandedContent && !isDragging) ? geo.size.height + 40 + tabPickerHeight : 0
                                 )
                         }
                     }
@@ -141,7 +151,10 @@ struct UnifiedBottomCard: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: isDragging ? displayHeight : (isExpanded ? expandedHeight : (compactHeight > 0 ? compactHeight : 120)), alignment: .top)
+        // Inner frame: stable during drag so VStack/ScrollView don't re-layout every frame.
+        .frame(height: stableContentHeight, alignment: .top)
+        // Outer frame: controls visible height (clips overflow via clipShape below).
+        .frame(height: isDragging ? displayHeight : stableContentHeight, alignment: .top)
         .transaction { t in
             if isDragging { t.animation = nil }
         }
@@ -322,7 +335,7 @@ struct UnifiedBottomCard: View {
                 compactHeader(log: log, logs: logs, place: place)
 
                 if showExpandedContent {
-                    photoMosaicHeader(userLogs: logs)
+                    photoGalleryHeader(userLogs: logs)
 
                     if let note = log.note, !note.isEmpty {
                         Text(note)
@@ -346,7 +359,7 @@ struct UnifiedBottomCard: View {
             } else {
                 multiLogHeader(logs: logs, place: place)
                 if showExpandedContent {
-                    photoMosaicHeader(userLogs: logs)
+                    photoGalleryHeader(userLogs: logs)
                     Divider()
                     timelineView(personalLogs: logs, place: place)
                 }
@@ -452,7 +465,7 @@ struct UnifiedBottomCard: View {
             if showExpandedContent {
                 if place.isFriendsLoved { friendsLovedBadge }
 
-                photoMosaicHeader(friendLogs: place.logs)
+                photoGalleryHeader(friendLogs: place.logs)
 
                 HStack {
                     Spacer()
@@ -517,11 +530,11 @@ struct UnifiedBottomCard: View {
                 // Content for selected tab (tab picker is outside ScrollView)
                 switch selectedTab {
                 case .you:
-                    photoMosaicHeader(userLogs: logs)
+                    photoGalleryHeader(userLogs: logs)
                     Divider()
                     timelineView(personalLogs: logs, place: place)
                 case .friends:
-                    photoMosaicHeader(friendLogs: friendPlace.logs)
+                    photoGalleryHeader(friendLogs: friendPlace.logs)
                     Divider()
                     timelineView(friendLogs: friendPlace.logs)
                 }
@@ -561,30 +574,33 @@ struct UnifiedBottomCard: View {
         .animation(.easeInOut(duration: 0.15), value: selectedTab)
     }
 
-    // MARK: - Photo Mosaic Header
+    // MARK: - Photo Gallery Header
 
     @ViewBuilder
-    private func photoMosaicHeader(userLogs: [LogSnapshot] = [], friendLogs: [FeedItem] = []) -> some View {
-        let photos = collectMosaicPhotos(userLogs: userLogs, friendLogs: friendLogs)
-        if !photos.isEmpty {
-            Group {
-                switch photos.count {
-                case 1:
-                    mosaicSinglePhoto(photos[0])
-                case 2:
-                    mosaicTwoPhotos(photos)
-                case 3:
-                    mosaicThreePhotos(photos)
-                default:
-                    mosaicGridPhotos(photos)
+    private func photoGalleryHeader(userLogs: [LogSnapshot] = [], friendLogs: [FeedItem] = []) -> some View {
+        let photos = collectGalleryPhotos(userLogs: userLogs, friendLogs: friendLogs)
+        if photos.count == 1 {
+            galleryCell(photo: photos[0])
+                .frame(maxWidth: .infinity)
+                .frame(height: 180)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+        } else if photos.count >= 2 {
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 6) {
+                    ForEach(photos) { photo in
+                        galleryCell(photo: photo)
+                            .frame(width: 135, height: 180)
+                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                    }
                 }
+                .padding(.horizontal, 1)
             }
+            .scrollClipDisabled()
             .frame(height: 180)
-            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         }
     }
 
-    private struct MosaicPhoto: Identifiable {
+    private struct GalleryPhoto: Identifiable {
         let id = UUID()
         let url: URL
         let isUser: Bool
@@ -592,72 +608,24 @@ struct UnifiedBottomCard: View {
         let username: String?
     }
 
-    private func collectMosaicPhotos(userLogs: [LogSnapshot], friendLogs: [FeedItem]) -> [MosaicPhoto] {
-        var photos: [MosaicPhoto] = []
+    private func collectGalleryPhotos(userLogs: [LogSnapshot], friendLogs: [FeedItem]) -> [GalleryPhoto] {
+        var photos: [GalleryPhoto] = []
         for log in userLogs {
             if let urlString = log.photoURL, let url = URL(string: urlString) {
-                photos.append(MosaicPhoto(url: url, isUser: true, avatarURL: nil, username: nil))
+                photos.append(GalleryPhoto(url: url, isUser: true, avatarURL: nil, username: nil))
             }
         }
         for item in friendLogs {
             if let urlString = item.log.photoURL, let url = URL(string: urlString) {
-                photos.append(MosaicPhoto(url: url, isUser: false, avatarURL: item.user.avatarURL, username: item.user.username))
+                photos.append(GalleryPhoto(url: url, isUser: false, avatarURL: item.user.avatarURL, username: item.user.username))
             }
         }
         return photos
     }
 
-    private func mosaicSinglePhoto(_ photo: MosaicPhoto) -> some View {
-        mosaicCell(photo: photo)
-    }
-
-    private func mosaicTwoPhotos(_ photos: [MosaicPhoto]) -> some View {
-        HStack(spacing: 3) {
-            mosaicCell(photo: photos[0])
-            mosaicCell(photo: photos[1])
-        }
-    }
-
-    private func mosaicThreePhotos(_ photos: [MosaicPhoto]) -> some View {
-        HStack(spacing: 3) {
-            mosaicCell(photo: photos[0])
-                .frame(maxWidth: .infinity)
-            VStack(spacing: 3) {
-                mosaicCell(photo: photos[1])
-                mosaicCell(photo: photos[2])
-            }
-            .frame(maxWidth: .infinity)
-        }
-    }
-
-    private func mosaicGridPhotos(_ photos: [MosaicPhoto]) -> some View {
-        let visible = Array(photos.prefix(4))
-        let remaining = photos.count - 4
-        return VStack(spacing: 3) {
-            HStack(spacing: 3) {
-                mosaicCell(photo: visible[0])
-                mosaicCell(photo: visible[1])
-            }
-            HStack(spacing: 3) {
-                mosaicCell(photo: visible[2])
-                if visible.count >= 4 {
-                    ZStack {
-                        mosaicCell(photo: visible[3])
-                        if remaining > 0 {
-                            Color.black.opacity(0.45)
-                            Text("+\(remaining)")
-                                .font(.system(size: 20, weight: .bold))
-                                .foregroundStyle(.white)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func mosaicCell(photo: MosaicPhoto) -> some View {
+    private func galleryCell(photo: GalleryPhoto) -> some View {
         ZStack(alignment: .bottomLeading) {
-            DownsampledAsyncImage(url: photo.url, targetSize: CGSize(width: 400, height: 200)) {
+            DownsampledAsyncImage(url: photo.url, targetSize: CGSize(width: 180, height: 240)) {
                 photoPlaceholder
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

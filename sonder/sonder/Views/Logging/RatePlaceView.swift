@@ -28,6 +28,7 @@ struct RatePlaceView: View {
     @State private var selectedTrip: Trip?
     @State private var showAddDetails = false
     @State private var showConfirmation = false
+    @State private var newLogForDetails: Log?
     @State private var showNewTripSheet = false
     @State private var newTripName = ""
     @State private var newTripCoverImage: UIImage?
@@ -148,14 +149,21 @@ struct RatePlaceView: View {
             }
         }
         .navigationDestination(isPresented: $showAddDetails) {
-            if let rating = selectedRating {
-                AddDetailsView(
+            if let log = newLogForDetails {
+                LogViewScreen(
+                    log: log,
                     place: place,
-                    rating: rating,
-                    initialTrip: selectedTrip,
-                    initialVisitedAt: visitedAt,
+                    isNewLog: true,
                     onLogComplete: onLogComplete
                 )
+            }
+        }
+        .onChange(of: showAddDetails) { _, isShowing in
+            if isShowing && newLogForDetails == nil {
+                newLogForDetails = createNewLog()
+            }
+            if !isShowing {
+                newLogForDetails = nil
             }
         }
         .overlay {
@@ -438,6 +446,22 @@ struct RatePlaceView: View {
     }
 
     // MARK: - Actions
+
+    private func createNewLog() -> Log? {
+        guard let rating = selectedRating,
+              let userId = authService.currentUser?.id else { return nil }
+        let log = Log(
+            userID: userId,
+            placeID: place.id,
+            rating: rating,
+            tripID: selectedTrip?.id,
+            visitedAt: visitedAt,
+            syncStatus: .pending
+        )
+        modelContext.insert(log)
+        try? modelContext.save()
+        return log
+    }
 
     private func quickSave() {
         guard let rating = selectedRating,
