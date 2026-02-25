@@ -16,16 +16,21 @@ enum WantToGoGrouping: String, CaseIterable {
     case city = "City"
 }
 
-/// List of places saved to Want to Go.
-/// When `listID` is provided, shows only that list's items. Otherwise shows all.
+/// Unified saved places view with a horizontal chip picker at the top.
+/// "All" shows every saved place (deduplicated). Tapping a chip filters to that list.
 struct WantToGoListView: View {
-    let listID: String?
-    let listName: String?
-
     @Environment(AuthenticationService.self) private var authService
     @Environment(WantToGoService.self) private var wantToGoService
     @Environment(GooglePlacesService.self) private var placesService
     @Environment(PlacesCacheService.self) private var cacheService
+    @Environment(SavedListsService.self) private var savedListsService
+
+    // MARK: - List selection
+
+    @State private var selectedListID: String?
+    @State private var selectedListName: String?
+
+    // MARK: - Place list state
 
     @State private var items: [WantToGoWithPlace] = []
     @State private var isLoading = true
@@ -37,29 +42,46 @@ struct WantToGoListView: View {
     @State private var scrollToCity: String?
     @State private var visibleCitySections: Set<String> = []
 
+    // Cached city groupings — rebuilt when items change
+    @State private var cachedCityGroups: [String: [WantToGoWithPlace]] = [:]
+    @State private var cachedSortedCities: [String] = []
+
+    // MARK: - List management state (moved from SavedListsView)
+
+    @State private var showCreateSheet = false
+    @State private var newListName = ""
+    @State private var newListEmoji = "\u{1F516}"
+    @State private var listToDelete: SavedList?
+    @State private var listToRename: SavedList?
+    @State private var renameText = ""
+    @State private var showDeleteConfirm = false
+
     init(listID: String? = nil, listName: String? = nil) {
-        self.listID = listID
-        self.listName = listName
+        _selectedListID = State(initialValue: listID)
+        _selectedListName = State(initialValue: listName)
     }
 
     var body: some View {
-        Group {
-            if isLoading {
-                ProgressView()
-                    .tint(SonderColors.terracotta)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if items.isEmpty {
-                emptyState
-            } else {
-                itemsList
+        VStack(spacing: 0) {
+            listFilterChips
+            Divider()
+            Group {
+                if isLoading {
+                    ProgressView()
+                        .tint(SonderColors.terracotta)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if items.isEmpty {
+                    emptyState
+                } else {
+                    itemsList
+                }
             }
         }
         .background(SonderColors.cream)
-        .navigationTitle(listName ?? "All Saved Places")
+        .navigationTitle("Saved Places")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $selectedDetails) { details in
             PlacePreviewView(details: details) {
-                // User wants to log this place - cache it and show rating view
                 let place = cacheService.cachePlace(from: details)
                 placeIDToRemove = place.id
                 placeToLog = place
@@ -69,11 +91,9 @@ struct WantToGoListView: View {
             NavigationStack {
                 RatePlaceView(place: place) { _ in
                     let placeID = placeIDToRemove
-                    // Pop the preview first (hidden under the cover)
                     selectedDetails = nil
                     placeIDToRemove = nil
-                    // Dismiss the cover on next frame so preview is already gone
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         placeToLog = nil
                         if let placeID {
                             removeFromWantToGo(placeID: placeID)
@@ -96,11 +116,144 @@ struct WantToGoListView: View {
             }
         }
         .task {
+            if let userID = authService.currentUser?.id {
+                await savedListsService.fetchLists(for: userID)
+            }
             await loadItems()
+            rebuildCityGroupCache()
+        }
+        .onChange(of: selectedListID) { _, _ in
+            Task { await loadItems() }
         }
         .onChange(of: wantToGoService.items.count) { _, _ in
             refreshItemsFromLocal()
         }
+        .onChange(of: items.count) { _, _ in
+            rebuildCityGroupCache()
+        }
+        .alert("Rename List", isPresented: Binding(
+            get: { listToRename != nil },
+            set: { if !$0 { listToRename = nil } }
+        )) {
+            TextField("List name", text: $renameText)
+            Button("Cancel", role: .cancel) { listToRename = nil }
+            Button("Rename") {
+                if let list = listToRename {
+                    let newName = renameText
+                    Task { await savedListsService.renameList(list, newName: newName) }
+                    if selectedListID == list.id {
+                        selectedListName = newName
+                    }
+                }
+                listToRename = nil
+            }
+        }
+        .alert("Delete List?", isPresented: $showDeleteConfirm) {
+            Button("Cancel", role: .cancel) { listToDelete = nil }
+            Button("Delete", role: .destructive) {
+                if let list = listToDelete, let userID = authService.currentUser?.id {
+                    if selectedListID == list.id {
+                        selectedListID = nil
+                        selectedListName = nil
+                    }
+                    Task { await savedListsService.deleteList(list, userID: userID) }
+                }
+                listToDelete = nil
+            }
+        } message: {
+            if let list = listToDelete, let userID = authService.currentUser?.id {
+                let count = savedListsService.placeCount(for: list.id, userID: userID)
+                Text("This will delete \"\(list.name)\" and remove \(count) saved place\(count == 1 ? "" : "s").")
+            }
+        }
+        .sheet(isPresented: $showCreateSheet) {
+            createListSheet
+        }
+    }
+
+    // MARK: - Chip Row
+
+    private var listFilterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: SonderSpacing.xs) {
+                chip(label: "All", emoji: nil, isSelected: selectedListID == nil) {
+                    selectedListID = nil
+                    selectedListName = nil
+                }
+
+                ForEach(savedListsService.lists, id: \.id) { list in
+                    chip(label: list.name, emoji: list.emoji, isSelected: selectedListID == list.id) {
+                        selectedListID = list.id
+                        selectedListName = list.name
+                    }
+                    .contextMenu {
+                        Button {
+                            listToRename = list
+                            renameText = list.name
+                        } label: {
+                            Label("Rename", systemImage: "pencil")
+                        }
+
+                        Button {
+                            Task {
+                                let emojis = ["\u{1F516}", "\u{2764}\u{FE0F}", "\u{1F355}", "\u{2615}", "\u{1F378}", "\u{1F3D6}\u{FE0F}", "\u{1F30E}", "\u{1F37D}\u{FE0F}"]
+                                let currentIdx = emojis.firstIndex(of: list.emoji) ?? -1
+                                let nextEmoji = emojis[((currentIdx) + 1) % emojis.count]
+                                await savedListsService.updateEmoji(list, emoji: nextEmoji)
+                            }
+                        } label: {
+                            Label("Change Emoji", systemImage: "face.smiling")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            listToDelete = list
+                            showDeleteConfirm = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                }
+
+                // "+" chip to create a new list
+                Button {
+                    showCreateSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(SonderColors.inkDark)
+                        .padding(.horizontal, SonderSpacing.sm)
+                        .padding(.vertical, SonderSpacing.xs)
+                        .background(SonderColors.warmGray)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, SonderSpacing.md)
+            .padding(.vertical, SonderSpacing.sm)
+        }
+    }
+
+    @ViewBuilder
+    private func chip(label: String, emoji: String?, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if let emoji {
+                    Text(emoji)
+                        .font(.system(size: 13))
+                }
+                Text(label)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isSelected ? .white : SonderColors.inkDark)
+            .padding(.horizontal, SonderSpacing.sm)
+            .padding(.vertical, SonderSpacing.xs)
+            .background(isSelected ? SonderColors.terracotta : SonderColors.warmGray)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Grouping Picker
@@ -156,9 +309,12 @@ struct WantToGoListView: View {
 
     // MARK: - Items List
 
-    private var sortedCities: [String] {
-        let groupedByCity = Dictionary(grouping: items) { extractCity(from: $0.place.address) }
-        return groupedByCity.keys.sorted()
+    private var sortedCities: [String] { cachedSortedCities }
+
+    private func rebuildCityGroupCache() {
+        let grouped = Dictionary(grouping: items) { extractCity(from: $0.place.address) }
+        cachedCityGroups = grouped
+        cachedSortedCities = grouped.keys.sorted()
     }
 
     /// The topmost visible city section (first in sorted order that's on-screen)
@@ -193,8 +349,8 @@ struct WantToGoListView: View {
                         withAnimation(.easeOut(duration: 0.2)) {
                             proxy.scrollTo(city, anchor: .top)
                         }
-                        // Clear after a short delay to allow re-selection of the same city
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(300))
                             scrollToCity = nil
                         }
                     }
@@ -222,11 +378,8 @@ struct WantToGoListView: View {
     // MARK: - City Grouped List
 
     private var cityGroupedList: some View {
-        let groupedByCity = Dictionary(grouping: items) { extractCity(from: $0.place.address) }
-        let cities = groupedByCity.keys.sorted()
-
-        return ForEach(cities, id: \.self) { city in
-            if let cityItems = groupedByCity[city] {
+        ForEach(cachedSortedCities, id: \.self) { city in
+            if let cityItems = cachedCityGroups[city] {
                 Section {
                     ForEach(cityItems.sorted { $0.createdAt > $1.createdAt }, id: \.id) { item in
                         itemRow(item)
@@ -302,10 +455,9 @@ struct WantToGoListView: View {
 
         isLoading = true
         do {
-            items = deduplicateByPlace(try await wantToGoService.fetchWantToGoWithPlaces(for: userID, listID: listID))
+            items = deduplicateByPlace(try await wantToGoService.fetchWantToGoWithPlaces(for: userID, listID: selectedListID))
         } catch {
             logger.error("Error loading want to go from remote: \(error.localizedDescription)")
-            // Fall back to local SwiftData
             refreshItemsFromLocal()
         }
         isLoading = false
@@ -316,7 +468,7 @@ struct WantToGoListView: View {
     /// source-user info for items already loaded from Supabase.
     private func refreshItemsFromLocal() {
         guard let userID = authService.currentUser?.id else { return }
-        let localItems = wantToGoService.getWantToGoList(for: userID, listID: listID)
+        let localItems = wantToGoService.getWantToGoList(for: userID, listID: selectedListID)
         let existingByPlaceID = Dictionary(uniqueKeysWithValues: items.map { ($0.place.id, $0) })
 
         withAnimation(.easeOut(duration: 0.25)) {
@@ -342,7 +494,7 @@ struct WantToGoListView: View {
     /// When showing all saved places (no list filter), deduplicate by placeID
     /// so a place saved to multiple lists only appears once.
     private func deduplicateByPlace(_ items: [WantToGoWithPlace]) -> [WantToGoWithPlace] {
-        guard listID == nil else { return items }
+        guard selectedListID == nil else { return items }
         var seen = Set<String>()
         return items.filter { seen.insert($0.place.id).inserted }
     }
@@ -352,11 +504,10 @@ struct WantToGoListView: View {
 
         Task {
             do {
-                try await wantToGoService.removeFromWantToGo(placeID: item.place.id, userID: userID, listID: listID)
+                try await wantToGoService.removeFromWantToGo(placeID: item.place.id, userID: userID, listID: selectedListID)
 
                 // Haptic feedback
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.success)
+                SonderHaptics.notification(.success)
 
                 // Animate removal
                 withAnimation(.easeOut(duration: 0.25)) {
@@ -379,6 +530,81 @@ struct WantToGoListView: View {
                 logger.error("Error removing from want to go: \(error.localizedDescription)")
             }
         }
+    }
+
+    // MARK: - List Management (moved from SavedListsView)
+
+    private func createList() {
+        guard let userID = authService.currentUser?.id else { return }
+        let name = newListName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+
+        Task {
+            let newList = await savedListsService.createList(name: name, emoji: newListEmoji, userID: userID)
+            showCreateSheet = false
+            newListName = ""
+            newListEmoji = "\u{1F516}"
+            // Auto-select the newly created list
+            if let newList {
+                selectedListID = newList.id
+                selectedListName = newList.name
+            }
+        }
+    }
+
+    private var createListSheet: some View {
+        NavigationStack {
+            VStack(spacing: SonderSpacing.lg) {
+                Button {
+                    let emojis = ["\u{1F516}", "\u{2764}\u{FE0F}", "\u{1F355}", "\u{2615}", "\u{1F378}", "\u{1F3D6}\u{FE0F}", "\u{1F30E}", "\u{1F37D}\u{FE0F}"]
+                    if let idx = emojis.firstIndex(of: newListEmoji) {
+                        newListEmoji = emojis[(idx + 1) % emojis.count]
+                    } else {
+                        newListEmoji = emojis[0]
+                    }
+                } label: {
+                    Text(newListEmoji)
+                        .font(.system(size: 48))
+                        .frame(width: 80, height: 80)
+                        .background(SonderColors.terracotta.opacity(0.15))
+                        .clipShape(Circle())
+                }
+
+                Text("Tap to change emoji")
+                    .font(SonderTypography.caption)
+                    .foregroundStyle(SonderColors.inkMuted)
+
+                TextField("List name", text: $newListName)
+                    .font(SonderTypography.title)
+                    .multilineTextAlignment(.center)
+                    .padding(SonderSpacing.md)
+                    .background(SonderColors.warmGray)
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+
+                Spacer()
+            }
+            .padding(SonderSpacing.lg)
+            .background(SonderColors.cream)
+            .navigationTitle("New List")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        showCreateSheet = false
+                        newListName = ""
+                        newListEmoji = "\u{1F516}"
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Create") {
+                        createList()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(newListName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }
 
@@ -515,7 +741,8 @@ struct CitySectionIndex: View {
                 }
                 .onEnded { _ in
                     // Clear drag selection after scroll settles; visibleCity takes over
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(400))
                         dragCity = nil
                     }
                 }

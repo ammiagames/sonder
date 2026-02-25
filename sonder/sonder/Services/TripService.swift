@@ -417,10 +417,15 @@ final class TripService {
 
     /// Associate multiple orphaned logs with a trip in batch
     func associateLogs(ids logIDs: Set<String>, with trip: Trip) async throws {
-        let allLogs = try modelContext.fetch(FetchDescriptor<Log>())
+        // Fetch only the specific logs by ID instead of the entire table
+        let logIDArray = Array(logIDs)
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { logIDArray.contains($0.id) }
+        )
+        let candidateLogs = try modelContext.fetch(descriptor)
         let allTripIDs = Set(try modelContext.fetch(FetchDescriptor<Trip>()).map(\.id))
-        let logsToAssign = allLogs.filter {
-            logIDs.contains($0.id) && ($0.tripID.map { !allTripIDs.contains($0) } ?? true)
+        let logsToAssign = candidateLogs.filter {
+            $0.tripID.map { !allTripIDs.contains($0) } ?? true
         }
 
         for log in logsToAssign {
@@ -450,7 +455,7 @@ final class TripService {
 
     /// Check if user can edit trip (owner only)
     func canEdit(trip: Trip, userID: String) -> Bool {
-        trip.createdBy == userID
+        trip.isOwner(userID)
     }
 
     /// Check if user is a collaborator
@@ -460,6 +465,6 @@ final class TripService {
 
     /// Check if user has access to trip
     func hasAccess(trip: Trip, userID: String) -> Bool {
-        trip.createdBy == userID || trip.collaboratorIDs.contains(userID)
+        trip.isAccessible(by: userID)
     }
 }

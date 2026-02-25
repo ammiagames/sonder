@@ -130,40 +130,171 @@ struct ProfileStatsServiceTests {
 
     // MARK: - Rating Philosophy
 
-    @Test(">60% must-see → generous")
-    func philosophy_generous() {
-        let logs = [
-            TestData.log(id: "l1", rating: .mustSee, createdAt: fixedDate()),
-            TestData.log(id: "l2", rating: .mustSee, createdAt: fixedDate()),
-            TestData.log(id: "l3", rating: .mustSee, createdAt: fixedDate()),
-            TestData.log(id: "l4", rating: .okay, createdAt: fixedDate()),
-        ]
-        let dist = ProfileStatsService.computeRatingDistribution(logs: logs)
-        #expect(dist.philosophy.contains("generous"))
+    // Helper to call the philosophy function directly
+    private func philosophy(skip: Int = 0, okay: Int = 0, great: Int = 0, mustSee: Int = 0) -> String {
+        ProfileStatsService.ratingPhilosophy(
+            total: skip + okay + great + mustSee,
+            skipCount: skip,
+            okayCount: okay,
+            greatCount: great,
+            mustSeeCount: mustSee
+        )
     }
+
+    @Test("Zero logs → starter message")
+    func philosophy_zero() {
+        #expect(philosophy().contains("Start logging"))
+    }
+
+    // Single log
+
+    @Test("Single must-see → bar is set")
+    func philosophy_singleMustSee() {
+        #expect(philosophy(mustSee: 1).contains("Must-See"))
+    }
+
+    @Test("Single great → great start")
+    func philosophy_singleGreat() {
+        #expect(philosophy(great: 1).contains("great start"))
+    }
+
+    @Test("Single okay → journey begins")
+    func philosophy_singleOkay() {
+        #expect(philosophy(okay: 1).contains("journey"))
+    }
+
+    @Test("Single skip → know what you don't like")
+    func philosophy_singleSkip() {
+        #expect(philosophy(skip: 1).contains("Skip"))
+    }
+
+    // Two logs
+
+    @Test("Two must-sees → golden taste")
+    func philosophy_twoMustSees() {
+        #expect(philosophy(mustSee: 2).contains("golden"))
+    }
+
+    @Test("Two skips → hunt for greatness")
+    func philosophy_twoSkips() {
+        #expect(philosophy(skip: 2).contains("hunt"))
+    }
+
+    @Test("Must-see + skip → contain multitudes")
+    func philosophy_mustSeeAndSkip() {
+        #expect(philosophy(skip: 1, mustSee: 1).contains("multitudes"))
+    }
+
+    // All same rating (3+)
+
+    @Test("All must-see → world looks amazing")
+    func philosophy_allMustSee() {
+        #expect(philosophy(mustSee: 4).contains("Must-See"))
+    }
+
+    @Test("All skip → perfect place is out there")
+    func philosophy_allSkip() {
+        #expect(philosophy(skip: 4).contains("perfect place"))
+    }
+
+    // Heavy must-see (>50%)
+
+    @Test(">70% must-see → generous")
+    func philosophy_generous() {
+        let result = philosophy(okay: 1, mustSee: 3)
+        #expect(result.contains("generous"))
+    }
+
+    @Test(">80% must-see, 5+ logs → machine")
+    func philosophy_mustSeeMachine() {
+        let result = philosophy(okay: 1, mustSee: 5)
+        #expect(result.contains("machine"))
+    }
+
+    // Heavy skip (>40%)
 
     @Test(">40% skip → high standards")
     func philosophy_highStandards() {
-        let logs = [
-            TestData.log(id: "l1", rating: .skip, createdAt: fixedDate()),
-            TestData.log(id: "l2", rating: .skip, createdAt: fixedDate()),
-            TestData.log(id: "l3", rating: .skip, createdAt: fixedDate()),
-            TestData.log(id: "l4", rating: .okay, createdAt: fixedDate()),
-            TestData.log(id: "l5", rating: .mustSee, createdAt: fixedDate()),
-        ]
-        let dist = ProfileStatsService.computeRatingDistribution(logs: logs)
-        #expect(dist.philosophy.contains("high standards"))
+        let result = philosophy(skip: 3, okay: 1, mustSee: 1)
+        #expect(result.contains("high standards"))
     }
 
-    @Test("Even spread → story fallback")
+    @Test(">70% skip → toughest critic")
+    func philosophy_toughestCritic() {
+        let result = philosophy(skip: 8, okay: 1, great: 1)
+        #expect(result.contains("toughest critic"))
+    }
+
+    // No must-sees
+
+    @Test("No must-sees, 4+ logs → saving or unforgettable")
+    func philosophy_noMustSees() {
+        let result = philosophy(skip: 1, okay: 2, great: 1)
+        #expect(result.contains("Must-See") || result.contains("unforgettable"))
+    }
+
+    // No skips
+
+    @Test("No skips, 4+ logs → choose your spots")
+    func philosophy_noSkips() {
+        let result = philosophy(okay: 1, great: 2, mustSee: 1)
+        #expect(result.contains("Skip") || result.contains("choose"))
+    }
+
+    // Low must-see
+
+    @Test("<15% must-see → discerning")
+    func philosophy_discerning() {
+        let result = philosophy(skip: 3, okay: 3, great: 3, mustSee: 1)
+        #expect(result.contains("discerning") || result.contains("sacred") || result.contains("exclusive"))
+    }
+
+    // Mostly positive
+
+    @Test(">60% positive → optimist")
+    func philosophy_optimist() {
+        let result = philosophy(skip: 1, great: 3, mustSee: 2)
+        #expect(result.contains("optimist") || result.contains("Positivity") || result.contains("good"))
+    }
+
+    // Heavy okay
+
+    @Test(">50% okay → tell it like it is")
+    func philosophy_heavyOkay() {
+        let result = philosophy(skip: 1, okay: 4, great: 1, mustSee: 1)
+        #expect(result.contains("like it is") || result.contains("anchor"))
+    }
+
+    // Heavy great
+
+    @Test(">50% great → reliably great")
+    func philosophy_heavyGreat() {
+        let result = philosophy(skip: 1, okay: 1, great: 4, mustSee: 1)
+        #expect(result.contains("Great") || result.contains("quality"))
+    }
+
+    // Even spread (3 logs)
+
+    @Test("Even spread 3 logs → story")
     func philosophy_evenSpread() {
-        let logs = [
-            TestData.log(id: "l1", rating: .skip, createdAt: fixedDate()),
-            TestData.log(id: "l2", rating: .okay, createdAt: fixedDate()),
-            TestData.log(id: "l3", rating: .mustSee, createdAt: fixedDate()),
-        ]
-        let dist = ProfileStatsService.computeRatingDistribution(logs: logs)
-        #expect(dist.philosophy.contains("story"))
+        let result = philosophy(skip: 1, okay: 1, mustSee: 1)
+        #expect(result.contains("story"))
+    }
+
+    // Balanced rater
+
+    @Test("Balanced 6+ logs → full rating scale")
+    func philosophy_balanced() {
+        let result = philosophy(skip: 2, okay: 2, great: 2, mustSee: 2)
+        #expect(result.contains("balanced") || result.contains("spectrum"))
+    }
+
+    // Seasoned rater
+
+    @Test("20+ ratings → proper guide")
+    func philosophy_seasoned() {
+        let result = philosophy(skip: 3, okay: 7, great: 6, mustSee: 5)
+        #expect(result.contains("guide") || result.contains("21"))
     }
 
     // MARK: - Category Breakdown

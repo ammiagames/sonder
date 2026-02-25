@@ -34,9 +34,10 @@ struct OtherUserMapView: View {
     /// Logs grouped by place ID, sorted most-recent-first within each group.
     private var groupedLogs: [(placeID: String, place: FeedItem.FeedPlace, items: [FeedItem])] {
         let grouped = Dictionary(grouping: logs) { $0.place.id }
-        return grouped.map { (placeID, items) in
+        return grouped.compactMap { (placeID, items) in
             let sorted = items.sorted { $0.log.createdAt > $1.log.createdAt }
-            return (placeID: placeID, place: sorted[0].place, items: sorted)
+            guard let first = sorted.first else { return nil }
+            return (placeID: placeID, place: first.place, items: sorted)
         }
     }
 
@@ -108,7 +109,7 @@ struct OtherUserMapView: View {
                 UnifiedBottomCard(
                     pin: pin,
                     onDismiss: {
-                        UISelectionFeedbackGenerator().selectionChanged()
+                        SonderHaptics.selectionChanged()
                         clearSelection()
                     },
                     onNavigateToLog: { _, _ in },
@@ -116,7 +117,8 @@ struct OtherUserMapView: View {
                         withAnimation(.smooth(duration: 0.2)) { sheetPin = nil }
                         selectedPlaceID = nil
                         cardIsExpanded = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(250))
                             selectedFeedItem = feedItem
                         }
                     },
@@ -154,7 +156,7 @@ struct OtherUserMapView: View {
             if let newID,
                let group = groupedLogs.first(where: { $0.placeID == newID }) {
                 withAnimation(.smooth(duration: 0.25)) { sheetPin = makePin(for: group) }
-                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                SonderHaptics.impact(.soft)
             } else {
                 // Deselected or invalid — dismiss card
                 withAnimation(.smooth(duration: 0.25)) { sheetPin = nil }
@@ -211,7 +213,7 @@ struct OtherUserMapView: View {
         Button {
             clearSelection()
             fitAllPins()
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            SonderHaptics.impact(.light)
         } label: {
             Image(systemName: "arrow.trianglehead.counterclockwise")
                 .toolbarIcon()

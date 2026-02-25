@@ -200,7 +200,7 @@ struct PhotoSuggestionsRow: View {
                     thumbnails.removeValue(forKey: asset.localIdentifier)
                 }
                 onImageAdded(image)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                SonderHaptics.impact(.light)
             }
             loadingID = nil
         }
@@ -228,15 +228,20 @@ private struct ShimmerEffect: View {
             )
             .frame(width: width * 1.5)
             .offset(x: phase * width * 1.5)
-            .onAppear {
-                withAnimation(
-                    .easeInOut(duration: 1.2)
-                    .repeatForever(autoreverses: false)
-                ) {
-                    phase = 1
-                }
-            }
         }
         .clipped()
+        .onAppear {
+            withAnimation(
+                .easeInOut(duration: 1.2)
+                .repeatForever(autoreverses: false)
+            ) {
+                phase = 1
+            }
+        }
+        .onDisappear {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { phase = -1 }
+        }
     }
 }

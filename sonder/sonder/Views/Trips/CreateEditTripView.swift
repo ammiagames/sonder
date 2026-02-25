@@ -24,9 +24,10 @@ struct CreateEditTripView: View {
     @Environment(PhotoService.self) private var photoService
     @Environment(SyncEngine.self) private var syncEngine
 
-    @Query(sort: \Log.visitedAt, order: .reverse) private var allLogs: [Log]
-    @Query private var allPlaces: [Place]
-    @Query private var allTrips: [Trip]
+    @Environment(\.modelContext) private var modelContext
+    @State private var allLogs: [Log] = []
+    @State private var allPlaces: [Place] = []
+    @State private var allTrips: [Trip] = []
 
     let mode: TripFormMode
     var onTripCreated: ((Trip) -> Void)?
@@ -42,11 +43,12 @@ struct CreateEditTripView: View {
     @State private var isUploadingPhoto = false
     @State private var isSaving = false
     @State private var showSavedToast = false
-    @State private var showStartDatePicker = false
-    @State private var showEndDatePicker = false
+    @State private var showDateRangePicker = false
     @State private var showDeleteAlert = false
     @State private var selectedLogIDs: Set<String> = []
     @State private var showLogPicker = false
+    @State private var cachedOrphanedLogs: [Log] = []
+    @State private var cachedPlacesByID: [String: Place] = [:]
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
@@ -58,14 +60,28 @@ struct CreateEditTripView: View {
         return nil
     }
 
-    private var orphanedLogs: [Log] {
-        guard let userID = authService.currentUser?.id else { return [] }
-        let tripIDs = Set(allTrips.map(\.id))
-        return allLogs.filter { $0.userID == userID && ($0.tripID.map { !tripIDs.contains($0) } ?? true) }
+    private var orphanedLogs: [Log] { cachedOrphanedLogs }
+
+    private var placesByID: [String: Place] { cachedPlacesByID }
+
+    private func refreshData() {
+        guard let userID = authService.currentUser?.id else { return }
+        let logDescriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.userID == userID },
+            sortBy: [SortDescriptor(\.visitedAt, order: .reverse)]
+        )
+        allLogs = (try? modelContext.fetch(logDescriptor)) ?? []
+
+        allPlaces = (try? modelContext.fetch(FetchDescriptor<Place>())) ?? []
+        allTrips = (try? modelContext.fetch(FetchDescriptor<Trip>())) ?? []
+
+        rebuildCreateEditTripCaches(userID: userID)
     }
 
-    private var placesByID: [String: Place] {
-        Dictionary(uniqueKeysWithValues: allPlaces.map { ($0.id, $0) })
+    private func rebuildCreateEditTripCaches(userID: String) {
+        cachedPlacesByID = Dictionary(uniqueKeysWithValues: allPlaces.map { ($0.id, $0) })
+        let tripIDs = Set(allTrips.map(\.id))
+        cachedOrphanedLogs = allLogs.filter { $0.userID == userID && ($0.tripID.map { !tripIDs.contains($0) } ?? true) }
     }
 
     var body: some View {
@@ -93,88 +109,42 @@ struct CreateEditTripView: View {
 
                 // Date section
                 Section {
-                    // Start date
-                    HStack {
-                        Text("Start Date")
-                        Spacer()
-                        if let start = startDate {
-                            Button(start.formatted(date: .abbreviated, time: .omitted)) {
-                                showStartDatePicker.toggle()
-                            }
-                            .foregroundStyle(Color.accentColor)
-
-                            Button {
-                                startDate = nil
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        } else {
-                            Button("Add") {
-                                startDate = Date()
-                                showStartDatePicker = true
-                            }
-                            .foregroundStyle(Color.accentColor)
+                    Button {
+                        showDateRangePicker = true
+                    } label: {
+                        HStack(spacing: SonderSpacing.sm) {
+                            Image(systemName: "calendar")
+                                .foregroundStyle(SonderColors.inkLight)
+                            Text("Dates")
+                                .foregroundStyle(SonderColors.inkDark)
+                            Spacer()
+                            Text(tripDateSummary)
+                                .font(SonderTypography.body)
+                                .foregroundStyle(hasTripDates ? SonderColors.terracotta : SonderColors.inkLight)
+                                .lineLimit(1)
                         }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
 
-                    if showStartDatePicker, startDate != nil {
-                        DatePicker(
-                            "Start",
-                            selection: Binding(
-                                get: { startDate ?? Date() },
-                                set: { startDate = $0 }
-                            ),
-                            displayedComponents: .date
-                        )
-                        .datePickerStyle(.graphical)
-                    }
-
-                    // End date
-                    HStack {
-                        Text("End Date")
-                        Spacer()
-                        if let end = endDate {
-                            Button(end.formatted(date: .abbreviated, time: .omitted)) {
-                                showEndDatePicker.toggle()
-                            }
-                            .foregroundStyle(Color.accentColor)
-
-                            Button {
-                                endDate = nil
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        } else {
-                            Button("Add") {
-                                endDate = Date()
-                                showEndDatePicker = true
-                            }
-                            .foregroundStyle(Color.accentColor)
+                    if hasTripDates {
+                        Button(role: .destructive) {
+                            SonderHaptics.impact(.soft, intensity: 0.45)
+                            startDate = nil
+                            endDate = nil
+                        } label: {
+                            Label("Clear dates", systemImage: "xmark.circle")
+                                .font(SonderTypography.caption)
                         }
-                    }
-
-                    if showEndDatePicker, endDate != nil {
-                        DatePicker(
-                            "End",
-                            selection: Binding(
-                                get: { endDate ?? Date() },
-                                set: { endDate = $0 }
-                            ),
-                            in: (startDate ?? .distantPast)...,
-                            displayedComponents: .date
-                        )
-                        .datePickerStyle(.graphical)
                     }
                 } header: {
                     Text("Dates (Optional)")
+                } footer: {
+                    Text("Choose start and end dates from a single calendar.")
                 }
 
-                // Add Logs section
-                if !orphanedLogs.isEmpty {
+                // Add Logs section (edit mode only)
+                if isEditing && !orphanedLogs.isEmpty {
                     Section {
                         DisclosureGroup(isExpanded: $showLogPicker) {
                             HStack {
@@ -277,6 +247,7 @@ struct CreateEditTripView: View {
             } message: {
                 Text("Do you also want to delete all logs in this trip?")
             }
+            .task { refreshData() }
             .onAppear {
                 loadExistingData()
             }
@@ -289,6 +260,12 @@ struct CreateEditTripView: View {
                     showImagePicker = false
                 }
                 .ignoresSafeArea()
+            }
+            .sheet(isPresented: $showDateRangePicker) {
+                TripDateRangePickerSheet(
+                    startDate: $startDate,
+                    endDate: $endDate
+                )
             }
         }
     }
@@ -359,6 +336,28 @@ struct CreateEditTripView: View {
         )
     }
 
+    private var hasTripDates: Bool {
+        startDate != nil || endDate != nil
+    }
+
+    private var tripDateSummary: String {
+        if let start = startDate, let end = endDate {
+            let normalizedStart = Calendar.current.startOfDay(for: start)
+            let normalizedEnd = Calendar.current.startOfDay(for: end)
+            if Calendar.current.isDate(normalizedStart, inSameDayAs: normalizedEnd) {
+                return normalizedStart.formatted(.dateTime.month(.abbreviated).day().year())
+            }
+            return "\(normalizedStart.formatted(.dateTime.month(.abbreviated).day())) - \(normalizedEnd.formatted(.dateTime.month(.abbreviated).day().year()))"
+        }
+        if let start = startDate {
+            return start.formatted(.dateTime.month(.abbreviated).day().year())
+        }
+        if let end = endDate {
+            return "Until \(end.formatted(.dateTime.month(.abbreviated).day().year()))"
+        }
+        return "Add dates"
+    }
+
     // MARK: - Actions
 
     private func loadExistingData() {
@@ -418,19 +417,19 @@ struct CreateEditTripView: View {
                     savedTrip = newTrip
                 }
 
-                // Assign selected logs to the trip
-                if !selectedLogIDs.isEmpty {
+                // Assign selected logs to the trip (edit mode only)
+                if isEditing && !selectedLogIDs.isEmpty {
                     try await tripService.associateLogs(ids: selectedLogIDs, with: savedTrip)
                 }
 
                 // Haptic feedback
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.success)
+                SonderHaptics.notification(.success)
 
                 if isEditing {
                     isSaving = false
                     showSavedToast = true
                     try? await Task.sleep(for: .seconds(1.0))
+                    guard !Task.isCancelled else { return }
                     dismiss()
                 } else {
                     dismiss()
@@ -449,8 +448,7 @@ struct CreateEditTripView: View {
         let isSelected = selectedLogIDs.contains(log.id)
 
         return Button {
-            let generator = UISelectionFeedbackGenerator()
-            generator.selectionChanged()
+            SonderHaptics.selectionChanged()
             if isSelected {
                 selectedLogIDs.remove(log.id)
             } else {
@@ -529,7 +527,7 @@ struct CreateEditTripView: View {
         let selectedLogs = orphanedLogs.filter { selectedLogIDs.contains($0.id) }
         guard !selectedLogs.isEmpty else { return }
 
-        let dates = selectedLogs.map(\.visitedAt)
+        let dates = selectedLogs.map { Calendar.current.startOfDay(for: $0.visitedAt) }
         startDate = dates.min()
         endDate = dates.max()
     }
@@ -545,8 +543,7 @@ struct CreateEditTripView: View {
                     try await tripService.deleteTripAndLogs(trip, syncEngine: syncEngine)
                 }
 
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.success)
+                SonderHaptics.notification(.success)
 
                 dismiss()
                 onDelete?()
@@ -554,6 +551,300 @@ struct CreateEditTripView: View {
                 logger.error("Error deleting trip: \(error.localizedDescription)")
             }
         }
+    }
+}
+
+private struct TripDateRangePickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    @Binding var startDate: Date?
+    @Binding var endDate: Date?
+
+    @State private var draftStartDate: Date?
+    @State private var draftEndDate: Date?
+    @State private var displayedMonth: Date
+
+    private let calendar = Calendar.current
+
+    init(startDate: Binding<Date?>, endDate: Binding<Date?>) {
+        self._startDate = startDate
+        self._endDate = endDate
+
+        let normalizedStart = startDate.wrappedValue.map { Calendar.current.startOfDay(for: $0) }
+        let normalizedEnd = endDate.wrappedValue.map { Calendar.current.startOfDay(for: $0) }
+
+        if normalizedStart == nil, let normalizedEnd {
+            self._draftStartDate = State(initialValue: normalizedEnd)
+            self._draftEndDate = State(initialValue: normalizedEnd)
+        } else {
+            self._draftStartDate = State(initialValue: normalizedStart)
+            self._draftEndDate = State(initialValue: normalizedEnd)
+        }
+
+        let initialAnchor = normalizedStart ?? normalizedEnd ?? Calendar.current.startOfDay(for: Date())
+        let monthStart = Calendar.current.date(
+            from: Calendar.current.dateComponents([.year, .month], from: initialAnchor)
+        ) ?? initialAnchor
+        self._displayedMonth = State(initialValue: monthStart)
+    }
+
+    private var weekdaySymbols: [String] {
+        let symbols = calendar.veryShortStandaloneWeekdaySymbols
+        let start = calendar.firstWeekday - 1
+        let head = Array(symbols[start...])
+        let tail = Array(symbols[..<start])
+        return head + tail
+    }
+
+    private var monthCells: [Date?] {
+        guard
+            let daysRange = calendar.range(of: .day, in: .month, for: displayedMonth),
+            let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: displayedMonth))
+        else {
+            return Array(repeating: nil, count: 42)
+        }
+
+        let firstWeekday = calendar.component(.weekday, from: monthStart)
+        let leadingPadding = (firstWeekday - calendar.firstWeekday + 7) % 7
+        let totalDays = daysRange.count
+
+        return (0..<42).map { index in
+            let dayOffset = index - leadingPadding
+            guard dayOffset >= 0, dayOffset < totalDays else { return nil }
+            return calendar.date(byAdding: .day, value: dayOffset, to: monthStart)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: SonderSpacing.md) {
+                dateSummaryCard
+                monthHeader
+                weekdayHeader
+                calendarGrid
+                actionRow
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, SonderSpacing.md)
+            .padding(.top, SonderSpacing.sm)
+            .padding(.bottom, SonderSpacing.md)
+            .background(SonderColors.cream)
+            .navigationTitle("Trip Dates")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { applyAndDismiss() }
+                }
+            }
+        }
+    }
+
+    private var dateSummaryCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Selection")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkLight)
+                .textCase(.uppercase)
+
+            Text(selectionSummaryText)
+                .font(SonderTypography.headline)
+                .foregroundStyle(SonderColors.inkDark)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(SonderSpacing.sm)
+        .background(SonderColors.warmGray)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+    }
+
+    private var selectionSummaryText: String {
+        if let start = draftStartDate, let end = draftEndDate {
+            if calendar.isDate(start, inSameDayAs: end) {
+                return start.formatted(.dateTime.month(.abbreviated).day().year())
+            }
+            return "\(start.formatted(.dateTime.month(.abbreviated).day())) - \(end.formatted(.dateTime.month(.abbreviated).day().year()))"
+        }
+        if let start = draftStartDate {
+            return "Start: \(start.formatted(.dateTime.month(.abbreviated).day().year()))"
+        }
+        return "Choose start and end dates"
+    }
+
+    private var monthHeader: some View {
+        HStack {
+            Button {
+                shiftMonth(by: -1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 32, height: 32)
+                    .background(SonderColors.warmGray)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Text(displayedMonth.formatted(.dateTime.month(.wide).year()))
+                .font(SonderTypography.headline)
+                .foregroundStyle(SonderColors.inkDark)
+
+            Spacer()
+
+            Button {
+                shiftMonth(by: 1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 32, height: 32)
+                    .background(SonderColors.warmGray)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var weekdayHeader: some View {
+        HStack(spacing: 0) {
+            ForEach(weekdaySymbols, id: \.self) { symbol in
+                Text(symbol.uppercased())
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(SonderColors.inkLight)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private var calendarGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 8) {
+            ForEach(Array(monthCells.enumerated()), id: \.offset) { _, cellDate in
+                if let date = cellDate {
+                    dateCell(for: date)
+                } else {
+                    Color.clear
+                        .frame(height: 38)
+                }
+            }
+        }
+    }
+
+    private func dateCell(for date: Date) -> some View {
+        let normalized = calendar.startOfDay(for: date)
+        let isStart = isSameDay(normalized, as: draftStartDate)
+        let isEnd = isSameDay(normalized, as: draftEndDate)
+        let isInRange = isDateInSelectedRange(normalized)
+
+        return Button {
+            selectDate(normalized)
+        } label: {
+            ZStack {
+                if isInRange {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(SonderColors.terracotta.opacity((isStart || isEnd) ? 0.28 : 0.14))
+                }
+
+                if isStart || isEnd {
+                    Circle()
+                        .fill(SonderColors.terracotta)
+                        .padding(3)
+                }
+
+                Text("\(calendar.component(.day, from: normalized))")
+                    .font(.system(size: 15, weight: (isStart || isEnd) ? .semibold : .regular, design: .rounded))
+                    .foregroundStyle((isStart || isEnd) ? Color.white : SonderColors.inkDark)
+            }
+            .frame(height: 38)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var actionRow: some View {
+        HStack(spacing: SonderSpacing.sm) {
+            Button("One day") {
+                setOneDayRange()
+            }
+            .font(SonderTypography.caption)
+            .foregroundStyle(SonderColors.terracotta)
+            .padding(.horizontal, SonderSpacing.sm)
+            .padding(.vertical, SonderSpacing.xs)
+            .background(SonderColors.warmGray)
+            .clipShape(Capsule())
+
+            Spacer()
+
+            Button("Clear") {
+                clearDates()
+            }
+            .font(SonderTypography.caption)
+            .foregroundStyle(.red.opacity(0.8))
+            .padding(.horizontal, SonderSpacing.sm)
+            .padding(.vertical, SonderSpacing.xs)
+            .background(SonderColors.warmGray)
+            .clipShape(Capsule())
+        }
+    }
+
+    private func shiftMonth(by offset: Int) {
+        guard let next = calendar.date(byAdding: .month, value: offset, to: displayedMonth) else { return }
+        displayedMonth = next
+        SonderHaptics.impact(.soft, intensity: 0.35)
+    }
+
+    private func selectDate(_ date: Date) {
+        if draftStartDate == nil || (draftStartDate != nil && draftEndDate != nil) {
+            draftStartDate = date
+            draftEndDate = nil
+            SonderHaptics.impact(.light, intensity: 0.55)
+            return
+        }
+
+        guard let start = draftStartDate else { return }
+        if date < start {
+            draftStartDate = date
+            draftEndDate = start
+        } else {
+            draftEndDate = date
+        }
+        SonderHaptics.impact(.medium, intensity: 0.75)
+    }
+
+    private func setOneDayRange() {
+        let day = calendar.startOfDay(for: draftStartDate ?? Date())
+        draftStartDate = day
+        draftEndDate = day
+        SonderHaptics.impact(.medium, intensity: 0.65)
+    }
+
+    private func clearDates() {
+        draftStartDate = nil
+        draftEndDate = nil
+        SonderHaptics.impact(.soft, intensity: 0.45)
+    }
+
+    private func applyAndDismiss() {
+        if let start = draftStartDate, let end = draftEndDate, end < start {
+            startDate = end
+            endDate = start
+        } else {
+            startDate = draftStartDate
+            endDate = draftEndDate
+        }
+        dismiss()
+    }
+
+    private func isDateInSelectedRange(_ date: Date) -> Bool {
+        guard let start = draftStartDate, let end = draftEndDate else { return false }
+        let lower = min(start, end)
+        let upper = max(start, end)
+        return date >= lower && date <= upper
+    }
+
+    private func isSameDay(_ lhs: Date, as rhs: Date?) -> Bool {
+        guard let rhs else { return false }
+        return calendar.isDate(lhs, inSameDayAs: rhs)
     }
 }
 

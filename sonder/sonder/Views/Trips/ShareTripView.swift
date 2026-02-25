@@ -40,6 +40,7 @@ struct LogPhotoData {
 
 struct ExportStop {
     let placeName: String
+    let address: String
     let coordinate: CLLocationCoordinate2D
     let rating: Rating
     var placeID: String = ""
@@ -66,6 +67,7 @@ extension TripExportData {
 enum ExportStyle: String, CaseIterable {
     case collage, receipt
     case cover, route, journey
+    case itinerary
 
     var title: String {
         switch self {
@@ -74,6 +76,7 @@ enum ExportStyle: String, CaseIterable {
         case .cover: return "Cover"
         case .route: return "Route"
         case .journey: return "Journey"
+        case .itinerary: return "Itinerary"
         }
     }
 
@@ -84,6 +87,7 @@ enum ExportStyle: String, CaseIterable {
         case .cover: return "book.pages"
         case .route: return "map"
         case .journey: return "point.topleft.down.to.point.bottomright.curvepath"
+        case .itinerary: return "list.bullet.rectangle"
         }
     }
 }
@@ -170,6 +174,12 @@ struct ShareTripView: View {
         }
         .onChange(of: customization.customCaption) {
             debounceCaptionRender()
+        }
+        .onDisappear {
+            previewImage = nil
+            exportImage = nil
+            renderTask?.cancel()
+            captionDebounceTask?.cancel()
         }
     }
 
@@ -280,8 +290,7 @@ struct ShareTripView: View {
             HStack(spacing: SonderSpacing.sm) {
                 ForEach(ExportStyle.allCases, id: \.rawValue) { style in
                     Button {
-                        let impact = UIImpactFeedbackGenerator(style: .light)
-                        impact.impactOccurred()
+                        SonderHaptics.impact(.light)
                         selectedStyle = style
                     } label: {
                         VStack(spacing: SonderSpacing.xxs) {
@@ -315,8 +324,7 @@ struct ShareTripView: View {
             HStack(spacing: SonderSpacing.sm) {
                 ForEach(ExportColorTheme.allThemes) { theme in
                     Button {
-                        let impact = UIImpactFeedbackGenerator(style: .light)
-                        impact.impactOccurred()
+                        SonderHaptics.impact(.light)
                         customization.theme = theme
                     } label: {
                         VStack(spacing: 6) {
@@ -354,8 +362,7 @@ struct ShareTripView: View {
         HStack(spacing: 0) {
             ForEach(ExportAspectRatio.allCases) { ratio in
                 Button {
-                    let impact = UIImpactFeedbackGenerator(style: .light)
-                    impact.impactOccurred()
+                    SonderHaptics.impact(.light)
                     customization.aspectRatio = ratio
                 } label: {
                     Text(ratio.title)
@@ -378,8 +385,7 @@ struct ShareTripView: View {
                 if let data = exportData {
                     ForEach(Array(data.allHeroImages.enumerated()), id: \.offset) { index, image in
                         Button {
-                            let impact = UIImpactFeedbackGenerator(style: .light)
-                            impact.impactOccurred()
+                            SonderHaptics.impact(.light)
                             customization.selectedHeroPhotoIndex = index
                         } label: {
                             Image(uiImage: image)
@@ -408,8 +414,7 @@ struct ShareTripView: View {
                 if let data = exportData {
                     ForEach(Array(data.allAvailablePhotos.enumerated()), id: \.offset) { index, photoData in
                         Button {
-                            let impact = UIImpactFeedbackGenerator(style: .light)
-                            impact.impactOccurred()
+                            SonderHaptics.impact(.light)
                             if customization.selectedLogPhotoIndices.contains(index) {
                                 customization.selectedLogPhotoIndices.remove(index)
                             } else {
@@ -597,6 +602,8 @@ struct ShareTripView: View {
             TripExportRouteMap(data: data, mapSnapshot: currentMapSnapshot, theme: theme, canvasSize: size)
         case .journey:
             TripExportJourney(data: data, theme: theme, canvasSize: size)
+        case .itinerary:
+            TripExportItinerary(data: data, theme: theme, canvasSize: size)
         }
     }
 
@@ -612,8 +619,7 @@ struct ShareTripView: View {
     }
 
     private func performExportAction(_ action: ExportAction) {
-        let impact = UIImpactFeedbackGenerator(style: .medium)
-        impact.impactOccurred()
+        SonderHaptics.impact(.medium)
 
         guard var data = exportData else { return }
         data.customCaption = customization.customCaption.isEmpty ? nil : customization.customCaption
@@ -734,7 +740,7 @@ struct ShareTripView: View {
         let stops: [ExportStop] = chronologicalLogs.compactMap { log in
             guard let place = placesByID[log.placeID] else { return nil }
             let note = log.note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? log.note : nil
-            return ExportStop(placeName: place.name, coordinate: place.coordinate, rating: log.rating, placeID: log.placeID, note: note, tags: log.tags)
+            return ExportStop(placeName: place.name, address: place.address, coordinate: place.coordinate, rating: log.rating, placeID: log.placeID, note: note, tags: log.tags)
         }
 
         // Build stop-aligned photos for the map (match photos to stops by placeID)

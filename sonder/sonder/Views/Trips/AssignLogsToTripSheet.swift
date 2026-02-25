@@ -98,8 +98,7 @@ struct AssignLogsToTripSheet: View {
         let isSelected = selectedIDs.contains(log.id)
 
         return Button {
-            let generator = UISelectionFeedbackGenerator()
-            generator.selectionChanged()
+            SonderHaptics.selectionChanged()
             if isSelected {
                 selectedIDs.remove(log.id)
             } else {
@@ -257,8 +256,7 @@ struct AssignLogsToTripSheet: View {
                 isSaving = false
                 assignError = "\(failCount) log\(failCount == 1 ? "" : "s") couldn't be saved. Please try again."
             } else {
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.success)
+                SonderHaptics.notification(.success)
                 dismiss()
             }
         }

@@ -10,6 +10,8 @@ import SwiftData
 
 @Model
 final class Trip {
+    #Index<Trip>([\.createdBy])
+
     @Attribute(.unique) var id: String
     var name: String
     var tripDescription: String?
@@ -47,6 +49,20 @@ final class Trip {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.syncStatus = syncStatus
+    }
+}
+
+// MARK: - Access Helpers
+
+extension Trip {
+    /// Whether the given user can access this trip (owner or collaborator).
+    func isAccessible(by userID: String) -> Bool {
+        createdBy == userID || collaboratorIDs.contains(userID)
+    }
+
+    /// Whether the given user is the trip owner.
+    func isOwner(_ userID: String) -> Bool {
+        createdBy == userID
     }
 }
 

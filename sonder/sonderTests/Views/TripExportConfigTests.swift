@@ -147,8 +147,8 @@ struct TripExportCustomizationTests {
 
 struct ExportStyleTests {
 
-    @Test func allCasesHasFiveStyles() {
-        #expect(ExportStyle.allCases.count == 5)
+    @Test func allCasesHasSixStyles() {
+        #expect(ExportStyle.allCases.count == 6)
     }
 
     @Test func eachStyleHasTitleAndIcon() {
@@ -209,7 +209,7 @@ struct TripExportDataTests {
 
     @Test func exportStopStoresCoordinate() {
         let coord = CLLocationCoordinate2D(latitude: 48.8566, longitude: 2.3522)
-        let stop = ExportStop(placeName: "Eiffel Tower", coordinate: coord, rating: .mustSee)
+        let stop = ExportStop(placeName: "Eiffel Tower", address: "Paris, France", coordinate: coord, rating: .mustSee)
         #expect(stop.placeName == "Eiffel Tower")
         #expect(stop.coordinate.latitude == 48.8566)
         #expect(stop.coordinate.longitude == 2.3522)
@@ -220,6 +220,7 @@ struct TripExportDataTests {
         let coord = CLLocationCoordinate2D(latitude: 35.6762, longitude: 139.6503)
         let stop = ExportStop(
             placeName: "Ichiran Ramen",
+            address: "Tokyo, Japan",
             coordinate: coord,
             rating: .mustSee,
             placeID: "place123",
@@ -232,7 +233,7 @@ struct TripExportDataTests {
 
     @Test func exportStopDefaultsNoteAndTagsToEmpty() {
         let coord = CLLocationCoordinate2D(latitude: 0, longitude: 0)
-        let stop = ExportStop(placeName: "Test", coordinate: coord, rating: .okay)
+        let stop = ExportStop(placeName: "Test", address: "", coordinate: coord, rating: .okay)
         #expect(stop.note == nil)
         #expect(stop.tags.isEmpty)
     }

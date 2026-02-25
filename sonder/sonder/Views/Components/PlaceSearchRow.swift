@@ -18,16 +18,16 @@ struct PlaceSearchRow: View {
     let icon: String?
     let placeId: String?
     let distanceText: String?
-    let onBookmark: (() -> Void)?
+    let onLogDirect: (() -> Void)?
 
-    init(name: String, address: String, photoReference: String? = nil, icon: String? = nil, placeId: String? = nil, distanceText: String? = nil, onBookmark: (() -> Void)? = nil) {
+    init(name: String, address: String, photoReference: String? = nil, icon: String? = nil, placeId: String? = nil, distanceText: String? = nil, onLogDirect: (() -> Void)? = nil) {
         self.name = name
         self.address = address
         self.photoReference = photoReference
         self.icon = icon
         self.placeId = placeId
         self.distanceText = distanceText
-        self.onBookmark = onBookmark
+        self.onLogDirect = onLogDirect
     }
 
     var body: some View {
@@ -56,9 +56,20 @@ struct PlaceSearchRow: View {
                     .foregroundStyle(SonderColors.inkLight)
             }
 
-            // Bookmark button (if provided)
-            if let placeId = placeId, onBookmark != nil {
-                BookmarkButton(placeId: placeId, placeName: name, placeAddress: address, photoReference: photoReference)
+            // Direct-log button (if provided)
+            if let onLogDirect {
+                Button(action: onLogDirect) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(SonderColors.terracotta)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Bookmark button
+            if let placeId = placeId {
+                WantToGoButton(placeID: placeId, placeName: name, placeAddress: address, photoReference: photoReference, iconSize: 18, unsavedColor: SonderColors.inkLight)
+                    .buttonStyle(.plain)
             }
 
             Image(systemName: "chevron.right")
@@ -71,127 +82,21 @@ struct PlaceSearchRow: View {
     }
 }
 
-/// Inline bookmark button for search rows.
-/// Tap: if not saved → add to default list. If already saved → open list picker.
-/// Long press: always opens list picker.
-struct BookmarkButton: View {
-    let placeId: String
-    let placeName: String?
-    let placeAddress: String?
-    let photoReference: String?
-
-    @Environment(AuthenticationService.self) private var authService
-    @Environment(WantToGoService.self) private var wantToGoService
-    @Environment(GooglePlacesService.self) private var placesService
-    @Environment(PlacesCacheService.self) private var cacheService
-
-    @State private var isLoading = false
-    @State private var showListPicker = false
-
-    init(placeId: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil) {
-        self.placeId = placeId
-        self.placeName = placeName
-        self.placeAddress = placeAddress
-        self.photoReference = photoReference
-    }
-
-    private var isBookmarked: Bool {
-        guard let userID = authService.currentUser?.id else { return false }
-        return wantToGoService.isInWantToGo(placeID: placeId, userID: userID)
-    }
-
-    var body: some View {
-        Button {
-            handleTap()
-        } label: {
-            Group {
-                if isLoading {
-                    ProgressView()
-                        .tint(SonderColors.terracotta)
-                        .frame(width: 24, height: 24)
-                } else {
-                    Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 18))
-                        .foregroundStyle(isBookmarked ? SonderColors.terracotta : SonderColors.inkLight)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .disabled(isLoading)
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.5)
-                .onEnded { _ in showListPicker = true }
-        )
-        .sheet(isPresented: $showListPicker) {
-            AddToListSheet(
-                placeID: placeId,
-                placeName: placeName,
-                placeAddress: placeAddress,
-                photoReference: photoReference,
-                sourceLogID: nil
-            )
-        }
-    }
-
-    private func handleTap() {
-        if isBookmarked {
-            // Already saved — open list picker to manage lists or unsave
-            showListPicker = true
-        } else {
-            addToSaved()
-        }
-    }
-
-    private func addToSaved() {
-        guard let userID = authService.currentUser?.id else { return }
-
-        isLoading = true
-
-        Task {
-            do {
-                try await wantToGoService.addToWantToGo(
-                    placeID: placeId,
-                    userID: userID,
-                    placeName: placeName,
-                    placeAddress: placeAddress,
-                    photoReference: photoReference,
-                    sourceLogID: nil
-                )
-
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
-
-                await ensurePlaceCached()
-            } catch {
-                logger.error("Error adding bookmark: \(error.localizedDescription)")
-            }
-            isLoading = false
-        }
-    }
-
-    /// Fetch and cache place details so the map has coordinates for this pin.
-    private func ensurePlaceCached() async {
-        if cacheService.getPlace(by: placeId) != nil { return }
-        if let details = await placesService.getPlaceDetails(placeId: placeId) {
-            _ = cacheService.cachePlace(from: details)
-        }
-    }
-}
-
 /// Row for recent search with delete action
 struct RecentSearchRow: View {
     let name: String
     let address: String
     let photoReference: String?
     let placeId: String?
+    let onLogDirect: (() -> Void)?
     let onDelete: () -> Void
 
-
-    init(name: String, address: String, photoReference: String? = nil, placeId: String? = nil, onDelete: @escaping () -> Void) {
+    init(name: String, address: String, photoReference: String? = nil, placeId: String? = nil, onLogDirect: (() -> Void)? = nil, onDelete: @escaping () -> Void) {
         self.name = name
         self.address = address
         self.photoReference = photoReference
         self.placeId = placeId
+        self.onLogDirect = onLogDirect
         self.onDelete = onDelete
     }
 
@@ -220,15 +125,25 @@ struct RecentSearchRow: View {
 
             Spacer()
 
+            // Direct-log button
+            if let onLogDirect {
+                Button(action: onLogDirect) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(SonderColors.terracotta)
+                }
+                .buttonStyle(.plain)
+            }
+
             // Bookmark button
             if let placeId = placeId {
-                BookmarkButton(placeId: placeId, placeName: name, placeAddress: address, photoReference: photoReference)
+                WantToGoButton(placeID: placeId, placeName: name, placeAddress: address, photoReference: photoReference, iconSize: 18, unsavedColor: SonderColors.inkLight)
+                    .buttonStyle(.plain)
             }
 
             // Delete button
             Button {
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
+                SonderHaptics.impact(.light)
                 onDelete()
             } label: {
                 Image(systemName: "xmark.circle.fill")

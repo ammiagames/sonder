@@ -27,46 +27,47 @@ struct PlacePreviewView: View {
 
     @State private var isBookmarked = false
     @State private var isTogglingBookmark = false
+    @State private var showDirectionsDialog = false
     @State private var heroImage: UIImage?
     @State private var photoLoadFailed = false
     @State private var shimmerPhase: CGFloat = -1
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            ScrollView {
-                VStack(spacing: 0) {
-                    // Hero photo
-                    heroPhoto
+        ScrollView {
+            VStack(spacing: 0) {
+                // Hero photo
+                heroPhoto
 
-                    // Content
-                    VStack(alignment: .leading, spacing: SonderSpacing.md) {
-                        // Name and address
-                        nameSection
+                // Content
+                VStack(alignment: .leading, spacing: SonderSpacing.md) {
+                    // Name and address
+                    nameSection
 
-                        // Stats row: rating, price, distance
-                        statsRow
+                    // Stats row: rating, price, distance
+                    statsRow
 
-                        // Mini map
-                        miniMapSection
+                    // Mini map
+                    miniMapSection
 
-                        // Editorial summary
-                        if let summary = details.editorialSummary {
-                            summarySection(summary)
-                        }
-
-                        // Place type tags
-                        if !details.types.isEmpty {
-                            typeTags
-                        }
+                    // Editorial summary
+                    if let summary = details.editorialSummary {
+                        summarySection(summary)
                     }
-                    .padding(.horizontal, SonderSpacing.md)
-                    .padding(.vertical, SonderSpacing.md)
-                    .padding(.bottom, 80)
-                }
-            }
-            .scrollContentBackground(.hidden)
 
-            // Sticky bottom button
+                    // Place type tags
+                    if !details.types.isEmpty {
+                        typeTags
+                    }
+                }
+                .padding(.horizontal, SonderSpacing.md)
+                .padding(.vertical, SonderSpacing.md)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        // Sticky button sits above the tab bar's safe area inset — safeAreaInset
+        // composes correctly with MainTabView's safeAreaInset for the tab bar,
+        // so the button is never crowded against or hidden behind it.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 LinearGradient(
                     colors: [SonderColors.cream.opacity(0), SonderColors.cream],
@@ -77,11 +78,12 @@ struct PlacePreviewView: View {
 
                 logButton
                     .padding(.horizontal, SonderSpacing.md)
-                    .padding(.bottom, SonderSpacing.md)
+                    .padding(.bottom, SonderSpacing.md + 16)
                     .background(SonderColors.cream)
             }
         }
         .background(SonderColors.cream)
+        .preference(key: HideTabBarGradientKey.self, value: true)
         .navigationTitle("Place Details")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -105,6 +107,7 @@ struct PlacePreviewView: View {
         .task {
             await loadHeroPhoto()
         }
+        .directionsConfirmationDialog(isPresented: $showDirectionsDialog, coordinate: placeCoordinate, name: details.name, address: details.formattedAddress)
     }
 
     private func checkBookmarkStatus() {
@@ -129,8 +132,7 @@ struct PlacePreviewView: View {
                 )
                 isBookmarked.toggle()
 
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
+                SonderHaptics.impact(.light)
             } catch {
                 logger.error("Error toggling bookmark: \(error.localizedDescription)")
             }
@@ -185,16 +187,21 @@ struct PlacePreviewView: View {
             )
             .frame(width: width * 1.5)
             .offset(x: shimmerPhase * width * 1.5)
-            .onAppear {
-                withAnimation(
-                    .easeInOut(duration: 1.2)
-                    .repeatForever(autoreverses: false)
-                ) {
-                    shimmerPhase = 1
-                }
-            }
         }
         .clipped()
+        .onAppear {
+            withAnimation(
+                .easeInOut(duration: 1.2)
+                .repeatForever(autoreverses: false)
+            ) {
+                shimmerPhase = 1
+            }
+        }
+        .onDisappear {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { shimmerPhase = -1 }
+        }
     }
 
     private func loadHeroPhoto() async {
@@ -299,12 +306,7 @@ struct PlacePreviewView: View {
 
     private var miniMapSection: some View {
         Button {
-            let placemark = MKPlacemark(coordinate: placeCoordinate)
-            let mapItem = MKMapItem(placemark: placemark)
-            mapItem.name = details.name
-            mapItem.openInMaps(launchOptions: [
-                MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault
-            ])
+            showDirectionsDialog = true
         } label: {
             ZStack(alignment: .bottomTrailing) {
                 Map(initialPosition: .region(MKCoordinateRegion(

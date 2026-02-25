@@ -23,11 +23,13 @@ struct MainTabView: View {
 
     // Pop-to-root triggers: changing UUID causes .onChange to fire in child views
     @State private var feedPopTrigger = UUID()
+    @State private var explorePopTrigger = UUID()
     @State private var journalPopTrigger = UUID()
     @State private var profilePopTrigger = UUID()
 
     @State private var didSetInitialTab = false
     @State private var hideTabBarGradient = false
+    @State private var hideSonderTabBar = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -35,7 +37,7 @@ struct MainTabView: View {
                 .environment(\.isTabVisible, selectedTab == 0)
                 .tag(0)
 
-            ExploreMapView(focusMyPlaces: $exploreFocusMyPlaces, hasSelection: $exploreHasSelection, pendingPinDrop: $pendingPinDrop)
+            ExploreMapView(focusMyPlaces: $exploreFocusMyPlaces, hasSelection: $exploreHasSelection, pendingPinDrop: $pendingPinDrop, popToRoot: explorePopTrigger)
                 .environment(\.isTabVisible, selectedTab == 1)
                 .tag(1)
 
@@ -56,19 +58,22 @@ struct MainTabView: View {
         }
         .toolbarColorScheme(.light, for: .navigationBar)
         .safeAreaInset(edge: .bottom) {
-            SonderTabBar(
-                selectedTab: $selectedTab,
-                onLogTap: { showLogFlow = true },
-                hideGradient: hideTabBarGradient,
-                onSameTabTap: { tab in
-                    switch tab {
-                    case 0: feedPopTrigger = UUID()
-                    case 2: journalPopTrigger = UUID()
-                    case 3: profilePopTrigger = UUID()
-                    default: break
+            if !hideSonderTabBar {
+                SonderTabBar(
+                    selectedTab: $selectedTab,
+                    onLogTap: { showLogFlow = true },
+                    hideGradient: hideTabBarGradient,
+                    onSameTabTap: { tab in
+                        switch tab {
+                        case 0: feedPopTrigger = UUID()
+                        case 1: explorePopTrigger = UUID()
+                        case 2: journalPopTrigger = UUID()
+                        case 3: profilePopTrigger = UUID()
+                        default: break
+                        }
                     }
-                }
-            )
+                )
+            }
         }
         .overlay(alignment: .bottom) {
             PendingSyncOverlay()
@@ -78,6 +83,7 @@ struct MainTabView: View {
             PhotoUploadBannerOverlay()
         }
         .onPreferenceChange(HideTabBarGradientKey.self) { hideTabBarGradient = $0 }
+        .onPreferenceChange(HideSonderTabBarKey.self) { hideSonderTabBar = $0 }
         .fullScreenCover(isPresented: $showLogFlow, onDismiss: {
             guard let coord = pendingLogCoord else { return }
             pendingLogCoord = nil
@@ -97,6 +103,15 @@ struct MainTabView: View {
 /// Child views set this to `true` to hide the tab bar's top gradient
 /// (e.g. when a floating save button would otherwise appear behind it).
 struct HideTabBarGradientKey: PreferenceKey {
+    static var defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
+/// Child views set this to `true` to hide the custom `SonderTabBar`
+/// (e.g. while editing text with keyboard shown).
+struct HideSonderTabBarKey: PreferenceKey {
     static var defaultValue = false
     static func reduce(value: inout Bool, nextValue: () -> Bool) {
         value = value || nextValue()
@@ -155,7 +170,7 @@ struct SonderTabBar: View {
             } else {
                 selectedTab = tag
             }
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            SonderHaptics.impact(.light)
         } label: {
             VStack(spacing: SonderSpacing.xxs) {
                 ZStack {
@@ -185,7 +200,7 @@ struct SonderTabBar: View {
 
     private var logButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            SonderHaptics.impact(.medium)
             onLogTap()
         } label: {
             VStack(spacing: SonderSpacing.xxs) {
@@ -329,6 +344,8 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var showSignOutAlert = false
+    @State private var showImportPlaces = false
+    @State private var showBulkPhotoImport = false
     @State private var showClearCacheAlert = false
     @State private var showEditEmailAlert = false
     @State private var editedEmail = ""
@@ -421,6 +438,32 @@ struct SettingsView: View {
 
                 // Data section
                 Section {
+                    Button {
+                        showImportPlaces = true
+                    } label: {
+                        Label {
+                            Text("Import Places")
+                                .font(SonderTypography.body)
+                                .foregroundStyle(SonderColors.inkDark)
+                        } icon: {
+                            Image(systemName: "square.and.arrow.down")
+                                .foregroundStyle(SonderColors.terracotta)
+                        }
+                    }
+
+                    Button {
+                        showBulkPhotoImport = true
+                    } label: {
+                        Label {
+                            Text("Import from Photos")
+                                .font(SonderTypography.body)
+                                .foregroundStyle(SonderColors.inkDark)
+                        } icon: {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .foregroundStyle(SonderColors.terracotta)
+                        }
+                    }
+
                     Button {
                         showClearCacheAlert = true
                     } label: {
@@ -518,6 +561,12 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("Enter your email address")
+            }
+            .sheet(isPresented: $showImportPlaces) {
+                PlaceImportView()
+            }
+            .fullScreenCover(isPresented: $showBulkPhotoImport) {
+                BulkPhotoImportView(tripID: nil, tripName: nil)
             }
             .onAppear {
                 proximityAlertsEnabled = proximityService.isMonitoring

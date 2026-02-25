@@ -157,28 +157,14 @@ enum ProfileStatsService {
             case .mustSee: mustSeeCount += 1
             }
         }
-        let total = logs.count
 
-        let philosophy: String
-        if total == 0 {
-            philosophy = "Start logging to discover your rating style"
-        } else {
-            let mustSeePct = Double(mustSeeCount) / Double(total)
-            let skipPct = Double(skipCount) / Double(total)
-            let positivePct = Double(greatCount + mustSeeCount) / Double(total)
-
-            if mustSeePct > 0.5 {
-                philosophy = "You're generous — \(Int(mustSeePct * 100))% of your places are Must-See"
-            } else if skipPct > 0.4 {
-                philosophy = "You have high standards — only the best make the cut"
-            } else if mustSeePct < 0.15 && total >= 3 {
-                philosophy = "A discerning palate — you save Must-See for the truly special"
-            } else if positivePct > 0.6 && total >= 3 {
-                philosophy = "You find the good in most places — a true optimist"
-            } else {
-                philosophy = "Every place tells a story in your journal"
-            }
-        }
+        let philosophy = ratingPhilosophy(
+            total: logs.count,
+            skipCount: skipCount,
+            okayCount: okayCount,
+            greatCount: greatCount,
+            mustSeeCount: mustSeeCount
+        )
 
         return RatingDistribution(
             skipCount: skipCount,
@@ -187,6 +173,149 @@ enum ProfileStatsService {
             mustSeeCount: mustSeeCount,
             philosophy: philosophy
         )
+    }
+
+    // MARK: - Rating Philosophy (Musings)
+
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
+    static func ratingPhilosophy(
+        total: Int,
+        skipCount: Int,
+        okayCount: Int,
+        greatCount: Int,
+        mustSeeCount: Int
+    ) -> String {
+        guard total > 0 else {
+            return "Start logging to discover your rating style"
+        }
+
+        let mustSeePct = Double(mustSeeCount) / Double(total)
+        let skipPct = Double(skipCount) / Double(total)
+        let okayPct = Double(okayCount) / Double(total)
+        let greatPct = Double(greatCount) / Double(total)
+        let positivePct = Double(greatCount + mustSeeCount) / Double(total)
+
+        // ── Single log ──────────────────────────────────────────────
+        if total == 1 {
+            if mustSeeCount == 1 { return "First place logged and it's already a Must-See — the bar is set" }
+            if greatCount == 1 { return "A great start — one place down, a world to go" }
+            if okayCount == 1 { return "The journey of a thousand places begins with one honest review" }
+            return "Starting with a Skip — at least you know what you don't like"
+        }
+
+        // ── Two logs ────────────────────────────────────────────────
+        if total == 2 {
+            if mustSeeCount == 2 { return "Two for two on Must-Sees — golden taste or golden luck?" }
+            if skipCount == 2 { return "Two Skips — the hunt for something great is on" }
+            if greatCount == 2 { return "Two Great ratings — building a solid foundation" }
+            if okayCount == 2 { return "Two Okays — keeping it real from the start" }
+            if mustSeeCount == 1 && skipCount == 1 { return "A Must-See and a Skip — you already contain multitudes" }
+            if mustSeeCount == 1 && greatCount == 1 { return "Nothing but love so far — every place has earned it" }
+            if mustSeeCount == 1 && okayCount == 1 { return "A Must-See and an Okay — when it hits, it really hits" }
+            if skipCount == 1 && greatCount == 1 { return "A Great and a Skip — you already know what works for you" }
+            if skipCount == 1 && okayCount == 1 { return "Still warming up — the best discoveries lie ahead" }
+            if okayCount == 1 && greatCount == 1 { return "An Okay and a Great — your rating scale is taking shape" }
+            return "Two places rated — your rating personality is forming"
+        }
+
+        // ── 3+ logs ─────────────────────────────────────────────────
+
+        // All the same rating
+        let ratingsUsed = [skipCount, okayCount, greatCount, mustSeeCount].filter { $0 > 0 }.count
+        if ratingsUsed == 1 {
+            if mustSeeCount == total { return "Everything's a Must-See — the world looks amazing through your eyes" }
+            if greatCount == total { return "Steady at Great across the board — consistent and confident" }
+            if okayCount == total { return "All Okay — you're an even-keeled, honest rater" }
+            return "Nothing's hit the mark yet — your perfect place is still out there"
+        }
+
+        // Heavy must-see (>50%)
+        if mustSeePct > 0.5 {
+            if mustSeePct > 0.8 && total >= 5 { return "A Must-See machine — \(Int(mustSeePct * 100))% of your places get top marks" }
+            if mustSeePct > 0.7 { return "You're generous — \(Int(mustSeePct * 100))% of your places are Must-See" }
+            if total >= 15 { return "Must-See collector — with \(mustSeeCount) top-rated spots, you clearly know where to go" }
+            if total >= 8 { return "An enthusiast at heart — over half your places earn the highest mark" }
+            return "You see the best in places — your Must-Sees are stacking up"
+        }
+
+        // Heavy skip (>40%)
+        if skipPct > 0.4 {
+            if skipPct > 0.7 { return "The toughest critic around — your praise is rare and meaningful" }
+            if total >= 15 { return "With \(skipCount) Skips out of \(total), you've seen plenty that didn't cut it — selective taste" }
+            if total >= 8 { return "A tough critic — when you say Must-See, people should listen" }
+            return "You have high standards — only the best make the cut"
+        }
+
+        // No must-sees at all
+        if mustSeeCount == 0 && total >= 4 {
+            if total >= 15 { return "\(total) places and still no Must-See — it'll hit different when it finally comes" }
+            if total >= 10 { return "Still searching for that first Must-See — you'll know it when you find it" }
+            if skipCount == 0 { return "No extremes yet — you're rating in the comfortable middle" }
+            return "Saving your Must-See for something truly unforgettable"
+        }
+
+        // No skips at all
+        if skipCount == 0 && total >= 4 {
+            if total >= 15 { return "Not a single Skip in \(total) places — you have a serious gift for picking winners" }
+            if total >= 10 { return "Zero Skips across \(total) ratings — you really know how to choose" }
+            if mustSeePct > 0.3 { return "Skip-free and loving it — you find Must-Sees wherever you go" }
+            return "Zero Skips so far — you really know how to choose your spots"
+        }
+
+        // Low must-see (<15%)
+        if mustSeePct < 0.15 {
+            if total >= 15 { return "Only \(mustSeeCount) Must-See out of \(total) — your top rating is truly exclusive" }
+            if total >= 8 { return "Must-See is sacred to you — only the extraordinary qualifies" }
+            return "A discerning palate — you save Must-See for the truly special"
+        }
+
+        // Mostly positive (>60%)
+        if positivePct > 0.6 {
+            if positivePct > 0.8 && total >= 5 { return "The eternal optimist — \(Int(positivePct * 100))% of your places are Great or Must-See" }
+            if total >= 10 { return "Positivity runs through your ratings — the world looks good through your lens" }
+            return "You find the good in most places — a true optimist"
+        }
+
+        // Heavy okay (>50%)
+        if okayPct > 0.5 {
+            if total >= 8 { return "Okay is your anchor — honest and grounded, never overselling" }
+            return "You tell it like it is — not every place needs to blow your mind"
+        }
+
+        // Heavy great (>50%)
+        if greatPct > 0.5 {
+            if total >= 8 { return "Great is your sweet spot — solid taste, no hype needed" }
+            return "Reliably Great — you know quality when you see it"
+        }
+
+        // Balanced rater (no single rating > 35%)
+        let maxPct = max(mustSeePct, max(skipPct, max(okayPct, greatPct)))
+        if maxPct <= 0.35 && total >= 6 {
+            if total >= 15 { return "A true spectrum rater — \(total) places spread across every tier" }
+            return "Perfectly balanced — you really use the full rating scale"
+        }
+
+        // Early journey (3–5 logs), no extreme distribution
+        if total <= 5 {
+            if mustSeeCount > 0 && skipCount > 0 {
+                return "Your story is just getting started — you've already seen the highs and lows"
+            }
+            if skipCount == 0 { return "No Skips yet — you're picking good spots early on" }
+            return "A handful of places rated — your story is taking shape"
+        }
+
+        // Seasoned rater
+        if total >= 20 {
+            return "\(total) places rated — your journal is becoming a proper guide"
+        }
+
+        // Mid-range fallback
+        if total >= 10 {
+            return "Your ratings tell the story of everywhere you've been"
+        }
+
+        // Default
+        return "Every place tells a story in your journal"
     }
 
     // MARK: - Helpers

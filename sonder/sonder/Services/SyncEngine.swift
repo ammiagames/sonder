@@ -124,7 +124,11 @@ final class SyncEngine {
 
     /// Log IDs deleted locally but not yet confirmed deleted on Supabase.
     /// `mergeRemoteLogs` skips these so pull sync doesn't resurrect them.
-    @ObservationIgnored var pendingDeletions: Set<String> = []
+    /// Persisted to UserDefaults so deletions survive app crashes.
+    @ObservationIgnored var pendingDeletions: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: "sonder.sync.pendingDeletions") ?? []) }
+        set { UserDefaults.standard.set(Array(newValue), forKey: "sonder.sync.pendingDeletions") }
+    }
 
     /// When true, another sync will run immediately after the current one finishes.
     private var needsResync = false
@@ -143,7 +147,7 @@ final class SyncEngine {
 
     private let modelContext: ModelContext
     private let supabase = SupabaseConfig.client
-    private var syncTask: Task<Void, Never>?
+    private nonisolated(unsafe) var syncTask: Task<Void, Never>?
     private let networkMonitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.sonder.networkMonitor")
 
@@ -157,6 +161,7 @@ final class SyncEngine {
 
     deinit {
         networkMonitor.cancel()
+        syncTask?.cancel()
     }
 
     // MARK: - Network Monitoring
@@ -310,9 +315,13 @@ final class SyncEngine {
     // MARK: - Log Sync
 
     private func syncPendingLogs() async throws {
-        let allLogs = try modelContext.fetch(FetchDescriptor<Log>())
-        let pendingLogs = allLogs.filter { $0.syncStatus == .pending || $0.syncStatus == .failed }
-        logger.info("[SyncLogs] Found \(pendingLogs.count) pending/failed logs (of \(allLogs.count) total)")
+        let pending = SyncStatus.pending
+        let failed = SyncStatus.failed
+        let pendingDescriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.syncStatus == pending || $0.syncStatus == failed }
+        )
+        let pendingLogs = try modelContext.fetch(pendingDescriptor)
+        logger.info("[SyncLogs] Found \(pendingLogs.count) pending/failed logs")
 
         for log in pendingLogs {
             // Skip logs that still have photos uploading in the background
@@ -439,8 +448,10 @@ final class SyncEngine {
         guard let session = supabase.auth.currentSession else { return }
         let currentUserID = session.user.id.uuidString
 
-        let allTrips = try modelContext.fetch(FetchDescriptor<Trip>())
-        let dirtyTrips = allTrips.filter { $0.createdBy == currentUserID && $0.syncStatus == .pending }
+        let pendingStatus = SyncStatus.pending
+        let dirtyTrips = try modelContext.fetch(FetchDescriptor<Trip>(
+            predicate: #Predicate { $0.createdBy == currentUserID && $0.syncStatus == pendingStatus }
+        ))
 
         for trip in dirtyTrips {
             do {
@@ -764,7 +775,7 @@ final class SyncEngine {
             _ = log.photoURLs
             _ = log.tags
             modelContext.delete(log)
-            try? modelContext.save()
+            do { try modelContext.save() } catch { logger.error("[Sync] SwiftData save failed: \(error.localizedDescription)") }
         }
 
         // Then delete from Supabase
@@ -818,29 +829,81 @@ final class SyncEngine {
         pendingDeletions.subtract(resolved)
     }
 
+    // MARK: - Photo Upload Helpers
+
+    /// Replaces pending-upload placeholder URLs with real uploaded URLs.
+    /// Called from background upload completion closures so they don't need
+    /// to capture a view's ModelContext. Returns the updated photoURLs,
+    /// or nil if the log was not found.
+    @discardableResult
+    func replacePendingPhotoURLs(logID: String, uploadResults: [String: String]) -> [String]? {
+        let idToFind = logID
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { log in log.id == idToFind }
+        )
+        guard let log = try? modelContext.fetch(descriptor).first else { return nil }
+        log.photoURLs = log.photoURLs.compactMap { url in
+            if url.hasPrefix("pending-upload:") {
+                let placeholderID = String(url.dropFirst("pending-upload:".count))
+                return uploadResults[placeholderID]
+            }
+            return url
+        }
+        log.updatedAt = Date()
+        do { try modelContext.save() } catch { logger.error("[Sync] SwiftData save failed: \(error.localizedDescription)") }
+        needsResync = true
+        return log.photoURLs
+    }
+
+    /// Updates a trip's cover photo URL after background upload completes.
+    /// Called from background upload closures so they don't need to capture
+    /// a view's ModelContext.
+    func updateTripCoverPhoto(tripID: String, url: String) {
+        let idToFind = tripID
+        let descriptor = FetchDescriptor<Trip>(
+            predicate: #Predicate { trip in trip.id == idToFind }
+        )
+        guard let trip = try? modelContext.fetch(descriptor).first else { return }
+        trip.coverPhotoURL = url
+        trip.updatedAt = Date()
+        trip.syncStatus = .pending
+        do { try modelContext.save() } catch { logger.error("[Sync] SwiftData save failed: \(error.localizedDescription)") }
+        needsResync = true
+    }
+
     // MARK: - Helpers
 
     func updatePendingCount() async {
-        if let allLogs = try? modelContext.fetch(FetchDescriptor<Log>()) {
-            pendingCount = allLogs.filter {
-                ($0.syncStatus == .pending || $0.syncStatus == .failed)
-                && !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
+        let pending = SyncStatus.pending
+        let failed = SyncStatus.failed
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.syncStatus == pending || $0.syncStatus == failed }
+        )
+        if let pendingLogs = try? modelContext.fetch(descriptor) {
+            pendingCount = pendingLogs.filter {
+                !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
             }.count
         }
     }
 
     /// Get failed logs for retry UI
     func getFailedLogs() -> [Log] {
-        let allLogs = (try? modelContext.fetch(FetchDescriptor<Log>())) ?? []
-        return allLogs.filter { $0.syncStatus == .failed }
+        let failed = SyncStatus.failed
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.syncStatus == failed }
+        )
+        return (try? modelContext.fetch(descriptor)) ?? []
     }
 
     /// Get all logs that contribute to the pending badge (pending or failed, excluding active photo uploads)
     func getStuckLogs() -> [Log] {
-        let allLogs = (try? modelContext.fetch(FetchDescriptor<Log>())) ?? []
-        return allLogs.filter {
-            ($0.syncStatus == .pending || $0.syncStatus == .failed)
-            && !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
+        let pending = SyncStatus.pending
+        let failed = SyncStatus.failed
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.syncStatus == pending || $0.syncStatus == failed }
+        )
+        return ((try? modelContext.fetch(descriptor)) ?? []).filter {
+            !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
         }
     }
 
@@ -850,7 +913,7 @@ final class SyncEngine {
         for log in getStuckLogs() {
             log.syncStatus = .synced
         }
-        try? modelContext.save()
+        do { try modelContext.save() } catch { logger.error("[Sync] SwiftData save failed: \(error.localizedDescription)") }
         pendingCount = 0
     }
 }

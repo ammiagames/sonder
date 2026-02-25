@@ -34,13 +34,30 @@ final class AuthenticationService {
     }
 
     // MARK: - Session Management
-    
+
+    /// Restores session from local Keychain + SwiftData cache (no network).
+    /// Call before showing UI to ensure currentUser is available immediately.
+    func restoreLocalSession() {
+        guard let session = supabase.auth.currentSession else {
+            isCheckingSession = false
+            return
+        }
+        let userID = session.user.id.uuidString.lowercased()
+        if let cached = loadCachedUser(id: userID) {
+            self.currentUser = cached
+        }
+    }
+
     func checkSession() async {
         defer { isCheckingSession = false }
         // Use local Keychain session (~ms) instead of network call (~2-5s).
         // Supabase SDK auto-refreshes expired tokens on the next API call.
         guard let session = supabase.auth.currentSession else { return }
-        let userID = session.user.id.uuidString
+        // Normalize to lowercase: Swift's UUID.uuidString returns uppercase, but
+        // Supabase/PostgreSQL returns UUIDs as lowercase. SwiftData and UserDefaults
+        // keys were set from the Supabase response (lowercase), so a case mismatch
+        // causes loadCachedUser to miss and the onboarding-completion check to fail offline.
+        let userID = session.user.id.uuidString.lowercased()
 
         // Try to load user from SwiftData cache first for instant UI
         if let cached = loadCachedUser(id: userID) {

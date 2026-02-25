@@ -203,7 +203,7 @@ final class WantToGoService {
             )
             if let cached = try? modelContext.fetch(descriptor).first {
                 modelContext.delete(cached)
-                try? modelContext.save()
+                do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
             }
             items.removeAll { $0.placeID == placeID && $0.userID == userID && $0.listID == listID }
         } else {
@@ -217,7 +217,7 @@ final class WantToGoService {
                 for item in cached {
                     modelContext.delete(item)
                 }
-                try? modelContext.save()
+                do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
             }
             items.removeAll { $0.placeID == placeID && $0.userID == userID }
         }
@@ -291,17 +291,26 @@ final class WantToGoService {
                     .execute()
             }
 
-            // 3. Retry pending remote deletions
+            // 3. Retry pending remote deletions — only clear IDs that actually succeeded
+            var successfullyDeleted: Set<String> = []
             for placeID in pendingDeletionPlaceIDs {
-                _ = try? await supabase
-                    .from("want_to_go")
-                    .delete()
-                    .eq("user_id", value: userID)
-                    .eq("place_id", value: placeID)
-                    .execute()
+                do {
+                    try await supabase
+                        .from("want_to_go")
+                        .delete()
+                        .eq("user_id", value: userID)
+                        .eq("place_id", value: placeID)
+                        .execute()
+                    successfullyDeleted.insert(placeID)
+                } catch {
+                    logger.warning("WTG pending delete retry failed for \(placeID): \(error.localizedDescription)")
+                }
             }
-            let deletedPlaceIDs = pendingDeletionPlaceIDs
-            clearPendingDeletions()
+            // Only remove successfully deleted IDs — failed ones stay for next sync
+            for placeID in successfullyDeleted {
+                removePendingDeletion(placeID)
+            }
+            let deletedPlaceIDs = pendingDeletionPlaceIDs.union(successfullyDeleted)
 
             // 4. Import remote-only items locally (except those pending deletion)
             for item in remoteItems where !localPlaceIDs.contains(item.placeID) && !deletedPlaceIDs.contains(item.placeID) {
@@ -488,15 +497,21 @@ extension WantToGoService {
                 }
             }
 
-            // Fall back to local SwiftData Place cache for items without coordinates
+            // Fall back to local SwiftData Place cache — batch fetch instead of N individual queries
+            let missingIDArray = Array(missingPlaceIDs)
+            let placeDescriptor = FetchDescriptor<Place>(
+                predicate: #Predicate { missingIDArray.contains($0.id) }
+            )
+            let cachedPlaces = (try? modelContext.fetch(placeDescriptor)) ?? []
+            let cachedPlacesByID = Dictionary(uniqueKeysWithValues: cachedPlaces.map { ($0.id, $0) })
+
+            // Build a response lookup for O(1) access instead of O(n) .first calls
+            let responseByPlaceID = Dictionary(response.map { ($0.place_id, $0) }, uniquingKeysWith: { first, _ in first })
+
             var stillMissing: Set<String> = []
             for placeID in missingPlaceIDs {
-                let placeIDCopy = placeID
-                let descriptor = FetchDescriptor<Place>(
-                    predicate: #Predicate { $0.id == placeIDCopy }
-                )
-                if let cachedPlace = try? modelContext.fetch(descriptor).first {
-                    let item = response.first { $0.place_id == placeID }
+                if let cachedPlace = cachedPlacesByID[placeID] {
+                    let item = responseByPlaceID[placeID]
                     results.append(WantToGoMapItem(
                         id: item?.id ?? UUID().uuidString,
                         placeID: placeID,
@@ -522,7 +537,7 @@ extension WantToGoService {
                     .value
 
                 for place in remotePlaces {
-                    let item = response.first { $0.place_id == place.id }
+                    let item = responseByPlaceID[place.id]
                     results.append(WantToGoMapItem(
                         id: item?.id ?? UUID().uuidString,
                         placeID: place.id,
@@ -536,7 +551,7 @@ extension WantToGoService {
                     // Cache locally for future use
                     modelContext.insert(place)
                 }
-                try? modelContext.save()
+                do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
             }
 
             return results

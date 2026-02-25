@@ -31,6 +31,7 @@ struct SonderApp: App {
     @State private var contactsService = ContactsService()
     @State private var photoSuggestionService = PhotoSuggestionService()
     @State private var photoIndexService: PhotoIndexService?
+    @State private var placeImportService: PlaceImportService?
 
     init() {
         // Configure Google Places SDK
@@ -42,6 +43,11 @@ struct SonderApp: App {
         // Configure UIKit appearance to match Sonder theme and prevent gray flashes
         let creamUI = SonderColors.creamUI
         let inkDarkUI = SonderColors.inkDarkUI
+
+        // Prevent the white UIWindow background from flashing between the system
+        // launch screen and SwiftUI's first rendered frame (especially visible on
+        // slow debug builds where ModelContainer init takes a few seconds).
+        UIWindow.appearance().backgroundColor = creamUI
 
         let tabBarAppearance = UITabBarAppearance()
         tabBarAppearance.configureWithOpaqueBackground()
@@ -113,7 +119,7 @@ struct SonderApp: App {
                        let syncEngine, let placesCacheService,
                        let socialService, let feedService,
                        let wantToGoService, let tripService,
-                       let savedListsService {
+                       let savedListsService, let placeImportService {
                         RootView(
                             authService: authService,
                             locationService: locationService,
@@ -129,7 +135,8 @@ struct SonderApp: App {
                             exploreMapService: exploreMapService,
                             contactsService: contactsService,
                             photoSuggestionService: photoSuggestionService,
-                            savedListsService: savedListsService
+                            savedListsService: savedListsService,
+                            placeImportService: placeImportService
                         )
                     } else {
                         SonderColors.cream.ignoresSafeArea()
@@ -140,17 +147,13 @@ struct SonderApp: App {
                 // Splash overlay — stays until feed is ready or user needs to log in
                 if showSplash {
                     SplashView(isFirstLaunch: isFirstLaunchEver)
-                        .transition(
-                            .asymmetric(
-                                insertion: .identity,
-                                removal: .opacity.combined(with: .scale(scale: 1.05))
-                            )
-                        )
+                        .transition(.splashLift)
                         .zIndex(1)
                 }
             }
             .tint(SonderColors.terracotta)
             .task { await dismissSplashWhenReady() }
+            .onAppear { installGlobalKeyboardDismiss() }
         }
         .modelContainer(modelContainer)
     }
@@ -177,7 +180,8 @@ struct SonderApp: App {
         }
 
         guard showSplash else { return }
-        withAnimation(.easeInOut(duration: 0.4)) {
+        // Spring with dampingFraction: 1 = critically damped (smooth, no bounce)
+        withAnimation(.spring(response: 0.55, dampingFraction: 1.0)) {
             showSplash = false
         }
     }
@@ -222,17 +226,26 @@ struct SonderApp: App {
         // Read current photo permission state (non-prompting)
         photoSuggestionService.checkCurrentAuthorizationStatus()
 
+        // Wire place import service
+        placeImportService = PlaceImportService(
+            googlePlacesService: googlePlacesService,
+            wantToGoService: wantToGoService!,
+            savedListsService: savedListsService!,
+            placesCacheService: cache
+        )
+
         // Wire photo spatial index
         let photoIndex = PhotoIndexService(modelContainer: modelContainer)
         photoIndexService = photoIndex
         photoSuggestionService.photoIndexService = photoIndex
 
+        // Restore local session synchronously — views depend on currentUser
+        authService.restoreLocalSession()
+
         // Mark initialized — this triggers the RootView to appear
         servicesInitialized = true
 
-        // Check session now that modelContext is available for caching.
-        // Previously this ran in AuthenticationService.init() before modelContext
-        // was set, so the SwiftData cache always missed on cold start.
+        // Refresh user from network in background (also clears isCheckingSession)
         Task {
             await authService.checkSession()
         }
@@ -243,9 +256,10 @@ struct SonderApp: App {
             engine.resumePeriodicSync()
         }
 
-        // Build photo spatial index in background (deferred 1s)
+        // Build photo spatial index in background — defer 5s to avoid competing
+        // with map/feed loading for CPU, memory, and I/O on cold start
         Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(for: .seconds(5))
             let level = photoSuggestionService.authorizationLevel
             if level == .full || level == .limited {
                 photoIndex.buildIndexIfNeeded(accessLevel: level == .full ? "full" : "limited")
@@ -272,6 +286,7 @@ struct RootView: View {
     let contactsService: ContactsService
     let photoSuggestionService: PhotoSuggestionService
     let savedListsService: SavedListsService
+    let placeImportService: PlaceImportService
 
     @Environment(\.modelContext) private var modelContext
 
@@ -295,6 +310,7 @@ struct RootView: View {
             .environment(contactsService)
             .environment(photoSuggestionService)
             .environment(savedListsService)
+            .environment(placeImportService)
             .onChange(of: authService.currentUser?.id) { _, newID in
                 if let userID = newID {
                     Task {
@@ -389,5 +405,46 @@ struct RootView: View {
     private func markOnboardingComplete() {
         guard let userID = authService.currentUser?.id else { return }
         UserDefaults.standard.set(true, forKey: "onboarding_completed_\(userID)")
+    }
+}
+
+// MARK: - Global Keyboard Dismiss
+
+/// Installs a single UIKit tap recognizer on the key window.
+/// Because it runs at the UIKit layer (not SwiftUI's gesture system),
+/// it fires for ALL views — including Form, UITextField, TextEditor —
+/// regardless of how they are backed.  cancelsTouchesInView = false
+/// ensures buttons, scroll views, and every other interactive element
+/// still receive their taps normally.
+private func installGlobalKeyboardDismiss() {
+    let keyWindow = UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .flatMap { $0.windows }
+        .first { $0.isKeyWindow }
+    guard let window = keyWindow else { return }
+
+    // Guard against installing more than once (onAppear can fire multiple times).
+    let alreadyInstalled = window.gestureRecognizers?.contains { $0 is KeyboardDismissTapRecognizer } ?? false
+    guard !alreadyInstalled else { return }
+
+    let tap = KeyboardDismissTapRecognizer(
+        target: KeyboardDismissTarget.shared,
+        action: #selector(KeyboardDismissTarget.dismiss)
+    )
+    tap.cancelsTouchesInView = false
+    window.addGestureRecognizer(tap)
+}
+
+/// Marker subclass used to detect whether the gesture was already installed.
+private final class KeyboardDismissTapRecognizer: UITapGestureRecognizer {}
+
+/// Objective-C-compatible target that resigns the first responder.
+private final class KeyboardDismissTarget: NSObject {
+    static let shared = KeyboardDismissTarget()
+    @objc func dismiss() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil, from: nil, for: nil
+        )
     }
 }

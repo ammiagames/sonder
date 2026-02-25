@@ -31,10 +31,12 @@ struct ExploreMapView: View {
     @Environment(WantToGoService.self) private var wantToGoService
     @Environment(GooglePlacesService.self) private var placesService
     @Environment(PlacesCacheService.self) private var cacheService
+    @Environment(SyncEngine.self) private var syncEngine
+    @Environment(\.modelContext) private var modelContext
 
     @Environment(\.isTabVisible) private var isTabVisible
 
-    @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
+    @State private var userLogs: [Log] = []
     @Query private var places: [Place]
 
     @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .camera(MapCamera(centerCoordinate: .init(latitude: 37.7749, longitude: -122.4194), distance: 50000)))
@@ -43,6 +45,7 @@ struct ExploreMapView: View {
     @State private var detailLogID: String?
     @State private var detailPlace: Place?
     @State private var mapStyle: MapStyleOption = .minimal
+    @AppStorage("exploreTileStyle") private var tileStyleRaw: String = TileStyleOption.standard.rawValue
     @State private var filter = ExploreMapFilter()
     @State private var wantToGoMapItems: [WantToGoMapItem] = []
     @State private var showFilterSheet = false
@@ -65,12 +68,20 @@ struct ExploreMapView: View {
     @State private var sheetPin: UnifiedMapPin?
     @State private var removingPinIDs: Set<String> = []
     @State private var removingWTGIDs: Set<String> = []
+    @State private var isDetailEditing = false
 
     // Memoized pin data — recomputed only when inputs change
     @State private var cachedUnifiedPins: [UnifiedMapPin] = []
     @State private var cachedFilteredPins: [UnifiedMapPin] = []
     @State private var cachedAnnotatedPins: [(pin: UnifiedMapPin, isWantToGo: Bool, identity: String)] = []
     @State private var cachedStandaloneWTG: [WantToGoMapItem] = []
+    @State private var cachedAvailableTags: [String] = []
+    @State private var cachedWantToGoPlaceIDs: Set<String> = []
+
+    private let loadingStyle: Int = 2
+
+    @State private var shimmerPhase: CGFloat = -1
+    @State private var breatheScale: CGFloat = 1.0
 
     // Map snapshot — shown as placeholder while live Map reloads tiles
     @State private var mapSnapshot: UIImage?
@@ -85,6 +96,7 @@ struct ExploreMapView: View {
     @State private var activePrefetchDownloads: [Task<Void, Never>] = []
     @State private var lastFullLoadAt: Date?
     @State private var wtgGeneration: UInt64 = 0
+    @State private var pinDropCleanupTask: Task<Void, Never>?
     @State private var previousWTGPlaceIDs: Set<String> = []
 
     /// When set to true (by ProfileView), focuses the map on personal places only
@@ -93,19 +105,22 @@ struct ExploreMapView: View {
     var hasSelection: Binding<Bool>?
     /// Coordinate of a newly-created log pin to animate on screen
     var pendingPinDrop: Binding<CLLocationCoordinate2D?>?
+    /// Pop-to-root trigger — when this UUID changes, dismiss all pushed views
+    var popToRoot: UUID = UUID()
 
     var body: some View {
         NavigationStack {
             coreMapView
                 .navigationDestination(isPresented: $showDetail) {
                     if let logID = detailLogID,
-                       let log = allLogs.first(where: { $0.id == logID }),
+                       let log = userLogs.first(where: { $0.id == logID }),
                        let place = detailPlace {
                         LogViewScreen(log: log, place: place, onDelete: {
                             showDetail = false
                             detailLogID = nil
                             detailPlace = nil
-                        })
+                            mapSelection = nil
+                        }, externalIsEditing: $isDetailEditing)
                     }
                 }
                 .navigationDestination(item: $selectedFeedItem) { feedItem in
@@ -125,7 +140,7 @@ struct ExploreMapView: View {
                             selectedPlaceDetails = nil
                             placeIDToRemove = nil
                             mapSelection = nil
-                            DispatchQueue.main.async {
+                            Task { @MainActor in
                                 placeToLog = nil
                                 if let placeID {
                                     removeFromWantToGo(placeID: placeID)
@@ -159,7 +174,7 @@ struct ExploreMapView: View {
                     UnifiedBottomCard(
                         pin: pin,
                         onDismiss: {
-                            UISelectionFeedbackGenerator().selectionChanged()
+                            SonderHaptics.selectionChanged()
                             clearSelection()
                         },
                         onNavigateToLog: { logID, place in
@@ -189,8 +204,8 @@ struct ExploreMapView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-            .animation(.smooth(duration: 0.25), value: sheetPin?.id)
-            .animation(.smooth(duration: 0.25), value: isShowingDetail)
+            .animation(.smooth(duration: 0.18), value: sheetPin?.id)
+            .animation(.smooth(duration: 0.18), value: isShowingDetail)
         }
         // Snapshot overlay — placed at the outermost level so the Map's
         // internal layout settling cannot shift it. Fully covers the screen
@@ -224,6 +239,9 @@ struct ExploreMapView: View {
                     for task in activePrefetchDownloads { task.cancel() }
                     activePrefetchDownloads.removeAll()
                     prefetchTask?.cancel()
+                    kenBurnsTask?.cancel()
+                    recomputeTask?.cancel()
+                    pinDropCleanupTask?.cancel()
 
                     // Snapshot camera region so the Map restores to the same spot
                     if let region = visibleRegion {
@@ -255,13 +273,28 @@ struct ExploreMapView: View {
                 pendingPinDrop?.wrappedValue = nil
                 handlePinDrop(at: coord)
             }
+            .onDisappear {
+                // Clean up in-flight tasks when the view is removed entirely
+                for task in activePrefetchDownloads { task.cancel() }
+                activePrefetchDownloads.removeAll()
+                prefetchTask?.cancel()
+                kenBurnsTask?.cancel()
+                recomputeTask?.cancel()
+                pinDropCleanupTask?.cancel()
+                dissolveTask?.cancel()
+            }
     }
 
     private var coreMapWithDataHandlers: some View {
         mapWithOverlays
             .task {
+                refreshUserLogs()
+                requestLocationPermissionIfNeeded()
                 await loadData()
                 recomputePins()
+            }
+            .onChange(of: syncEngine.lastSyncDate) { _, _ in
+                refreshUserLogs()
             }
             .onChange(of: wantToGoService.items.count) { oldCount, newCount in
                 guard oldCount != 0 || newCount != 0 else { return }
@@ -275,11 +308,11 @@ struct ExploreMapView: View {
                 // Manage unified card presentation
                 if case .unified(let id) = newTag,
                    let pin = filteredPins.first(where: { $0.id == id }) {
-                    withAnimation(.smooth(duration: 0.25)) { sheetPin = pin }
-                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                    withAnimation(.smooth(duration: 0.18)) { sheetPin = pin }
+                    SonderHaptics.impact(.soft)
                 } else {
                     // Not a unified pin — dismiss if showing
-                    withAnimation(.smooth(duration: 0.25)) { sheetPin = nil }
+                    withAnimation(.smooth(duration: 0.18)) { sheetPin = nil }
                 }
                 // Zoom to selected pin
                 guard let newTag else { return }
@@ -294,7 +327,7 @@ struct ExploreMapView: View {
                     zoomToSelected(coordinate: coordinate)
                 }
             }
-            .onChange(of: allLogs.count) { _, _ in
+            .onChange(of: userLogs.count) { _, _ in
                 scheduleRecomputePins()
                 if !selectionIsValid { clearSelection() }
             }
@@ -306,6 +339,17 @@ struct ExploreMapView: View {
             .onChange(of: filter) { _, _ in
                 scheduleRecomputePins()
                 if !selectionIsValid { clearSelection() }
+            }
+            .onChange(of: popToRoot) {
+                // Don't pop while the user is editing a log
+                guard !isDetailEditing else { return }
+                showDetail = false
+                detailLogID = nil
+                detailPlace = nil
+                selectedFeedItem = nil
+                selectedPlaceDetails = nil
+                placeToLog = nil
+                // Keep mapSelection and sheetPin so the bottom card stays visible
             }
     }
 
@@ -330,8 +374,15 @@ struct ExploreMapView: View {
                 }
                 .animation(.easeInOut(duration: 0.35), value: pinDropToast != nil)
             }
+            .overlay(alignment: .center) {
+                if loadingStyle == 2 && exploreMapService.isLoading && !hasLoadedOnce && !isShowingDetail {
+                    breathingMappinOverlay
+                        .transition(.opacity)
+                        .animation(.easeInOut(duration: 0.4), value: exploreMapService.isLoading)
+                }
+            }
             .sheet(isPresented: $showFilterSheet) {
-                ExploreFilterSheet(filter: $filter)
+                ExploreFilterSheet(filter: $filter, availableTags: availableTags)
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
@@ -375,11 +426,17 @@ struct ExploreMapView: View {
             if !isShowingDetail {
                 layerChips
                     .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
-            if exploreMapService.isLoading && !hasLoadedOnce && !isShowingDetail {
-                friendsLoadingPill
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .onAppear {
+                        // Drive shimmer animation for pulsing chip loading
+                        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
+                            shimmerPhase = 1
+                        }
+                    }
+                    .onDisappear {
+                        var t = Transaction()
+                        t.disablesAnimations = true
+                        withTransaction(t) { shimmerPhase = -1 }
+                    }
             }
         }
         .padding(.top, SonderSpacing.xs)
@@ -403,6 +460,33 @@ struct ExploreMapView: View {
         .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
     }
 
+    private var breathingMappinOverlay: some View {
+        VStack(spacing: SonderSpacing.sm) {
+            Image(systemName: "mappin.and.ellipse")
+                .font(.system(size: 36, weight: .medium))
+                .foregroundStyle(SonderColors.terracotta)
+                .scaleEffect(breatheScale)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                        breatheScale = 1.06
+                    }
+                }
+                .onDisappear {
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) { breatheScale = 1.0 }
+                }
+
+            Text("Loading friends' places…")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(SonderColors.inkMuted)
+        }
+        .padding(SonderSpacing.lg)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+        .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+    }
+
     // MARK: - Layer Chips
 
     private var layerChips: some View {
@@ -420,7 +504,8 @@ struct ExploreMapView: View {
             layerChip(
                 label: friendsChipLabel,
                 icon: "person.2.fill",
-                isOn: filter.showFriendsPlaces
+                isOn: filter.showFriendsPlaces,
+                isLoading: loadingStyle == 1 && exploreMapService.isLoading && !hasLoadedOnce
             ) {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     if !filter.selectedFriendIDs.isEmpty {
@@ -447,7 +532,7 @@ struct ExploreMapView: View {
         .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
     }
 
-    private func layerChip(label: String, icon: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+    private func layerChip(label: String, icon: String, isOn: Bool, isLoading: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 3) {
                 Image(systemName: icon)
@@ -465,10 +550,44 @@ struct ExploreMapView: View {
             .background(isOn ? SonderColors.terracotta : Color.clear)
             .foregroundStyle(isOn ? .white : SonderColors.inkMuted)
             .clipShape(Capsule())
+            .overlay {
+                if isLoading {
+                    // Warm shimmer sweep
+                    GeometryReader { geo in
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0),
+                                .init(color: SonderColors.terracotta.opacity(0.35), location: 0.4),
+                                .init(color: SonderColors.terracotta.opacity(0.5), location: 0.5),
+                                .init(color: SonderColors.terracotta.opacity(0.35), location: 0.6),
+                                .init(color: .clear, location: 1),
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: geo.size.width * 1.5)
+                        .offset(x: shimmerPhase * geo.size.width * 1.5)
+                    }
+                    .clipShape(Capsule())
+                    .allowsHitTesting(false)
+                }
+            }
+            .overlay {
+                if isLoading {
+                    Capsule()
+                        .strokeBorder(SonderColors.terracotta.opacity(0.6), lineWidth: 1.5)
+                }
+            }
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .animation(.easeInOut(duration: 0.2), value: isOn)
+    }
+
+    // MARK: - Tile Style
+
+    private var selectedTileStyle: TileStyleOption {
+        TileStyleOption(rawValue: tileStyleRaw) ?? .standard
     }
 
     // MARK: - Map
@@ -476,53 +595,72 @@ struct ExploreMapView: View {
     private var mapContent: some View {
         ZStack {
             if isTabVisible {
-                Map(position: $cameraPosition, selection: $mapSelection) {
-                    UserAnnotation()
-
-                    // Unified pins — stable identity per pin; .id() on the content view
-                    // prevents annotation recycling from mixing up async-loaded photos.
-                    ForEach(annotatedPins, id: \.identity) { item in
-                        unifiedPinAnnotation(item: item)
-                    }
-
-                    // Standalone Want to Go pins (places not in any unified pin)
-                    if filter.showWantToGo {
-                        ForEach(standaloneWantToGoItems, id: \.id) { item in
-                            let isSelected = mapSelection == .wantToGo(item.id)
-                            let isRemoving = removingWTGIDs.contains(item.id)
-                            let tag = MapPinTag.wantToGo(item.id)
-                            Annotation(item.placeName, coordinate: item.coordinate, anchor: .bottom) {
-                                WantToGoMapPin()
-                                    .scaleEffect(isRemoving ? 0.01 : (isSelected ? 1.25 : 1.0))
-                                    .opacity(isRemoving ? 0 : 1)
-                                    .animation(.easeOut(duration: 0.15), value: isSelected)
-                                    .animation(.easeIn(duration: 0.3), value: isRemoving)
-                                    .simultaneousGesture(TapGesture().onEnded {
-                                        if isSelected {
-                                            withAnimation(.easeInOut(duration: 0.2)) {
-                                                mapSelection = nil
-                                            }
-                                        }
-                                    })
-                            }
-                            .tag(tag)
-                        }
-                    }
-                }
-                .mapStyle(mapStyle.style)
-                .onMapCameraChange(frequency: .onEnd) { context in
-                    visibleRegion = context.region
-                    currentCameraDistance = context.camera.distance
-                    currentCameraHeading = context.camera.heading
-                    currentCameraPitch = context.camera.pitch
-                    schedulePrefetch()
-                }
-                .mapControls {
-                    MapUserLocationButton()
-                    MapCompass()
-                    MapScaleView()
+                if selectedTileStyle == .standard {
+                    appleMapContent
+                } else {
+                    StyledMapView(
+                        tileStyle: selectedTileStyle,
+                        cameraPosition: $cameraPosition,
+                        mapSelection: $mapSelection,
+                        visibleRegion: $visibleRegion,
+                        currentCameraDistance: $currentCameraDistance,
+                        currentCameraHeading: $currentCameraHeading,
+                        currentCameraPitch: $currentCameraPitch,
+                        annotatedPins: cachedAnnotatedPins,
+                        standaloneWTGItems: filter.showWantToGo ? cachedStandaloneWTG : [],
+                        onCameraChanged: { schedulePrefetch() }
+                    )
                 }
             }
+        }
+    }
+
+    private var appleMapContent: some View {
+        Map(position: $cameraPosition, selection: $mapSelection) {
+            UserAnnotation()
+
+            // Unified pins — stable identity per pin; .id() on the content view
+            // prevents annotation recycling from mixing up async-loaded photos.
+            ForEach(annotatedPins, id: \.identity) { item in
+                unifiedPinAnnotation(item: item)
+            }
+
+            // Standalone Want to Go pins (places not in any unified pin)
+            if filter.showWantToGo {
+                ForEach(standaloneWantToGoItems, id: \.id) { item in
+                    let isSelected = mapSelection == .wantToGo(item.id)
+                    let isRemoving = removingWTGIDs.contains(item.id)
+                    let tag = MapPinTag.wantToGo(item.id)
+                    Annotation(item.placeName, coordinate: item.coordinate, anchor: .bottom) {
+                        WantToGoMapPin()
+                            .scaleEffect(isRemoving ? 0.01 : (isSelected ? 1.25 : 1.0))
+                            .opacity(isRemoving ? 0 : 1)
+                            .animation(.easeOut(duration: 0.15), value: isSelected)
+                            .animation(.easeIn(duration: 0.3), value: isRemoving)
+                            .simultaneousGesture(TapGesture().onEnded {
+                                if isSelected {
+                                    withAnimation(.easeOut(duration: 0.15)) {
+                                        mapSelection = nil
+                                    }
+                                }
+                            })
+                    }
+                    .tag(tag)
+                }
+            }
+        }
+        .mapStyle(mapStyle.style)
+        .onMapCameraChange(frequency: .onEnd) { context in
+            visibleRegion = context.region
+            currentCameraDistance = context.camera.distance
+            currentCameraHeading = context.camera.heading
+            currentCameraPitch = context.camera.pitch
+            schedulePrefetch()
+        }
+        .mapControls {
+            MapUserLocationButton()
+            MapCompass()
+            MapScaleView()
         }
     }
 
@@ -594,7 +732,7 @@ struct ExploreMapView: View {
                 kenBurnsPan(to: coordinate, duration: 0.6)
             }
         }
-        withAnimation(.easeInOut(duration: 0.2)) { mapSelection = nil }
+        withAnimation(.easeOut(duration: 0.15)) { mapSelection = nil }
         cardIsExpanded = false
     }
 
@@ -613,14 +751,29 @@ struct ExploreMapView: View {
 
     private var mapStyleMenu: some View {
         Menu {
-            Section("Map Style") {
-                ForEach(MapStyleOption.allCases, id: \.self) { style in
+            if selectedTileStyle == .standard {
+                Section("Map Style") {
+                    ForEach(MapStyleOption.allCases, id: \.self) { style in
+                        Button {
+                            withAnimation { mapStyle = style }
+                        } label: {
+                            HStack {
+                                Label(style.name, systemImage: style.icon)
+                                if mapStyle == style { Image(systemName: "checkmark") }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section("Map Tiles") {
+                ForEach(TileStyleOption.allCases, id: \.self) { style in
                     Button {
-                        withAnimation { mapStyle = style }
+                        withAnimation { tileStyleRaw = style.rawValue }
                     } label: {
                         HStack {
                             Label(style.name, systemImage: style.icon)
-                            if mapStyle == style { Image(systemName: "checkmark") }
+                            if selectedTileStyle == style { Image(systemName: "checkmark") }
                         }
                     }
                 }
@@ -632,6 +785,9 @@ struct ExploreMapView: View {
     }
 
     // MARK: - Computed
+
+    /// All unique tags across every unfiltered unified pin — rebuilt in recomputePins().
+    private var availableTags: [String] { cachedAvailableTags }
 
     private var friendsChipLabel: String {
         if filter.selectedFriendIDs.count == 1,
@@ -645,9 +801,15 @@ struct ExploreMapView: View {
     }
 
     /// Logs filtered to current user only
-    private var personalLogs: [Log] {
-        guard let userID = authService.currentUser?.id else { return [] }
-        return allLogs.filter { $0.userID == userID }
+    private var personalLogs: [Log] { userLogs }
+
+    private func refreshUserLogs() {
+        guard let userID = authService.currentUser?.id else { return }
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.userID == userID },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        userLogs = (try? modelContext.fetch(descriptor)) ?? []
     }
 
     /// Changes when a personal log's photo becomes available (e.g. background upload completes).
@@ -656,10 +818,8 @@ struct ExploreMapView: View {
         personalLogs.reduce(0) { $0 + ($1.photoURL != nil ? 1 : 0) }
     }
 
-    /// Place IDs in the user's Want to Go list.
-    private var wantToGoPlaceIDs: Set<String> {
-        Set(wantToGoService.items.map(\.placeID))
-    }
+    /// Place IDs in the user's Want to Go list — rebuilt in recomputePins().
+    private var wantToGoPlaceIDs: Set<String> { cachedWantToGoPlaceIDs }
 
     /// Accessors for memoized pin data
     private var unifiedPins: [UnifiedMapPin] { cachedUnifiedPins }
@@ -667,11 +827,11 @@ struct ExploreMapView: View {
     private var annotatedPins: [(pin: UnifiedMapPin, isWantToGo: Bool, identity: String)] { cachedAnnotatedPins }
     private var standaloneWantToGoItems: [WantToGoMapItem] { cachedStandaloneWTG }
 
-    /// Schedules a debounced pin recomputation (batches multiple calls within one frame).
+    /// Schedules a debounced pin recomputation (coalesces cascading onChange triggers on startup).
     private func scheduleRecomputePins() {
         recomputeTask?.cancel()
         recomputeTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(16))
+            try? await Task.sleep(for: .milliseconds(100))
             guard !Task.isCancelled else { return }
             recomputePins()
         }
@@ -682,7 +842,26 @@ struct ExploreMapView: View {
         let unified = exploreMapService.computeUnifiedPins(personalLogs: personalLogs, places: Array(places))
         cachedUnifiedPins = unified
 
-        let bookmarked = filter.showWantToGo ? wantToGoPlaceIDs : Set<String>()
+        // Rebuild WantToGo place IDs
+        cachedWantToGoPlaceIDs = Set(wantToGoService.items.map(\.placeID))
+
+        // Rebuild available tags from all unified pins
+        var seenTags = Set<String>()
+        for pin in unified {
+            let tags: [String]
+            switch pin {
+            case .personal(let logs, _):
+                tags = logs.flatMap { $0.tags }
+            case .friends(let place):
+                tags = place.logs.flatMap { $0.log.tags }
+            case .combined(let logs, _, let fp):
+                tags = logs.flatMap { $0.tags } + fp.logs.flatMap { $0.log.tags }
+            }
+            tags.forEach { seenTags.insert($0) }
+        }
+        cachedAvailableTags = seenTags.sorted()
+
+        let bookmarked = filter.showWantToGo ? cachedWantToGoPlaceIDs : Set<String>()
         let filtered = exploreMapService.filteredUnifiedPins(pins: unified, filter: filter, bookmarkedPlaceIDs: bookmarked)
 
         // Detect removed unified pins for shrink-fade animation
@@ -757,9 +936,11 @@ struct ExploreMapView: View {
             return
         }
 
-        await wantToGoService.syncWantToGo(for: userID)
-        await exploreMapService.loadFriendsPlaces(for: userID)
-        await loadWantToGoItems()
+        // Run independent network calls concurrently — no data dependencies between them
+        async let wtgSync: Void = wantToGoService.syncWantToGo(for: userID)
+        async let friendsLoad: Void = exploreMapService.loadFriendsPlaces(for: userID)
+        async let wtgItems: Void = loadWantToGoItems()
+        _ = await (wtgSync, friendsLoad, wtgItems)
         lastFullLoadAt = Date()
 
         if !hasLoadedOnce {
@@ -769,6 +950,13 @@ struct ExploreMapView: View {
         }
 
         prefetchPinPhotos()
+    }
+
+    /// Prompts on first Explore visit so user location is available for map centering.
+    /// System dialog only appears when status is `.notDetermined`.
+    private func requestLocationPermissionIfNeeded() {
+        guard locationService.authorizationStatus == .notDetermined else { return }
+        locationService.requestPermission()
     }
 
     private func loadWantToGoItems() async {
@@ -918,32 +1106,38 @@ struct ExploreMapView: View {
         // Zoom camera to the new pin location
         zoomToSelected(coordinate: coord)
 
-        // Animate to settled (very slow, weighty spring drop)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            withAnimation(.spring(response: 2.0, dampingFraction: 0.45)) {
-                pinDropSettled = true
-            }
-        }
-
-        // Trigger confetti + shadow after pin lands
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-            showPulseRings = true
-        }
-
         // Show context toast immediately (Supabase insertion already complete)
         if let match {
             pinDropToast = PinDropToastInfo(
                 placeName: match.placeName,
                 ratingEmoji: match.userRating?.emoji ?? "📍"
             )
-            // Dismiss toast
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
-                pinDropToast = nil
-            }
         }
 
-        // Clear the drop animation state after it completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
+        // Run the sequenced animation in a single cancellable task
+        // (replaces 4 DispatchQueue.main.asyncAfter calls that couldn't be cancelled)
+        pinDropCleanupTask?.cancel()
+        pinDropCleanupTask = Task { @MainActor in
+            // Phase 1: settle the pin (50ms delay for spring to start from dropped position)
+            try? await Task.sleep(for: .milliseconds(50))
+            guard !Task.isCancelled else { return }
+            withAnimation(.spring(response: 2.0, dampingFraction: 0.45)) {
+                pinDropSettled = true
+            }
+
+            // Phase 2: pulse rings after pin lands
+            try? await Task.sleep(for: .milliseconds(1750))
+            guard !Task.isCancelled else { return }
+            showPulseRings = true
+
+            // Phase 3: dismiss toast
+            try? await Task.sleep(for: .milliseconds(1700))
+            guard !Task.isCancelled else { return }
+            pinDropToast = nil
+
+            // Phase 4: clean up animation state
+            try? await Task.sleep(for: .seconds(4.5))
+            guard !Task.isCancelled else { return }
             newPinPlaceID = nil
             showPulseRings = false
         }

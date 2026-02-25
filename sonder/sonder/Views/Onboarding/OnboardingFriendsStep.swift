@@ -573,8 +573,7 @@ private struct OnboardingUserRow: View {
                 isFollowing.toggle()
                 onFollowChanged(isFollowing)
 
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
+                SonderHaptics.impact(.light)
             } catch {
                 logger.error("Follow error: \(error.localizedDescription)")
             }

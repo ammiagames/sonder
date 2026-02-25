@@ -327,8 +327,7 @@ struct TripCollaboratorsView: View {
                 pendingInvitees.append(user)
                 searchResults.removeAll { $0.id == user.id }
 
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.success)
+                SonderHaptics.notification(.success)
             } catch {
                 logger.error("Error inviting user: \(error.localizedDescription)")
             }
@@ -341,8 +340,7 @@ struct TripCollaboratorsView: View {
                 try await tripService.removeCollaborator(userID: user.id, from: trip)
                 collaborators.removeAll { $0.id == user.id }
 
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.success)
+                SonderHaptics.notification(.success)
             } catch {
                 logger.error("Error removing collaborator: \(error.localizedDescription)")
             }

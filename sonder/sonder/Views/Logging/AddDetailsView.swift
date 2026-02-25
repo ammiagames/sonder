@@ -51,20 +51,37 @@ struct AddDetailsView: View {
 
     private let maxPhotos = 5
 
-    @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
-    @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
-    @Query private var allPlaces: [Place]
+    @State private var userTrips: [Trip] = []
+    @State private var userLogs: [Log] = []
+    @State private var allPlaces: [Place] = []
+    @State private var cachedAvailableTrips: [Trip] = []
+    @State private var cachedRecentTags: [String] = []
 
     private let maxNoteLength = 280
 
-    /// Trips the user can add logs to (owned + collaborating),
-    /// sorted by most recently used (latest log added), then by creation date.
-    private var availableTrips: [Trip] {
-        guard let userID = authService.currentUser?.id else { return [] }
-        let accessible = allTrips.filter { trip in
-            trip.createdBy == userID || trip.collaboratorIDs.contains(userID)
-        }
-        let latestLogByTrip: [String: Date] = allLogs.reduce(into: [:]) { map, log in
+    private var availableTrips: [Trip] { cachedAvailableTrips }
+
+    private var recentTagSuggestions: [String] { cachedRecentTags }
+
+    private func refreshData() {
+        guard let userID = authService.currentUser?.id else { return }
+        let logDescriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.userID == userID },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        userLogs = (try? modelContext.fetch(logDescriptor)) ?? []
+
+        let tripDescriptor = FetchDescriptor<Trip>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        let fetchedTrips = (try? modelContext.fetch(tripDescriptor)) ?? []
+        userTrips = fetchedTrips.filter { $0.isAccessible(by: userID) }
+
+        let placeDescriptor = FetchDescriptor<Place>()
+        allPlaces = (try? modelContext.fetch(placeDescriptor)) ?? []
+
+        // Cache sorted available trips
+        let latestLogByTrip: [String: Date] = userLogs.reduce(into: [:]) { map, log in
             guard let tripID = log.tripID else { return }
             if let existing = map[tripID] {
                 if log.createdAt > existing { map[tripID] = log.createdAt }
@@ -72,11 +89,14 @@ struct AddDetailsView: View {
                 map[tripID] = log.createdAt
             }
         }
-        return accessible.sorted { a, b in
+        cachedAvailableTrips = userTrips.sorted { a, b in
             let aDate = latestLogByTrip[a.id] ?? a.createdAt
             let bDate = latestLogByTrip[b.id] ?? b.createdAt
             return aDate > bDate
         }
+
+        // Cache recent tag suggestions
+        cachedRecentTags = recentTagsByUsage(logs: userLogs, userID: userID)
     }
 
     var body: some View {
@@ -123,7 +143,9 @@ struct AddDetailsView: View {
                     onAddCover: {
                         showConfirmation = false
                         showCoverImagePicker = true
-                    }
+                    },
+                    placeName: place.name,
+                    ratingEmoji: rating.emoji
                 )
                 .ignoresSafeArea()
             }
@@ -132,12 +154,11 @@ struct AddDetailsView: View {
             EditableImagePicker { image in
                 showCoverImagePicker = false
                 if let trip = coverNudgeTrip, let userId = authService.currentUser?.id {
+                    let tripID = trip.id
+                    let engine = syncEngine
                     Task {
                         if let url = await photoService.uploadPhoto(image, for: userId) {
-                            trip.coverPhotoURL = url
-                            trip.updatedAt = Date()
-                            trip.syncStatus = .pending
-                            try? modelContext.save()
+                            engine.updateTripCoverPhoto(tripID: tripID, url: url)
                         }
                     }
                 }
@@ -155,6 +176,9 @@ struct AddDetailsView: View {
                 selectedTrip = initialTrip
             }
             visitedAt = initialVisitedAt
+        }
+        .task {
+            refreshData()
         }
         .task {
             await photoSuggestionService.requestAuthorizationIfNeeded()
@@ -274,7 +298,7 @@ struct AddDetailsView: View {
                                     withAnimation(.spring(duration: 0.3, bounce: 0.15)) {
                                         selectedImages.removeAll { $0.id == item.id }
                                     }
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    SonderHaptics.impact(.light)
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .font(.system(size: 18))
@@ -311,7 +335,7 @@ struct AddDetailsView: View {
         var tripContext: PhotoSuggestionService.TripContext?
         if let trip = selectedTrip {
             let tripID = trip.id
-            let tripLogs = allLogs.filter { $0.tripID == tripID }
+            let tripLogs = userLogs.filter { $0.tripID == tripID }
             let logPlaceIDs = tripLogs.map(\.placeID)
             let logCoords: [CLLocationCoordinate2D] = allPlaces
                 .filter { logPlaceIDs.contains($0.id) }
@@ -369,7 +393,10 @@ struct AddDetailsView: View {
                 .textCase(.uppercase)
                 .tracking(0.5)
 
-            TagInputView(selectedTags: $tags)
+            TagInputView(
+                selectedTags: $tags,
+                recentTags: recentTagSuggestions
+            )
         }
     }
 
@@ -494,7 +521,7 @@ struct AddDetailsView: View {
             withAnimation(.easeInOut(duration: 0.15)) {
                 selectedTrip = isSelected ? nil : trip
             }
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            SonderHaptics.impact(.light)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "suitcase.fill")
@@ -608,12 +635,6 @@ struct AddDetailsView: View {
             createdBy: userId
         )
 
-        // Use Google Places photo as immediate fallback if no user photo picked
-        if newTripCoverImage == nil, let ref = place.photoReference,
-           let url = GooglePlacesService.photoURL(for: ref) {
-            trip.coverPhotoURL = url.absoluteString
-        }
-
         modelContext.insert(trip)
         do {
             try modelContext.save()
@@ -627,12 +648,11 @@ struct AddDetailsView: View {
         tripWasCreatedThisSession = true
 
         if let coverImage = newTripCoverImage {
+            let tripID = trip.id
+            let engine = syncEngine
             Task {
                 if let url = await photoService.uploadPhoto(coverImage, for: userId) {
-                    trip.coverPhotoURL = url
-                    trip.updatedAt = Date()
-                    trip.syncStatus = .pending
-                    try? modelContext.save()
+                    engine.updateTripCoverPhoto(tripID: tripID, url: url)
                 }
             }
         }
@@ -668,31 +688,13 @@ struct AddDetailsView: View {
         // Queue photos for background upload, get placeholder URLs immediately
         var photoURLs: [String] = []
         if !selectedImages.isEmpty {
-            let context = modelContext
             let engine = syncEngine
             photoURLs = photoService.queueBatchUpload(
                 images: selectedImages.map(\.image),
                 for: userId,
                 logID: logID
             ) { results in
-                // Called when all uploads finish — replace placeholders with real URLs
-                let idToFind = logID
-                let descriptor = FetchDescriptor<Log>(
-                    predicate: #Predicate { log in log.id == idToFind }
-                )
-                guard let log = try? context.fetch(descriptor).first else { return }
-
-                log.photoURLs = log.photoURLs.compactMap { url in
-                    if url.hasPrefix("pending-upload:") {
-                        let placeholderID = String(url.dropFirst("pending-upload:".count))
-                        return results[placeholderID] // nil (removed) if upload failed
-                    }
-                    return url
-                }
-                log.updatedAt = Date()
-                try? context.save()
-
-                Task { await engine.syncNow() }
+                engine.replacePendingPhotoURLs(logID: logID, uploadResults: results)
             }
         }
 
@@ -722,36 +724,13 @@ struct AddDetailsView: View {
         do {
             try modelContext.save()
 
-            // Auto-assign first photo as trip cover if trip has none
-            if let trip = selectedTrip, trip.coverPhotoURL == nil || isGooglePhotoURL(trip.coverPhotoURL) {
-                if let firstImage = selectedImages.first?.image {
-                    // Upload user photo as cover in background
-                    let tripToUpdate = trip
-                    Task {
-                        if let url = await photoService.uploadPhoto(firstImage, for: userId) {
-                            tripToUpdate.coverPhotoURL = url
-                            tripToUpdate.updatedAt = Date()
-                            tripToUpdate.syncStatus = .pending
-                            try? modelContext.save()
-                        }
-                    }
-                } else if trip.coverPhotoURL == nil, let ref = place.photoReference,
-                          let url = GooglePlacesService.photoURL(for: ref) {
-                    // No photos selected — use Google Places photo as fallback
-                    trip.coverPhotoURL = url.absoluteString
-                    trip.updatedAt = Date()
-                    trip.syncStatus = .pending
-                    try? modelContext.save()
-                }
-            }
-
             // Show nudge if trip was created this session and has no user-uploaded cover
             if tripWasCreatedThisSession, let trip = selectedTrip, selectedImages.isEmpty {
                 coverNudgeTrip = trip
             }
 
             // Haptic feedback
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            SonderHaptics.notification(.success)
 
             // If no photos, sync right away
             if selectedImages.isEmpty {
@@ -767,11 +746,6 @@ struct AddDetailsView: View {
         }
     }
 
-    /// Check if a URL is a Google Places photo URL (not a user-uploaded photo)
-    private func isGooglePhotoURL(_ url: String?) -> Bool {
-        guard let url else { return false }
-        return url.contains("googleapis.com")
-    }
 }
 
 // MARK: - All Trips Picker Sheet

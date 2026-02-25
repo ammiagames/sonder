@@ -102,7 +102,7 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
                 teardownTask?.cancel()
                 teardownTask = nil
                 if image == nil, let url {
-                    Task { await loadImage(from: url) }
+                    teardownTask = Task { await loadImage(from: url) }
                 }
             }
         }
@@ -125,23 +125,33 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
             )
             .frame(width: width * 1.5)
             .offset(x: shimmerPhase * width * 1.5)
-            .onAppear {
-                withAnimation(
-                    .easeInOut(duration: 1.2)
-                    .repeatForever(autoreverses: false)
-                ) {
-                    shimmerPhase = 1
-                }
-            }
         }
         .clipped()
+        .onAppear {
+            withAnimation(
+                .easeInOut(duration: 1.2)
+                .repeatForever(autoreverses: false)
+            ) {
+                shimmerPhase = 1
+            }
+        }
+        .onDisappear {
+            // Cancel the repeatForever animation when shimmer leaves the tree
+            // (e.g. when image loads). Without this, shimmerPhase keeps ticking.
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { shimmerPhase = -1 }
+        }
     }
 
     private func loadImage(from url: URL) async {
         // Check cache first (key includes target size to avoid serving tiny thumbnails)
         let cacheKey = ImageDownsampler.cacheKey(for: url, pointSize: targetSize)
         if cacheMode == .cached, let cached = ImageDownsampler.cache.object(forKey: cacheKey) {
-            self.image = cached
+            await MainActor.run {
+                self.image = cached
+                self.failed = false
+            }
             return
         }
 
@@ -149,17 +159,22 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
         do {
             let session = ImageDownsampler.session(for: cacheMode)
             let (data, response) = try await session.data(from: url)
+            guard !Task.isCancelled else { return }
 
             // Skip processing if we got an error HTTP status
             if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-                await MainActor.run { self.failed = true }
+                await MainActor.run {
+                    self.image = nil
+                    self.failed = true
+                }
                 return
             }
 
-            let scale = UITraitCollection.current.displayScale
+            let pointSize = ImageDownsampler.sanitizedPointSize(targetSize)
+            let scale = ImageDownsampler.targetScale
             let pixelSize = CGSize(
-                width: targetSize.width * scale,
-                height: targetSize.height * scale
+                width: pointSize.width * scale,
+                height: pointSize.height * scale
             )
 
             if let downsampled = ImageDownsampler.downsample(data: data, to: pixelSize) {
@@ -172,12 +187,19 @@ struct DownsampledAsyncImage<Placeholder: View>: View {
                 }
                 await MainActor.run {
                     self.image = downsampled
+                    self.failed = false
                 }
             } else {
-                await MainActor.run { self.failed = true }
+                await MainActor.run {
+                    self.image = nil
+                    self.failed = true
+                }
             }
         } catch {
-            await MainActor.run { self.failed = true }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self.failed = true
+            }
         }
     }
 }
@@ -205,15 +227,30 @@ enum ImageDownsampler {
     /// Builds a cache key that includes the target pixel dimensions so the same
     /// URL rendered at different display sizes gets independent cache entries.
     static func cacheKey(for url: URL, pointSize: CGSize) -> NSString {
-        let scale = UITraitCollection.current.displayScale
-        let pw = Int(pointSize.width * scale)
-        let ph = Int(pointSize.height * scale)
+        let size = sanitizedPointSize(pointSize)
+        let scale = targetScale
+        let pw = Int(size.width * scale)
+        let ph = Int(size.height * scale)
         return NSString(string: "\(url.absoluteString)#\(pw)x\(ph)")
+    }
+
+    /// Stable pixel scale used for caching/downsampling keys.
+    /// We intentionally avoid screen-scene APIs here so image decoding can run
+    /// safely off-main without UI-context dependencies.
+    static let targetScale: CGFloat = 2.0
+
+    /// Ensures decode and cache sizing always receives finite, non-zero dimensions.
+    static func sanitizedPointSize(_ pointSize: CGSize) -> CGSize {
+        let width = (pointSize.width.isFinite && pointSize.width > 0) ? pointSize.width : 1
+        let height = (pointSize.height.isFinite && pointSize.height > 0) ? pointSize.height : 1
+        return CGSize(width: width, height: height)
     }
 
     /// URLSession with disk cache for raw responses.
     static let session: URLSession = {
         let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 15    // 15s per request
+        config.timeoutIntervalForResource = 30   // 30s total
         let diskCache = URLCache(
             memoryCapacity: 0,             // skip memory tier (NSCache handles that)
             diskCapacity: 180 * 1024 * 1024 // 180MB disk
@@ -266,7 +303,8 @@ enum ImageDownsampler {
             }
 
             let (data, _) = try await session(for: cacheMode).data(from: url)
-            let pixelSize = CGSize(width: targetSize.width * 2, height: targetSize.height * 2)
+            let pointSize = sanitizedPointSize(targetSize)
+            let pixelSize = CGSize(width: pointSize.width * 2, height: pointSize.height * 2)
             guard let image = downsample(data: data, to: pixelSize) else {
                 return nil
             }

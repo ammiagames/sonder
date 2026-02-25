@@ -263,8 +263,7 @@ struct EditProfileView: View {
                 await authService.syncUserProfile(user)
 
                 // Haptic feedback
-                let feedback = UINotificationFeedbackGenerator()
-                feedback.notificationOccurred(.success)
+                SonderHaptics.notification(.success)
 
                 await MainActor.run {
                     dismiss()

@@ -7,6 +7,20 @@
 
 import SwiftUI
 
+// MARK: - Export Format Category
+
+enum ExportFormatCategory: String, CaseIterable {
+    case image, text, pdf
+
+    var title: String {
+        switch self {
+        case .image: return "Image"
+        case .text: return "Text"
+        case .pdf: return "PDF"
+        }
+    }
+}
+
 // MARK: - Export Aspect Ratio
 
 enum ExportAspectRatio: String, CaseIterable, Identifiable {

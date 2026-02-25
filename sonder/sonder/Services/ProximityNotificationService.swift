@@ -66,7 +66,8 @@ final class ProximityNotificationService: NSObject {
             return
         }
 
-        // Setup location manager
+        // Stop any existing location manager before creating a new one
+        locationManager?.stopUpdatingLocation()
         locationManager = CLLocationManager()
         locationManager?.delegate = self
         locationManager?.desiredAccuracy = kCLLocationAccuracyHundredMeters
@@ -93,25 +94,28 @@ final class ProximityNotificationService: NSObject {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard settings.authorizationStatus == .authorized else { return }
 
-        // Check location permission without prompting
-        let locationManager = CLLocationManager()
-        let authStatus = locationManager.authorizationStatus
+        // Check location permission without prompting — reuse existing manager if available
+        if locationManager == nil {
+            locationManager = CLLocationManager()
+        }
+        guard let manager = locationManager else { return }
+        let authStatus = manager.authorizationStatus
         guard authStatus == .authorizedWhenInUse || authStatus == .authorizedAlways else { return }
 
-        // Both permissions already granted — start silently
-        self.locationManager = locationManager
-        self.locationManager?.delegate = self
-        self.locationManager?.desiredAccuracy = kCLLocationAccuracyHundredMeters
-        self.locationManager?.allowsBackgroundLocationUpdates = false
-        self.locationManager?.pausesLocationUpdatesAutomatically = true
+        // Both permissions already granted — configure and start silently
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        manager.allowsBackgroundLocationUpdates = false
+        manager.pausesLocationUpdatesAutomatically = true
 
         await refreshCachedPlaces()
-        self.locationManager?.startUpdatingLocation()
+        manager.startUpdatingLocation()
         isMonitoring = true
     }
 
     func stopMonitoring() {
         locationManager?.stopUpdatingLocation()
+        locationManager = nil
         isMonitoring = false
     }
 
@@ -181,13 +185,13 @@ final class ProximityNotificationService: NSObject {
             trigger: nil // Deliver immediately
         )
 
-        UNUserNotificationCenter.current().add(request) { error in
+        UNUserNotificationCenter.current().add(request) { [weak self] error in
             if let error = error {
-                self.logger.error("Error sending notification: \(error.localizedDescription)")
+                self?.logger.error("Error sending notification: \(error.localizedDescription)")
             } else {
                 // Record notification time
-                Task { @MainActor in
-                    self.lastNotificationTimes[item.place.id] = Date()
+                Task { @MainActor [weak self] in
+                    self?.lastNotificationTimes[item.place.id] = Date()
                 }
             }
         }

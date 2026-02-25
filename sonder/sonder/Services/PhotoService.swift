@@ -149,39 +149,66 @@ final class PhotoService {
         logID: String,
         onComplete: @escaping @MainActor ([String: String]) -> Void
     ) -> [String] {
-        // Compress images synchronously (fast, ~50ms each)
-        var entries: [(placeholderID: String, data: Data)] = []
-        for image in images {
-            let placeholderID = UUID().uuidString.lowercased()
-            guard let data = compressImage(image) else { continue }
-            entries.append((placeholderID: placeholderID, data: data))
-        }
-
-        let placeholders = entries.map { "pending-upload:\($0.placeholderID)" }
+        // Generate placeholder IDs immediately (no compression needed)
+        let placeholderIDs = images.map { _ in UUID().uuidString.lowercased() }
+        let placeholders = placeholderIDs.map { "pending-upload:\($0)" }
 
         // Create batch tracker
         activeBatches[logID] = PhotoUploadBatch(
             logID: logID,
-            totalCount: entries.count
+            totalCount: images.count
         )
 
-        // Fire off background uploads
-        Task {
-            for entry in entries {
-                let url = await uploadCompressedData(entry.data, for: userId)
-
-                if let url {
-                    activeBatches[logID]?.results[entry.placeholderID] = url
-                } else {
-                    activeBatches[logID]?.failedIDs.insert(entry.placeholderID)
+        // Compress + upload on background thread to avoid blocking main thread
+        let imagesToCompress = Array(zip(placeholderIDs, images))
+        let maxDim = maxDimension
+        let quality = compressionQuality
+        let logger = self.logger
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            var entries: [(placeholderID: String, data: Data)] = []
+            for (placeholderID, image) in imagesToCompress {
+                if let data = Self.compressImageOffMain(image, maxDimension: maxDim, quality: quality) {
+                    entries.append((placeholderID: placeholderID, data: data))
                 }
-                activeBatches[logID]?.completedCount += 1
             }
 
-            // Batch done — deliver results and clean up
-            let results = activeBatches[logID]?.results ?? [:]
-            activeBatches.removeValue(forKey: logID)
-            onComplete(results)
+            // Retry loop: keep retrying failed uploads until all succeed.
+            // This handles the offline-then-reconnect case — we don't call
+            // onComplete (which would clear the placeholder URLs) until every
+            // photo has a real uploaded URL.
+            var pending = entries
+            var retryDelay: Double = 5
+            let maxRetryDelay: Double = 30
+
+            while !pending.isEmpty && !Task.isCancelled {
+                var stillFailing: [(placeholderID: String, data: Data)] = []
+                for entry in pending {
+                    let url = await self.uploadCompressedData(entry.data, for: userId)
+                    await MainActor.run {
+                        if let url {
+                            self.activeBatches[logID]?.results[entry.placeholderID] = url
+                            self.activeBatches[logID]?.completedCount += 1
+                        }
+                    }
+                    if url == nil {
+                        stillFailing.append(entry)
+                    }
+                }
+                pending = stillFailing
+                if !pending.isEmpty {
+                    logger.info("[PhotoUpload] \(stillFailing.count) photo(s) failed — retrying in \(retryDelay)s")
+                    try? await Task.sleep(for: .seconds(retryDelay))
+                    retryDelay = min(retryDelay * 2, maxRetryDelay)
+                }
+            }
+
+            // All photos uploaded (or task cancelled) — deliver results and clean up
+            await MainActor.run {
+                let results = self.activeBatches[logID]?.results ?? [:]
+                self.activeBatches.removeValue(forKey: logID)
+                onComplete(results)
+            }
         }
 
         return placeholders
@@ -223,6 +250,25 @@ final class PhotoService {
     }
 
     // MARK: - Image Compression
+
+    /// Thread-safe compression for use from background tasks.
+    nonisolated private static func compressImageOffMain(_ image: UIImage, maxDimension: CGFloat, quality: CGFloat) -> Data? {
+        let originalSize = image.size
+        var newSize = originalSize
+
+        if originalSize.width > maxDimension || originalSize.height > maxDimension {
+            let widthRatio = maxDimension / originalSize.width
+            let heightRatio = maxDimension / originalSize.height
+            let ratio = min(widthRatio, heightRatio)
+            newSize = CGSize(width: originalSize.width * ratio, height: originalSize.height * ratio)
+        }
+
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        let resizedImage = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+        return resizedImage.jpegData(compressionQuality: quality)
+    }
 
     /// Compress and resize an image
     private func compressImage(_ image: UIImage) -> Data? {

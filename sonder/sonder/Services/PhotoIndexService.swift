@@ -18,8 +18,31 @@ final class PhotoIndexService {
 
     private let modelContainer: ModelContainer
     private var storedFetchResult: PHFetchResult<PHAsset>?
-    private var libraryObserver: IndexLibraryChangeObserver?
-    private var buildTask: Task<Void, Never>?
+    private nonisolated(unsafe) var libraryObserver: IndexLibraryChangeObserver?
+    private nonisolated(unsafe) var buildTask: Task<Void, Never>?
+    private nonisolated(unsafe) var libraryChangeTask: Task<Void, Never>?
+    private var lastIncrementalRefreshAt: Date?
+
+    private struct IndexedPhotoCandidate: Sendable {
+        let localIdentifier: String
+        let latitude: Double
+        let longitude: Double
+    }
+
+    /// Sendable snapshot of a PHAsset change for passing into detached tasks.
+    /// PHAsset itself is NOT Sendable — we must extract data on the main actor first.
+    private struct AssetChange: Sendable {
+        let localIdentifier: String
+        let latitude: Double?
+        let longitude: Double?
+        var hasLocation: Bool { latitude != nil && longitude != nil }
+    }
+
+    private enum IncrementalRefresh {
+        static let minInterval: TimeInterval = 20
+        static let recentAssetLimit = 400
+        static let saveBatchSize = 100
+    }
 
     private enum Defaults {
         static let builtKey = "sonder.photoIndex.built"
@@ -28,6 +51,14 @@ final class PhotoIndexService {
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
+    }
+
+    deinit {
+        if let observer = libraryObserver {
+            PHPhotoLibrary.shared().unregisterChangeObserver(observer)
+        }
+        buildTask?.cancel()
+        libraryChangeTask?.cancel()
     }
 
     // MARK: - Build
@@ -52,6 +83,11 @@ final class PhotoIndexService {
         }
     }
 
+    // THREAD SAFETY: buildFullIndex runs photo enumeration and SwiftData writes
+    // together in a single Task.detached block. The ModelContext is created at the
+    // top and used synchronously throughout — no `await` between creation and final
+    // save, so thread affinity is maintained. Do NOT add `await` calls between
+    // context creation and the last `bgContext.save()`.
     func buildFullIndex(accessLevel: String) {
         buildTask?.cancel()
         isBuilding = true
@@ -59,65 +95,133 @@ final class PhotoIndexService {
         let container = modelContainer
 
         buildTask = Task.detached { [weak self] in
-            let bgContext = ModelContext(container)
-            bgContext.autosaveEnabled = false
-
-            // Delete all existing entries
-            try? bgContext.delete(model: PhotoLocationIndex.self)
-            try? bgContext.save()
-
+            // 1. Enumerate photos — collect Sendable candidates (no SwiftData here)
             let fetchOptions = PHFetchOptions()
             fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
             let assets = PHAsset.fetchAssets(with: .image, options: fetchOptions)
 
-            var batch: [PhotoLocationIndex] = []
-            let batchSize = 1000
+            var candidates: [IndexedPhotoCandidate] = []
+            let batchThreshold = 1000
 
-            assets.enumerateObjects { asset, index, stop in
+            assets.enumerateObjects { asset, _, stop in
                 if Task.isCancelled {
                     stop.pointee = true
                     return
                 }
-
                 guard let location = asset.location else { return }
-
-                let entry = PhotoLocationIndex(
+                candidates.append(IndexedPhotoCandidate(
                     localIdentifier: asset.localIdentifier,
                     latitude: location.coordinate.latitude,
                     longitude: location.coordinate.longitude
-                )
-                batch.append(entry)
-
-                if batch.count >= batchSize {
-                    for item in batch {
-                        bgContext.insert(item)
-                    }
-                    try? bgContext.save()
-                    batch.removeAll(keepingCapacity: true)
-                }
-            }
-
-            // Save remaining
-            if !batch.isEmpty {
-                for item in batch {
-                    bgContext.insert(item)
-                }
-                try? bgContext.save()
+                ))
             }
 
             guard !Task.isCancelled else { return }
 
-            // Hand fetch result to main actor
+            // 2. Batch-insert into SwiftData (single context, no await)
+            let bgContext = ModelContext(container)
+            bgContext.autosaveEnabled = false
+
+            try? bgContext.delete(model: PhotoLocationIndex.self)
+            try? bgContext.save()
+
+            var batchCount = 0
+            for candidate in candidates {
+                let entry = PhotoLocationIndex(
+                    localIdentifier: candidate.localIdentifier,
+                    latitude: candidate.latitude,
+                    longitude: candidate.longitude
+                )
+                bgContext.insert(entry)
+                batchCount += 1
+
+                if batchCount >= batchThreshold {
+                    try? bgContext.save()
+                    batchCount = 0
+                }
+            }
+
+            if batchCount > 0 {
+                try? bgContext.save()
+            }
+
+            // 3. Hand fetch result to main actor
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.storedFetchResult = assets
                 self.isBuilding = false
                 self.hasBuiltIndex = true
+                self.lastIncrementalRefreshAt = Date()
                 UserDefaults.standard.set(true, forKey: Defaults.builtKey)
                 UserDefaults.standard.set(accessLevel, forKey: Defaults.accessLevelKey)
                 self.startObserver()
             }
         }
+    }
+
+    /// Refreshes index entries for recent geotagged photos, useful when photos were added
+    /// while the app was not running and no live library-change callbacks were received.
+    func refreshRecentAssetsIfNeeded(force: Bool = false) async {
+        guard hasBuiltIndex else { return }
+        guard !isBuilding else { return }
+
+        let now = Date()
+        if !force,
+           let last = lastIncrementalRefreshAt,
+           now.timeIntervalSince(last) < IncrementalRefresh.minInterval {
+            return
+        }
+
+        let candidates = fetchRecentGeotaggedAssetCandidates(limit: IncrementalRefresh.recentAssetLimit)
+        lastIncrementalRefreshAt = now
+        guard !candidates.isEmpty else { return }
+
+        isBuilding = true
+        let container = modelContainer
+        let batchSize = IncrementalRefresh.saveBatchSize
+
+        _ = await Task.detached(priority: .utility) {
+            let bgContext = ModelContext(container)
+            bgContext.autosaveEnabled = false
+            var writesSinceSave = 0
+
+            for candidate in candidates {
+                if Task.isCancelled { break }
+
+                let id = candidate.localIdentifier
+                let descriptor = FetchDescriptor<PhotoLocationIndex>(
+                    predicate: #Predicate { $0.localIdentifier == id }
+                )
+                let existing = try? bgContext.fetch(descriptor).first
+
+                if let existing {
+                    if existing.latitude != candidate.latitude || existing.longitude != candidate.longitude {
+                        existing.latitude = candidate.latitude
+                        existing.longitude = candidate.longitude
+                        writesSinceSave += 1
+                    }
+                } else {
+                    let entry = PhotoLocationIndex(
+                        localIdentifier: candidate.localIdentifier,
+                        latitude: candidate.latitude,
+                        longitude: candidate.longitude
+                    )
+                    bgContext.insert(entry)
+                    writesSinceSave += 1
+                }
+
+                if writesSinceSave >= batchSize {
+                    try? bgContext.save()
+                    writesSinceSave = 0
+                }
+            }
+
+            if writesSinceSave > 0 {
+                try? bgContext.save()
+            }
+        }.value
+
+        isBuilding = false
     }
 
     // MARK: - Query
@@ -149,9 +253,10 @@ final class PhotoIndexService {
             predicate: #Predicate {
                 $0.latitude >= minLat && $0.latitude <= maxLat &&
                 $0.longitude >= minLng && $0.longitude <= maxLng
-            }
+            },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 100
+        descriptor.fetchLimit = 250
 
         guard let candidates = try? context.fetch(descriptor) else { return [] }
 
@@ -189,21 +294,36 @@ final class PhotoIndexService {
 
         storedFetchResult = details.fetchResultAfterChanges
 
-        let removed = details.removedObjects
-        let inserted = details.insertedObjects
-        let changed = details.changedObjects
+        // Extract Sendable data from PHAsset objects on the main actor BEFORE
+        // entering the detached task. PHAsset is NOT Sendable.
+        let removedIDs: [String] = details.removedObjects.map(\.localIdentifier)
+        let insertedChanges: [AssetChange] = details.insertedObjects.map { asset in
+            AssetChange(
+                localIdentifier: asset.localIdentifier,
+                latitude: asset.location?.coordinate.latitude,
+                longitude: asset.location?.coordinate.longitude
+            )
+        }
+        let updatedChanges: [AssetChange] = details.changedObjects.map { asset in
+            AssetChange(
+                localIdentifier: asset.localIdentifier,
+                latitude: asset.location?.coordinate.latitude,
+                longitude: asset.location?.coordinate.longitude
+            )
+        }
 
-        guard !removed.isEmpty || !inserted.isEmpty || !changed.isEmpty else { return }
+        guard !removedIDs.isEmpty || !insertedChanges.isEmpty || !updatedChanges.isEmpty else { return }
 
         let container = modelContainer
 
-        Task.detached { [removed, inserted, changed] in
+        libraryChangeTask?.cancel()
+        libraryChangeTask = Task.detached {
             let bgContext = ModelContext(container)
             bgContext.autosaveEnabled = false
 
             // Remove deleted assets
-            for asset in removed {
-                let id = asset.localIdentifier
+            for id in removedIDs {
+                guard !Task.isCancelled else { return }
                 let descriptor = FetchDescriptor<PhotoLocationIndex>(
                     predicate: #Predicate { $0.localIdentifier == id }
                 )
@@ -213,33 +333,35 @@ final class PhotoIndexService {
             }
 
             // Insert new geotagged assets
-            for asset in inserted {
-                guard let location = asset.location else { continue }
+            for change in insertedChanges {
+                guard !Task.isCancelled else { return }
+                guard change.hasLocation, let lat = change.latitude, let lng = change.longitude else { continue }
                 let entry = PhotoLocationIndex(
-                    localIdentifier: asset.localIdentifier,
-                    latitude: location.coordinate.latitude,
-                    longitude: location.coordinate.longitude
+                    localIdentifier: change.localIdentifier,
+                    latitude: lat,
+                    longitude: lng
                 )
                 bgContext.insert(entry)
             }
 
             // Update changed assets (location may have been added/removed)
-            for asset in changed {
-                let id = asset.localIdentifier
+            for change in updatedChanges {
+                guard !Task.isCancelled else { return }
+                let id = change.localIdentifier
                 let descriptor = FetchDescriptor<PhotoLocationIndex>(
                     predicate: #Predicate { $0.localIdentifier == id }
                 )
                 let existing = try? bgContext.fetch(descriptor).first
 
-                if let location = asset.location {
+                if change.hasLocation, let lat = change.latitude, let lng = change.longitude {
                     if let existing {
-                        existing.latitude = location.coordinate.latitude
-                        existing.longitude = location.coordinate.longitude
+                        existing.latitude = lat
+                        existing.longitude = lng
                     } else {
                         let entry = PhotoLocationIndex(
-                            localIdentifier: asset.localIdentifier,
-                            latitude: location.coordinate.latitude,
-                            longitude: location.coordinate.longitude
+                            localIdentifier: change.localIdentifier,
+                            latitude: lat,
+                            longitude: lng
                         )
                         bgContext.insert(entry)
                     }
@@ -251,6 +373,7 @@ final class PhotoIndexService {
                 }
             }
 
+            guard !Task.isCancelled else { return }
             try? bgContext.save()
         }
     }
@@ -272,6 +395,29 @@ final class PhotoIndexService {
         let fetchOptions = PHFetchOptions()
         fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         storedFetchResult = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+    }
+
+    private func fetchRecentGeotaggedAssetCandidates(limit: Int) -> [IndexedPhotoCandidate] {
+        let fetchOptions = PHFetchOptions()
+        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        fetchOptions.fetchLimit = limit
+
+        let assets = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+        var candidates: [IndexedPhotoCandidate] = []
+        candidates.reserveCapacity(min(limit, assets.count))
+
+        assets.enumerateObjects { asset, _, _ in
+            guard let location = asset.location else { return }
+            candidates.append(
+                IndexedPhotoCandidate(
+                    localIdentifier: asset.localIdentifier,
+                    latitude: location.coordinate.latitude,
+                    longitude: location.coordinate.longitude
+                )
+            )
+        }
+
+        return candidates
     }
 }
 

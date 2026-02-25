@@ -34,11 +34,18 @@ final class PhotoSuggestionService {
     private let maxSuggestions = 15
 
     private var enumerationTask: Task<[PHAsset], Never>?
-    private var libraryObserver: LibraryChangeObserver?
-    private var debounceTask: Task<Void, Never>?
+    private nonisolated(unsafe) var libraryObserver: LibraryChangeObserver?
+    private nonisolated(unsafe) var debounceTask: Task<Void, Never>?
 
     // Callback for observer-triggered re-fetches — set by the view
     var onLibraryChange: (() async -> Void)?
+
+    deinit {
+        if let observer = libraryObserver {
+            PHPhotoLibrary.shared().unregisterChangeObserver(observer)
+        }
+        debounceTask?.cancel()
+    }
 
     // MARK: - Authorization
 
@@ -58,6 +65,12 @@ final class PhotoSuggestionService {
             authorizationLevel = mapStatus(newStatus)
         default:
             authorizationLevel = .denied
+        }
+
+        // Build (or rebuild) the spatial index as soon as photo access is granted.
+        if let photoIndexService,
+           authorizationLevel == .full || authorizationLevel == .limited {
+            photoIndexService.buildIndexIfNeeded(accessLevel: authorizationLevel == .full ? "full" : "limited")
         }
     }
 
@@ -94,30 +107,35 @@ final class PhotoSuggestionService {
         isLoading = true
 
         // Fast path: use spatial index if available
-        if let indexService = photoIndexService,
-           indexService.hasBuiltIndex,
-           !indexService.isBuilding {
-            let identifiers = indexService.query(near: allLocations, radiusMeters: radiusMeters)
+        if let indexService = photoIndexService, indexService.hasBuiltIndex {
+            await indexService.refreshRecentAssetsIfNeeded()
 
-            if !identifiers.isEmpty {
-                let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
-                var assets: [PHAsset] = []
-                fetchResult.enumerateObjects { asset, _, _ in
-                    assets.append(asset)
+            if !indexService.isBuilding {
+                var identifiers = indexService.query(near: allLocations, radiusMeters: radiusMeters)
+
+                // One forced refresh on miss catches photos added while the app was closed.
+                if identifiers.isEmpty {
+                    await indexService.refreshRecentAssetsIfNeeded(force: true)
+                    identifiers = indexService.query(near: allLocations, radiusMeters: radiusMeters)
                 }
 
-                let sorted = assets.sorted { a, b in
-                    let distA = minDistance(of: a, to: placeLocation)
-                    let distB = minDistance(of: b, to: placeLocation)
-                    return distA < distB
+                if !identifiers.isEmpty {
+                    let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
+                    var assets: [PHAsset] = []
+                    fetchResult.enumerateObjects { asset, _, _ in
+                        assets.append(asset)
+                    }
+
+                    let sorted = assets.sorted { a, b in
+                        let distA = minDistance(of: a, to: placeLocation)
+                        let distB = minDistance(of: b, to: placeLocation)
+                        return distA < distB
+                    }
+                    suggestions = Array(sorted.prefix(maxSuggestions))
+                    isLoading = false
+                    return
                 }
-                suggestions = Array(sorted.prefix(maxSuggestions))
-            } else {
-                suggestions = []
             }
-
-            isLoading = false
-            return
         }
 
         // Fallback: full enumeration (first launch while index builds)

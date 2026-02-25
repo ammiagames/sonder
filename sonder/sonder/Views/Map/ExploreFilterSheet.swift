@@ -11,6 +11,7 @@ import SwiftUI
 /// friends-specific filters (rating, recency, loved) only apply to friend logs.
 struct ExploreFilterSheet: View {
     @Binding var filter: ExploreMapFilter
+    var availableTags: [String] = []
     @Environment(\.dismiss) private var dismiss
     @Environment(ExploreMapService.self) private var exploreMapService
     @Environment(SavedListsService.self) private var savedListsService
@@ -132,6 +133,46 @@ struct ExploreFilterSheet: View {
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 } header: {
                     Text("Category")
+                }
+
+                // MARK: - Tags
+                if !availableTags.isEmpty {
+                    Section {
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 10) {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) { filter.selectedTags = [] }
+                            } label: {
+                                tagChip("All", selected: filter.selectedTags.isEmpty)
+                            }
+                            .buttonStyle(.plain)
+
+                            ForEach(availableTags, id: \.self) { tag in
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.2)) { toggleTag(tag) }
+                                } label: {
+                                    tagChip(tag, selected: filter.selectedTags.contains(tag))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    } header: {
+                        HStack {
+                            Text("Tags")
+                            Spacer()
+                            if !filter.selectedTags.isEmpty {
+                                Button("Show All") {
+                                    withAnimation(.easeInOut(duration: 0.2)) { filter.selectedTags = [] }
+                                }
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(SonderColors.terracotta)
+                            }
+                        }
+                    }
                 }
 
                 // MARK: - Rating (friends' places)
@@ -372,6 +413,37 @@ struct ExploreFilterSheet: View {
         }
     }
 
+    private func tagChip(_ label: String, selected: Bool) -> some View {
+        Text(label)
+            .font(.system(size: 12, weight: .medium))
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, SonderSpacing.sm)
+            .background(selected ? SonderColors.terracotta.opacity(0.15) : SonderColors.warmGray)
+            .foregroundStyle(selected ? SonderColors.terracotta : SonderColors.inkDark)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+            .overlay {
+                if selected {
+                    RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
+                        .stroke(SonderColors.terracotta, lineWidth: 1.5)
+                        .transition(.opacity)
+                }
+            }
+    }
+
+    private func toggleTag(_ tag: String) {
+        if filter.selectedTags.isEmpty {
+            filter.selectedTags = [tag]
+        } else if filter.selectedTags.contains(tag) {
+            filter.selectedTags.remove(tag)
+        } else {
+            filter.selectedTags.insert(tag)
+            if filter.selectedTags == Set(availableTags) {
+                filter.selectedTags = []
+            }
+        }
+    }
+
     @ViewBuilder
     private func friendAvatar(_ user: FeedItem.FeedUser, size: CGFloat) -> some View {
         if let urlString = user.avatarURL, let url = URL(string: urlString) {
@@ -426,6 +498,7 @@ extension ExploreMapFilter {
         if recency != .allTime { count += 1 }
         if !selectedFriendIDs.isEmpty { count += 1 }
         if !selectedSavedListIDs.isEmpty { count += 1 }
+        if !selectedTags.isEmpty { count += 1 }
         return count
     }
 
@@ -446,6 +519,9 @@ extension ExploreMapFilter {
         if !selectedSavedListIDs.isEmpty {
             labels.append((id: "savedLists", label: "\(selectedSavedListIDs.count) list\(selectedSavedListIDs.count == 1 ? "" : "s")"))
         }
+        if !selectedTags.isEmpty {
+            labels.append((id: "tags", label: "\(selectedTags.count) tag\(selectedTags.count == 1 ? "" : "s")"))
+        }
         return labels
     }
 
@@ -459,6 +535,7 @@ extension ExploreMapFilter {
         case "wantToGo": showWantToGo = true
         case "friends": selectedFriendIDs = []
         case "savedLists": selectedSavedListIDs = []
+        case "tags": selectedTags = []
         default:
             if id.hasPrefix("category-") {
                 let label = String(id.dropFirst("category-".count))

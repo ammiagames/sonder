@@ -72,6 +72,14 @@ enum UnifiedMapPin: Identifiable {
         }
     }
 
+    var placeAddress: String {
+        switch self {
+        case .personal(_, let place): return place.address
+        case .friends(let place): return place.address
+        case .combined(_, let place, _): return place.address
+        }
+    }
+
     var photoReference: String? {
         switch self {
         case .personal(_, let place): return place.photoReference
@@ -202,9 +210,11 @@ struct ExploreMapFilter: Equatable {
     var selectedFriendIDs: Set<String> = []
     /// Empty set means show all saved lists. Non-empty means only show these list IDs.
     var selectedSavedListIDs: Set<String> = []
+    /// Empty set = show all. Non-empty = only show pins that have at least one of these tags.
+    var selectedTags: Set<String> = []
 
     var isActive: Bool {
-        rating != .all || !categories.isEmpty || recency != .allTime || !showWantToGo || !showMyPlaces || !showFriendsPlaces || !selectedFriendIDs.isEmpty || !selectedSavedListIDs.isEmpty
+        rating != .all || !categories.isEmpty || recency != .allTime || !showWantToGo || !showMyPlaces || !showFriendsPlaces || !selectedFriendIDs.isEmpty || !selectedSavedListIDs.isEmpty || !selectedTags.isEmpty
     }
 
     mutating func toggleCategory(_ cat: CategoryFilter) {

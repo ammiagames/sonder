@@ -1,0 +1,391 @@
+//
+//  BulkImportReviewView.swift
+//  sonder
+//
+//  Created by Michael Song on 2/25/26.
+//
+
+import SwiftUI
+import Photos
+
+/// Main review screen for bulk import — shows clustered log groups for user confirmation.
+struct BulkImportReviewView: View {
+    @Environment(AuthenticationService.self) private var authService
+    @Environment(GooglePlacesService.self) private var googlePlacesService
+    @Environment(PlacesCacheService.self) private var placesCacheService
+    @Environment(PhotoSuggestionService.self) private var photoSuggestionService
+    @Environment(\.dismiss) private var dismiss
+
+    @Bindable var importService: BulkPhotoImportService
+    let tripID: String?
+    let tripName: String?
+
+    @State private var showSearchPlace: Bool = false
+    @State private var editingClusterID: UUID?
+    @State private var savingTask: Task<Void, Never>?
+    @State private var searchText: String = ""
+    @State private var searchPredictions: [PlacePrediction] = []
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            ScrollView {
+                LazyVStack(spacing: SonderSpacing.md) {
+                    // Trip badge
+                    if let tripName {
+                        tripBadge(tripName)
+                    }
+
+                    // Cluster cards
+                    ForEach(importService.clusters) { cluster in
+                        clusterCard(cluster)
+                    }
+
+                    // Unlocated photos section
+                    if !importService.unlocatedPhotos.isEmpty {
+                        unlocatedSection
+                    }
+                }
+                .padding(.horizontal, SonderSpacing.md)
+                .padding(.top, SonderSpacing.md)
+                .padding(.bottom, 100) // Room for floating button
+            }
+            .background(SonderColors.cream)
+
+            // Floating save button
+            saveButton
+        }
+        .sheet(isPresented: $showSearchPlace) {
+            PlacePickerSheet(
+                clusterID: editingClusterID,
+                onPlaceSelected: { clusterID, place in
+                    importService.updatePlace(for: clusterID, place: place)
+                }
+            )
+        }
+    }
+
+    // MARK: - Trip Badge
+
+    private func tripBadge(_ name: String) -> some View {
+        HStack(spacing: SonderSpacing.xs) {
+            Image(systemName: "suitcase.fill")
+                .font(.system(size: 14))
+                .foregroundStyle(SonderColors.terracotta)
+            Text(name)
+                .font(SonderTypography.headline)
+                .foregroundStyle(SonderColors.inkDark)
+        }
+        .padding(.horizontal, SonderSpacing.md)
+        .padding(.vertical, SonderSpacing.xs)
+        .background(SonderColors.warmGray)
+        .clipShape(Capsule())
+    }
+
+    // MARK: - Cluster Card
+
+    private func clusterCard(_ cluster: PhotoCluster) -> some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            // Photo thumbnail strip
+            photoStrip(for: cluster)
+
+            // Place name + change button
+            placeRow(for: cluster)
+
+            // Compact rating picker
+            compactRatingPicker(for: cluster)
+
+            // Date display
+            if let date = cluster.date {
+                HStack {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 12))
+                        .foregroundStyle(SonderColors.inkMuted)
+                    Text(date, style: .date)
+                        .font(SonderTypography.caption)
+                        .foregroundStyle(SonderColors.inkMuted)
+                }
+            }
+        }
+        .padding(SonderSpacing.md)
+        .background(SonderColors.warmGray.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+        .overlay(alignment: .topTrailing) {
+            Button {
+                withAnimation {
+                    importService.removeCluster(cluster.id)
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(SonderColors.inkLight)
+            }
+            .padding(SonderSpacing.xs)
+        }
+    }
+
+    // MARK: - Photo Strip
+
+    private func photoStrip(for cluster: PhotoCluster) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: SonderSpacing.xs) {
+                ForEach(cluster.photoMetadata) { photo in
+                    PhotoThumbnailView(assetID: photo.id, photoSuggestionService: photoSuggestionService)
+                        .frame(width: 64, height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                }
+            }
+        }
+    }
+
+    // MARK: - Place Row
+
+    private func placeRow(for cluster: PhotoCluster) -> some View {
+        HStack {
+            if let place = cluster.confirmedPlace {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(place.name)
+                        .font(SonderTypography.headline)
+                        .foregroundStyle(SonderColors.inkDark)
+                    Text(place.address)
+                        .font(SonderTypography.caption)
+                        .foregroundStyle(SonderColors.inkMuted)
+                        .lineLimit(1)
+                }
+            } else if let first = cluster.suggestedPlaces.first {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(first.name)
+                        .font(SonderTypography.headline)
+                        .foregroundStyle(SonderColors.inkDark)
+                    Text(first.address)
+                        .font(SonderTypography.caption)
+                        .foregroundStyle(SonderColors.inkMuted)
+                        .lineLimit(1)
+                }
+            } else {
+                Text("No place found")
+                    .font(SonderTypography.headline)
+                    .foregroundStyle(SonderColors.inkLight)
+            }
+
+            Spacer()
+
+            Button("Change") {
+                editingClusterID = cluster.id
+                showSearchPlace = true
+            }
+            .font(SonderTypography.caption)
+            .foregroundStyle(SonderColors.terracotta)
+        }
+    }
+
+    // MARK: - Compact Rating Picker
+
+    private func compactRatingPicker(for cluster: PhotoCluster) -> some View {
+        HStack(spacing: SonderSpacing.xs) {
+            ForEach(Rating.allCases, id: \.rawValue) { rating in
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    importService.updateRating(for: cluster.id, rating: rating)
+                } label: {
+                    VStack(spacing: 2) {
+                        Text(rating.emoji)
+                            .font(.system(size: 24))
+                        Text(rating.displayName)
+                            .font(.system(size: 10, design: .rounded))
+                            .foregroundStyle(
+                                cluster.rating == rating ? SonderColors.inkDark : SonderColors.inkMuted
+                            )
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, SonderSpacing.xs)
+                    .background(
+                        cluster.rating == rating
+                            ? SonderColors.warmGrayDark
+                            : Color.clear
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - Unlocated Section
+
+    private var unlocatedSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            HStack {
+                Image(systemName: "location.slash")
+                    .foregroundStyle(SonderColors.inkMuted)
+                Text("\(importService.unlocatedPhotos.count) photos without location")
+                    .font(SonderTypography.subheadline)
+                    .foregroundStyle(SonderColors.inkMuted)
+            }
+
+            Text("These photos don't have GPS data and were skipped.")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkLight)
+        }
+        .padding(SonderSpacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SonderColors.warmGray.opacity(0.3))
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+    }
+
+    // MARK: - Save Button
+
+    private var saveButton: some View {
+        let count = importService.readyCount
+
+        return VStack {
+            if case .saving(let progress) = importService.state {
+                ProgressView(value: progress)
+                    .tint(SonderColors.terracotta)
+                    .padding(.horizontal, SonderSpacing.xl)
+            }
+
+            Button {
+                guard let userID = authService.currentUser?.id else { return }
+                savingTask = Task {
+                    await importService.saveAllLogs(userID: userID, tripID: tripID)
+                }
+            } label: {
+                Text(importService.state == .saving(progress: 0) ? "Saving..." : "Create \(count) Logs")
+                    .font(SonderTypography.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, SonderSpacing.sm)
+                    .background(
+                        importService.canSave
+                            ? SonderColors.terracotta
+                            : SonderColors.inkLight
+                    )
+                    .clipShape(Capsule())
+            }
+            .disabled(!importService.canSave || isSaving)
+            .padding(.horizontal, SonderSpacing.xl)
+            .padding(.bottom, SonderSpacing.lg)
+        }
+        .background(
+            LinearGradient(
+                colors: [SonderColors.cream.opacity(0), SonderColors.cream],
+                startPoint: .top,
+                endPoint: .center
+            )
+        )
+    }
+
+    private var isSaving: Bool {
+        if case .saving = importService.state { return true }
+        return false
+    }
+}
+
+// MARK: - Photo Thumbnail View
+
+/// Loads and displays a PHAsset thumbnail.
+struct PhotoThumbnailView: View {
+    let assetID: String
+    let photoSuggestionService: PhotoSuggestionService
+
+    @State private var thumbnail: UIImage?
+
+    var body: some View {
+        Group {
+            if let thumbnail {
+                Image(uiImage: thumbnail)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Rectangle()
+                    .fill(SonderColors.warmGray)
+                    .opacity(0.6)
+            }
+        }
+        .task {
+            guard thumbnail == nil else { return }
+            let result = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil)
+            if let asset = result.firstObject {
+                thumbnail = await photoSuggestionService.loadThumbnail(for: asset)
+            }
+        }
+    }
+}
+
+// MARK: - Place Picker Sheet
+
+/// Lightweight place search for changing a cluster's place.
+/// Uses Google Places autocomplete + details to resolve a Place.
+struct PlacePickerSheet: View {
+    @Environment(GooglePlacesService.self) private var googlePlacesService
+    @Environment(PlacesCacheService.self) private var placesCacheService
+    @Environment(\.dismiss) private var dismiss
+
+    let clusterID: UUID?
+    let onPlaceSelected: (UUID, Place) -> Void
+
+    @State private var searchText = ""
+    @State private var predictions: [PlacePrediction] = []
+    @State private var isLoading = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if predictions.isEmpty && !searchText.isEmpty && !isLoading {
+                    Text("No results")
+                        .font(SonderTypography.body)
+                        .foregroundStyle(SonderColors.inkMuted)
+                        .listRowBackground(SonderColors.cream)
+                }
+
+                ForEach(predictions) { prediction in
+                    Button {
+                        selectPlace(prediction)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(prediction.mainText)
+                                .font(SonderTypography.headline)
+                                .foregroundStyle(SonderColors.inkDark)
+                            Text(prediction.secondaryText)
+                                .font(SonderTypography.caption)
+                                .foregroundStyle(SonderColors.inkMuted)
+                        }
+                    }
+                    .listRowBackground(SonderColors.cream)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(SonderColors.cream)
+            .searchable(text: $searchText, prompt: "Search for a place")
+            .navigationTitle("Change Place")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        .onChange(of: searchText) { _, newValue in
+            guard !newValue.isEmpty else {
+                predictions = []
+                return
+            }
+            Task {
+                predictions = await googlePlacesService.autocomplete(query: newValue)
+            }
+        }
+    }
+
+    private func selectPlace(_ prediction: PlacePrediction) {
+        guard let clusterID else { return }
+        isLoading = true
+        Task {
+            if let details = await googlePlacesService.getPlaceDetails(placeId: prediction.placeId) {
+                let place = placesCacheService.cachePlace(from: details)
+                onPlaceSelected(clusterID, place)
+            }
+            dismiss()
+        }
+    }
+}

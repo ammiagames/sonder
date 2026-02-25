@@ -360,8 +360,7 @@ private struct FollowListUserCard: View {
                 }
                 isFollowing.toggle()
 
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
+                SonderHaptics.impact(.light)
             } catch {
                 logger.error("Follow error: \(error.localizedDescription)")
             }

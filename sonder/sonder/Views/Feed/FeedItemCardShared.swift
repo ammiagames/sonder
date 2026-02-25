@@ -41,32 +41,6 @@ enum FeedItemCardShared {
             }
     }
 
-    // MARK: - Bookmark Button
-
-    static func bookmarkButton(
-        isWantToGo: Bool,
-        scale: Binding<CGFloat>,
-        onTap: @escaping () -> Void
-    ) -> some View {
-        Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
-                scale.wrappedValue = 1.3
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    scale.wrappedValue = 1.0
-                }
-            }
-            onTap()
-        } label: {
-            Image(systemName: isWantToGo ? "bookmark.fill" : "bookmark")
-                .font(.system(size: 18))
-                .foregroundStyle(isWantToGo ? SonderColors.terracotta : SonderColors.inkLight)
-                .scaleEffect(scale.wrappedValue)
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: - Compact Place Thumbnail
 
     @ViewBuilder
@@ -113,26 +87,61 @@ enum FeedItemCardShared {
     // MARK: - Photo Carousel
 
     /// Reusable photo carousel (TabView with page style).
+    @ViewBuilder
     static func photoCarousel(
         photoURLs: [String],
         pageIndex: Binding<Int>,
         height: CGFloat,
         targetImageWidth: CGFloat = 400
     ) -> some View {
-        TabView(selection: pageIndex) {
-            ForEach(Array(photoURLs.enumerated()), id: \.offset) { index, urlString in
-                Group {
-                    if let url = URL(string: urlString) {
-                        DownsampledAsyncImage(url: url, targetSize: CGSize(width: targetImageWidth, height: height)) {
+        if photoURLs.isEmpty {
+            Rectangle()
+                .fill(SonderColors.warmGray)
+                .frame(height: height)
+                .frame(maxWidth: .infinity)
+                .clipped()
+        } else {
+            let safeSelection = Binding<Int>(
+                get: {
+                    let maxIndex = max(photoURLs.count - 1, 0)
+                    return min(max(pageIndex.wrappedValue, 0), maxIndex)
+                },
+                set: { newValue in
+                    let maxIndex = max(photoURLs.count - 1, 0)
+                    pageIndex.wrappedValue = min(max(newValue, 0), maxIndex)
+                }
+            )
+
+            TabView(selection: safeSelection) {
+                ForEach(photoURLs.indices, id: \.self) { index in
+                    // Only load images for the current page and adjacent pages (±1)
+                    // to avoid eagerly downloading all carousel photos at once
+                    let currentPage = safeSelection.wrappedValue
+                    let isNearby = abs(index - currentPage) <= 1
+                    if isNearby, let url = URL(string: photoURLs[index]) {
+                        DownsampledAsyncImage(
+                            url: url,
+                            targetSize: CGSize(width: targetImageWidth, height: height),
+                            contentMode: .fill
+                        ) {
                             Rectangle().fill(SonderColors.warmGray)
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                        .tag(index)
+                    } else {
+                        Rectangle()
+                            .fill(SonderColors.warmGray)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
+                            .tag(index)
                     }
                 }
-                .tag(index)
             }
+            .tabViewStyle(.page(indexDisplayMode: photoURLs.count > 1 ? .automatic : .never))
+            .frame(height: height)
+            .frame(maxWidth: .infinity)
+            .clipped()
         }
-        .tabViewStyle(.page(indexDisplayMode: photoURLs.count > 1 ? .automatic : .never))
-        .frame(height: height)
-        .frame(maxWidth: .infinity)
     }
 }

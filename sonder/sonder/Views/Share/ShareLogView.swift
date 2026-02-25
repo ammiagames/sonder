@@ -52,7 +52,8 @@ struct ShareLogView: View {
     @State private var exportImage: UIImage?
     @State private var showShareSheet = false
 
-    @Query(sort: \Log.createdAt) private var allLogs: [Log]
+    @Environment(\.modelContext) private var modelContext
+    @State private var allLogs: [Log] = []
 
     var body: some View {
         NavigationStack {
@@ -97,7 +98,17 @@ struct ShareLogView: View {
             }
         }
         .task {
+            let userID = log.userID
+            let descriptor = FetchDescriptor<Log>(
+                predicate: #Predicate { $0.userID == userID },
+                sortBy: [SortDescriptor(\.createdAt)]
+            )
+            allLogs = (try? modelContext.fetch(descriptor)) ?? []
             await loadPhoto()
+        }
+        .onDisappear {
+            previewImage = nil
+            exportImage = nil
         }
     }
 

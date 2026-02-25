@@ -20,8 +20,10 @@ enum LogsTripsTab: String, CaseIterable {
 struct TripsListView: View {
     @Environment(AuthenticationService.self) private var authService
     @Environment(TripService.self) private var tripService
-    @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
-    @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
+    @Environment(SyncEngine.self) private var syncEngine
+    @Environment(\.modelContext) private var modelContext
+    @State private var allUserTrips: [Trip] = []
+    @State private var allUserLogs: [Log] = []
     @Query private var places: [Place]
 
     @State private var selectedTab: LogsTripsTab = .logs
@@ -34,17 +36,24 @@ struct TripsListView: View {
     @Namespace private var tripTransition
 
     /// Trips filtered to current user (owned + collaborating)
-    private var trips: [Trip] {
-        guard let userID = authService.currentUser?.id else { return [] }
-        return allTrips.filter { trip in
-            trip.createdBy == userID || trip.collaboratorIDs.contains(userID)
-        }
-    }
+    private var trips: [Trip] { allUserTrips }
 
     /// Logs filtered to current user
-    private var logs: [Log] {
-        guard let userID = authService.currentUser?.id else { return [] }
-        return allLogs.filter { $0.userID == userID }
+    private var logs: [Log] { allUserLogs }
+
+    private func refreshData() {
+        guard let userID = authService.currentUser?.id else { return }
+        let logDescriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.userID == userID },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        allUserLogs = (try? modelContext.fetch(logDescriptor)) ?? []
+
+        let tripDescriptor = FetchDescriptor<Trip>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        let allTrips = (try? modelContext.fetch(tripDescriptor)) ?? []
+        allUserTrips = allTrips.filter { $0.isAccessible(by: userID) }
     }
 
     var body: some View {
@@ -106,9 +115,11 @@ struct TripsListView: View {
                 await loadInvitationCount()
             }
             .task {
+                refreshData()
                 await loadTrips()
                 await loadInvitationCount()
             }
+            .onChange(of: syncEngine.lastSyncDate) { _, _ in refreshData() }
             .onChange(of: showInvitations) { _, isShowing in
                 if !isShowing {
                     Task {
@@ -278,11 +289,11 @@ struct TripsListView: View {
 
     private func tripName(for log: Log) -> String? {
         guard let tripID = log.tripID else { return nil }
-        return allTrips.first(where: { $0.id == tripID })?.name
+        return allUserTrips.first(where: { $0.id == tripID })?.name
     }
 
     private func logCount(for trip: Trip) -> Int {
-        allLogs.filter { $0.tripID == trip.id }.count
+        allUserLogs.filter { $0.tripID == trip.id }.count
     }
 
     private func isOwner(_ trip: Trip) -> Bool {

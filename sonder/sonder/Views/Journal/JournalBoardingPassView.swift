@@ -17,14 +17,14 @@ struct JournalBoardingPassView: View {
     @Binding var selectedTrip: Trip?
     @Binding var selectedLog: Log?
     @State private var showOrphanedLogs: Bool = true
+    @State private var orphanedVisibleCount: Int = 10
+    @State private var cachedPlacesByID: [String: Place] = [:]
+    @State private var cachedLogsByTripID: [String: [Log]] = [:]
+    private let orphanedPageSize = 10
 
-    private var placesByID: [String: Place] {
-        Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
-    }
+    private var placesByID: [String: Place] { cachedPlacesByID }
 
-    private var logsByTripID: [String: [Log]] {
-        Dictionary(grouping: allLogs.filter { $0.tripID != nil }, by: { $0.tripID ?? "" })
-    }
+    private var logsByTripID: [String: [Log]] { cachedLogsByTripID }
 
     private func logsForTrip(_ trip: Trip) -> [Log] {
         logsByTripID[trip.id] ?? []
@@ -65,6 +65,14 @@ struct JournalBoardingPassView: View {
         return start.formatted(.dateTime.month(.abbreviated).day().year())
     }
 
+    private var visibleOrphanedLogs: [Log] {
+        Array(orphanedLogs.prefix(orphanedVisibleCount))
+    }
+
+    private var hasMoreOrphanedLogs: Bool {
+        orphanedVisibleCount < orphanedLogs.count
+    }
+
     var body: some View {
         ZStack {
             // Sky background
@@ -82,10 +90,38 @@ struct JournalBoardingPassView: View {
                         orphanedLogsHeader
 
                         if showOrphanedLogs {
-                            ForEach(orphanedLogs, id: \.id) { log in
+                            ForEach(visibleOrphanedLogs, id: \.id) { log in
                                 orphanedLogStub(log: log)
+                                    .scrollTransition(.interactive, axis: .vertical) { content, phase in
+                                        let parallax = min(abs(phase.value), 1)
+                                        return content
+                                            .scaleEffect(1 - parallax * 0.03)
+                                            .offset(y: parallax * 4)
+                                            .opacity(1 - Double(parallax) * 0.10)
+                                    }
                             }
                             .transition(.opacity)
+
+                            if hasMoreOrphanedLogs {
+                                Button {
+                                    loadMoreOrphanedLogs()
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "plus.circle.fill")
+                                            .font(.system(size: 13, weight: .semibold))
+                                        Text("Load more")
+                                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    }
+                                    .foregroundStyle(SonderColors.terracotta)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        Capsule().fill(Color.white.opacity(0.65))
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.top, 4)
+                            }
                         }
                     }
                 }
@@ -93,6 +129,15 @@ struct JournalBoardingPassView: View {
                 .padding(.top, SonderSpacing.md)
                 .padding(.bottom, showOrphanedLogs ? 100 : 400)
             }
+        }
+        .onAppear {
+            rebuildBoardingPassCaches()
+            syncOrphanedPagination()
+        }
+        .onChange(of: allLogs.count) { _, _ in rebuildBoardingPassCaches() }
+        .onChange(of: places.count) { _, _ in rebuildBoardingPassCaches() }
+        .onChange(of: orphanedLogs.count) { _, _ in
+            syncOrphanedPagination()
         }
     }
 
@@ -367,6 +412,11 @@ struct JournalBoardingPassView: View {
 
     private var orphanedLogsHeader: some View {
         Button {
+            let willExpand = !showOrphanedLogs
+            if willExpand {
+                syncOrphanedPagination()
+            }
+            SonderHaptics.impact(.soft, intensity: 0.42)
             withAnimation(.easeInOut(duration: 0.25)) {
                 showOrphanedLogs.toggle()
             }
@@ -393,6 +443,7 @@ struct JournalBoardingPassView: View {
     private func orphanedLogStub(log: Log) -> some View {
         let place = placesByID[log.placeID]
         return Button {
+            SonderHaptics.impact(.light, intensity: 0.5)
             selectedLog = log
         } label: {
             VStack(spacing: 0) {
@@ -454,6 +505,28 @@ struct JournalBoardingPassView: View {
             .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
         }
         .buttonStyle(.plain)
+    }
+
+    private func loadMoreOrphanedLogs() {
+        guard hasMoreOrphanedLogs else { return }
+        let nextCount = min(orphanedVisibleCount + orphanedPageSize, orphanedLogs.count)
+        guard nextCount > orphanedVisibleCount else { return }
+        orphanedVisibleCount = nextCount
+        SonderHaptics.impact(.medium, intensity: 0.55)
+    }
+
+    private func rebuildBoardingPassCaches() {
+        cachedPlacesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+        cachedLogsByTripID = Dictionary(grouping: allLogs.filter { $0.tripID != nil }, by: { $0.tripID ?? "" })
+    }
+
+    private func syncOrphanedPagination() {
+        let minimumVisible = min(orphanedPageSize, orphanedLogs.count)
+        if orphanedVisibleCount < minimumVisible {
+            orphanedVisibleCount = minimumVisible
+        } else if orphanedVisibleCount > orphanedLogs.count {
+            orphanedVisibleCount = orphanedLogs.count
+        }
     }
 
     private func labelValue(label: String, value: String, accent: Bool = false) -> some View {

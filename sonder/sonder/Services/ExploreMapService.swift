@@ -151,20 +151,20 @@ final class ExploreMapService {
 
         // Both personal + friends
         for placeID in personalIDs.intersection(friendIDs) {
-            let (logs, place) = personalByPlaceID[placeID]!
-            let friendPlace = placesMap[placeID]!
+            guard let (logs, place) = personalByPlaceID[placeID],
+                  let friendPlace = placesMap[placeID] else { continue }
             pins.append(.combined(logs: logs, place: place, friendPlace: friendPlace))
         }
 
         // Personal only
         for placeID in personalIDs.subtracting(friendIDs) {
-            let (logs, place) = personalByPlaceID[placeID]!
+            guard let (logs, place) = personalByPlaceID[placeID] else { continue }
             pins.append(.personal(logs: logs, place: place))
         }
 
         // Friends only
         for placeID in friendIDs.subtracting(personalIDs) {
-            let friendPlace = placesMap[placeID]!
+            guard let friendPlace = placesMap[placeID] else { continue }
             pins.append(.friends(place: friendPlace))
         }
 
@@ -190,8 +190,8 @@ final class ExploreMapService {
                     ? filterFriendPlace(friendPlace, selectedIDs: filter.selectedFriendIDs)
                     : nil
 
-                if filter.showMyPlaces && filteredFriend != nil {
-                    visiblePin = .combined(logs: logs, place: place, friendPlace: filteredFriend!)
+                if filter.showMyPlaces, let friend = filteredFriend {
+                    visiblePin = .combined(logs: logs, place: place, friendPlace: friend)
                 } else if filter.showMyPlaces {
                     visiblePin = .personal(logs: logs, place: place)
                 } else if let filtered = filteredFriend {
@@ -219,6 +219,23 @@ final class ExploreMapService {
             // Category filter
             if !filter.categories.isEmpty {
                 guard filter.matchesCategories(placeName: resultPin.placeName) else { return nil }
+            }
+
+            // Tag filter — pin passes if any log shares at least one selected tag
+            if !filter.selectedTags.isEmpty {
+                let selectedSet = filter.selectedTags  // already a Set<String>
+                let passes: Bool
+                switch resultPin {
+                case .personal(let logs, _):
+                    passes = logs.contains { !selectedSet.isDisjoint(with: $0.tags) }
+                case .friends(let place):
+                    passes = place.logs.contains { !selectedSet.isDisjoint(with: $0.log.tags) }
+                case .combined(let logs, _, let friendPlace):
+                    let personalMatch = logs.contains { !selectedSet.isDisjoint(with: $0.tags) }
+                    let friendMatch   = friendPlace.logs.contains { !selectedSet.isDisjoint(with: $0.log.tags) }
+                    passes = personalMatch || friendMatch
+                }
+                guard passes else { return nil }
             }
 
             return resultPin

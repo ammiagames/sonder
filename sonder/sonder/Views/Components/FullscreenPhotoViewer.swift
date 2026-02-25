@@ -32,12 +32,19 @@ struct FullscreenPhotoViewer: View {
 
             TabView(selection: $currentIndex) {
                 ForEach(Array(photoURLs.enumerated()), id: \.offset) { index, urlString in
-                    ZoomablePhotoPage(urlString: urlString, onDismissDrag: handleDrag, onDismissEnd: handleDragEnd)
-                        .tag(index)
+                    // Only build zoomable pages for current and adjacent photos
+                    if abs(index - currentIndex) <= 1 {
+                        ZoomablePhotoPage(urlString: urlString, onDismissDrag: handleDrag, onDismissEnd: handleDragEnd)
+                            .tag(index)
+                    } else {
+                        Color.black
+                            .tag(index)
+                    }
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .offset(y: dragOffset)
+            .clipped()
 
             // Close button
             VStack {
@@ -116,17 +123,18 @@ private struct ZoomablePhotoPage: View {
                     DownsampledAsyncImage(
                         url: url,
                         targetSize: CGSize(width: size.width * 2, height: size.height * 2),
+                        contentMode: .fit,
                         cacheMode: .cached
                     ) {
                         ProgressView()
                             .tint(.white)
                     }
-                    .scaledToFit()
                 }
             }
             .frame(width: size.width, height: size.height)
             .scaleEffect(scale)
             .offset(offset)
+            .clipped()
             .gesture(
                 MagnifyGesture()
                     .onChanged { value in

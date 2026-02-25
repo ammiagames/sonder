@@ -23,44 +23,64 @@ struct MasonryTripsGrid: View {
 
     @State private var cardFrames: [Int: CGRect] = [:]
     @State private var unassignedExpanded = false
+    @State private var unassignedVisibleCount = 10
+    private let unassignedPageSize = 10
+    @State private var rebuildTask: Task<Void, Never>?
 
-    // MARK: - Precomputed Data
+    // Cached computed data — rebuilt only when inputs change (via .onChange)
+    @State private var cachedLogCounts: [String: Int] = [:]
+    @State private var cachedPlacesByID: [String: Place] = [:]
+    @State private var cachedAssignments: [MasonryColumnAssignment] = []
+    @State private var cachedLeftColumn: [(trip: Trip, index: Int)] = []
+    @State private var cachedRightColumn: [(trip: Trip, index: Int)] = []
+    @State private var cachedUnassignedLogs: [Log] = []
 
-    /// O(L) log count dictionary — built once per render instead of O(T*L)
-    private var logCountsByTripID: [String: Int] {
+    // MARK: - Precomputed Data (accessors for cached values)
+
+    private var logCountsByTripID: [String: Int] { cachedLogCounts }
+    private var placesByID: [String: Place] { cachedPlacesByID }
+    private var columnAssignments: [MasonryColumnAssignment] { cachedAssignments }
+    private var leftColumn: [(trip: Trip, index: Int)] { cachedLeftColumn }
+    private var rightColumn: [(trip: Trip, index: Int)] { cachedRightColumn }
+    private var unassignedLogs: [Log] { cachedUnassignedLogs }
+
+    private var visibleUnassignedLogs: [Log] {
+        Array(cachedUnassignedLogs.prefix(unassignedVisibleCount))
+    }
+
+    private var hasMoreUnassignedLogs: Bool {
+        unassignedVisibleCount < cachedUnassignedLogs.count
+    }
+
+    private func rebuildCaches() {
+        // Log counts: O(L)
         var counts: [String: Int] = [:]
         for log in allLogs {
-            if let tripID = log.tripID {
-                counts[tripID, default: 0] += 1
-            }
+            if let tripID = log.tripID { counts[tripID, default: 0] += 1 }
         }
-        return counts
-    }
+        cachedLogCounts = counts
 
-    /// O(P) place dictionary for O(1) lookups in unassigned logs section
-    private var placesByID: [String: Place] {
-        Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
-    }
+        // Place lookup: O(P)
+        cachedPlacesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
 
-    // MARK: - Column Assignment
+        // Column assignments: O(T)
+        let assignments = assignMasonryColumns(trips: trips, estimateHeight: estimateCardHeight)
+        cachedAssignments = assignments
+        cachedLeftColumn = assignments.filter { $0.column == 0 }.map { ($0.trip, $0.index) }
+        cachedRightColumn = assignments.filter { $0.column == 1 }.map { ($0.trip, $0.index) }
 
-    /// Computed once; leftColumn and rightColumn are derived from it without re-calling
-    private var columnAssignments: [MasonryColumnAssignment] {
-        assignMasonryColumns(trips: trips, estimateHeight: estimateCardHeight)
-    }
-
-    private var leftColumn: [(trip: Trip, index: Int)] {
-        columnAssignments.filter { $0.column == 0 }.map { ($0.trip, $0.index) }
-    }
-
-    private var rightColumn: [(trip: Trip, index: Int)] {
-        columnAssignments.filter { $0.column == 1 }.map { ($0.trip, $0.index) }
-    }
-
-    /// Logs not belonging to any trip (includes stale tripIDs pointing to deleted trips)
-    private var unassignedLogs: [Log] {
+        // Unassigned logs
         let tripIDs = Set(trips.map(\.id))
-        return filteredLogs.filter { $0.tripID.map { !tripIDs.contains($0) } ?? true }
+        cachedUnassignedLogs = filteredLogs.filter { $0.tripID.map { !tripIDs.contains($0) } ?? true }
+    }
+
+    private func scheduleRebuild() {
+        rebuildTask?.cancel()
+        rebuildTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(50))
+            guard !Task.isCancelled else { return }
+            rebuildCaches()
+        }
     }
 
     // MARK: - Body
@@ -83,9 +103,21 @@ struct MasonryTripsGrid: View {
             .padding(.top, SonderSpacing.sm)
         }
         .scrollDismissesKeyboard(.immediately)
+        .onAppear {
+            rebuildCaches()
+            syncUnassignedPagination()
+        }
+        .onChange(of: allLogs.count) { _, _ in scheduleRebuild() }
+        .onChange(of: trips.count) { _, _ in scheduleRebuild() }
+        .onChange(of: places.count) { _, _ in scheduleRebuild() }
+        .onChange(of: filteredLogs.count) { _, _ in scheduleRebuild() }
+        .onChange(of: cachedUnassignedLogs.count) { _, _ in
+            syncUnassignedPagination()
+        }
         .onChange(of: searchText) { _, newValue in
             if !newValue.isEmpty {
                 unassignedExpanded = true
+                syncUnassignedPagination()
             }
         }
     }
@@ -143,6 +175,11 @@ struct MasonryTripsGrid: View {
     private var notInTripSection: some View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             Button {
+                let willExpand = !unassignedExpanded
+                if willExpand {
+                    syncUnassignedPagination()
+                }
+                SonderHaptics.impact(.soft, intensity: 0.42)
                 withAnimation(.easeInOut(duration: 0.2)) {
                     unassignedExpanded.toggle()
                 }
@@ -169,16 +206,46 @@ struct MasonryTripsGrid: View {
             .buttonStyle(.plain)
 
             if unassignedExpanded {
-                ForEach(unassignedLogs, id: \.id) { log in
+                ForEach(visibleUnassignedLogs, id: \Log.id) { (log: Log) in
                     if let place = placesByID[log.placeID] {
                         Button {
+                            SonderHaptics.impact(.light, intensity: 0.5)
                             selectedLog = log
                         } label: {
                             JournalLogRow(log: log, place: place, tripName: nil)
                         }
                         .buttonStyle(.plain)
                         .padding(.horizontal, SonderSpacing.md)
+                        .scrollTransition(.interactive, axis: .vertical) { content, phase in
+                            let parallax = min(abs(phase.value), 1)
+                            return content
+                                .scaleEffect(1 - parallax * 0.02)
+                                .offset(y: parallax * 3)
+                                .opacity(1 - Double(parallax) * 0.08)
+                        }
                     }
+                }
+
+                if hasMoreUnassignedLogs {
+                    Button {
+                        loadMoreUnassignedLogs()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Load more")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundStyle(SonderColors.terracotta)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule().fill(SonderColors.warmGray)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.top, SonderSpacing.xs)
                 }
             }
         }
@@ -214,6 +281,23 @@ struct MasonryTripsGrid: View {
         if trip.startDate != nil { h += 18 }
         h += 18              // stats row
         return h
+    }
+
+    private func loadMoreUnassignedLogs() {
+        guard hasMoreUnassignedLogs else { return }
+        let nextCount = min(unassignedVisibleCount + unassignedPageSize, unassignedLogs.count)
+        guard nextCount > unassignedVisibleCount else { return }
+        unassignedVisibleCount = nextCount
+        SonderHaptics.impact(.medium, intensity: 0.55)
+    }
+
+    private func syncUnassignedPagination() {
+        let minimumVisible = min(unassignedPageSize, unassignedLogs.count)
+        if unassignedVisibleCount < minimumVisible {
+            unassignedVisibleCount = minimumVisible
+        } else if unassignedVisibleCount > unassignedLogs.count {
+            unassignedVisibleCount = unassignedLogs.count
+        }
     }
 }
 

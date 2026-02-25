@@ -30,28 +30,115 @@ struct ProfileView: View {
     @Environment(SocialService.self) private var socialService
     @Environment(WantToGoService.self) private var wantToGoService
     @Environment(SavedListsService.self) private var savedListsService
-    @Query private var allLogs: [Log]
+    @Environment(\.modelContext) private var modelContext
+    @State private var logs: [Log] = []
     @Query private var places: [Place]
-    @Query(sort: \Trip.updatedAt, order: .reverse) private var allTrips: [Trip]
+    @State private var trips: [Trip] = []
 
     @State private var showSettings = false
     @State private var showEditProfile = false
     @State private var showShareProfile = false
-    private var wantToGoCount: Int {
-        guard let userID = authService.currentUser?.id else { return 0 }
-        return wantToGoService.items.filter { $0.userID == userID }.count
-    }
-    @State private var profileStats: ProfileStats?
+@State private var profileStats: ProfileStats?
     @State private var activeDestination: ProfileDestination?
 
     @Binding var selectedTab: Int
     @Binding var exploreFocusMyPlaces: Bool
     var popToRoot: UUID = UUID()
 
-    /// Logs filtered to current user only
-    private var logs: [Log] {
-        guard let userID = authService.currentUser?.id else { return [] }
-        return allLogs.filter { $0.userID == userID }
+    // Cached computed stats — rebuilt when logs/places change
+    @State private var cachedUserPlaces: [Place] = []
+    @State private var cachedUniqueCities: Set<String> = []
+    @State private var cachedUniqueCountries: Set<String> = []
+    @State private var cachedTopTagsWithCounts: [(tag: String, count: Int)] = []
+    @State private var cachedCityCounts: [(city: String, count: Int)] = []
+    @State private var cachedTripLogCounts: [String: Int] = [:]
+    @State private var cachedCityPhotoURLs: [String: URL] = [:]
+
+    private func refreshData() {
+        guard let userID = authService.currentUser?.id else { return }
+        let logDescriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.userID == userID },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        logs = (try? modelContext.fetch(logDescriptor)) ?? []
+
+        let tripDescriptor = FetchDescriptor<Trip>(
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        let allTrips = (try? modelContext.fetch(tripDescriptor)) ?? []
+        trips = allTrips.filter { $0.isAccessible(by: userID) }
+
+        rebuildProfileCaches()
+    }
+
+    private func rebuildProfileCaches() {
+        // User places
+        let loggedPlaceIDs = Set(logs.map { $0.placeID })
+        let uPlaces = places.filter { loggedPlaceIDs.contains($0.id) }
+        cachedUserPlaces = uPlaces
+
+        // Cities + countries
+        cachedUniqueCities = Set(uPlaces.compactMap { extractCity(from: $0.address) })
+        cachedUniqueCountries = Set(uPlaces.compactMap { extractCountry(from: $0.address) })
+
+        // Tags
+        let allTags = logs.flatMap { $0.tags }
+        if allTags.isEmpty {
+            cachedTopTagsWithCounts = []
+        } else {
+            cachedTopTagsWithCounts = Dictionary(grouping: allTags, by: { $0 })
+                .mapValues { $0.count }
+                .sorted { $0.value > $1.value }
+                .prefix(6)
+                .map { (tag: $0.key, count: $0.value) }
+        }
+
+        // City counts
+        var counts: [String: Int] = [:]
+        for place in uPlaces {
+            if let city = extractCity(from: place.address) {
+                counts[city, default: 0] += 1
+            }
+        }
+        cachedCityCounts = counts.map { (city: $0.key, count: $0.value) }
+            .sorted { $0.count > $1.count }
+
+        // Trip log counts
+        var tripCounts: [String: Int] = [:]
+        for log in logs {
+            if let tripID = log.tripID { tripCounts[tripID, default: 0] += 1 }
+        }
+        cachedTripLogCounts = tripCounts
+
+        // City photo URLs (pre-computed with O(n) placeID→logCount dictionary)
+        var logCountByPlaceID: [String: Int] = [:]
+        for log in logs { logCountByPlaceID[log.placeID, default: 0] += 1 }
+
+        var cityURLs: [String: URL] = [:]
+        for (city, _) in cachedCityCounts.prefix(5) {
+            let cityPlaces = uPlaces.filter { extractCity(from: $0.address) == city }
+            let cityPlaceIDs = Set(cityPlaces.map(\.id))
+            let cityLogs = logs.filter { cityPlaceIDs.contains($0.placeID) }
+
+            if let userPhoto = cityLogs.sorted(by: { $0.createdAt > $1.createdAt })
+                .first(where: { $0.photoURL != nil })?.photoURL,
+               let url = URL(string: userPhoto) {
+                cityURLs[city] = url
+                continue
+            }
+
+            let placesByLogCount = cityPlaces.sorted { p1, p2 in
+                (logCountByPlaceID[p1.id] ?? 0) > (logCountByPlaceID[p2.id] ?? 0)
+            }
+            if let ref = placesByLogCount.first(where: { $0.photoReference != nil })?.photoReference,
+               let url = GooglePlacesService.photoURL(for: ref, maxWidth: 400) {
+                cityURLs[city] = url
+            }
+        }
+        cachedCityPhotoURLs = cityURLs
+
+        // Profile stats
+        profileStats = ProfileStatsService.compute(logs: logs, places: uPlaces)
     }
 
     var body: some View {
@@ -138,12 +225,19 @@ struct ProfileView: View {
                 }
             }
             .task {
+                refreshData()
                 if let userID = authService.currentUser?.id {
                     await socialService.refreshCounts(for: userID)
                     if wantToGoService.items.isEmpty {
                         wantToGoService.items = wantToGoService.getWantToGoList(for: userID)
                     }
                 }
+            }
+            .onChange(of: syncEngine.lastSyncDate) { _, _ in
+                refreshData()
+            }
+            .onChange(of: places.count) { _, _ in
+                rebuildProfileCaches()
             }
             .navigationDestination(item: $activeDestination) { dest in
                 switch dest {
@@ -162,7 +256,7 @@ struct ProfileView: View {
                 case .wantToGo:
                     WantToGoListView()
                 case .savedLists:
-                    SavedListsView()
+                    WantToGoListView()
                 case .city(let name):
                     CityLogsView(title: name, logs: logsForCity(name))
                 case .tag(let name):
@@ -179,29 +273,21 @@ struct ProfileView: View {
             .onChange(of: popToRoot) {
                 activeDestination = nil
             }
-            .onChange(of: logs.count) {
-                recomputeStats()
-            }
-            .onAppear {
-                recomputeStats()
-            }
         }
     }
 
     // MARK: - Recent Trips (Shared Helpers)
 
-    private var userTrips: [Trip] {
-        guard let userID = authService.currentUser?.id else { return [] }
-        let filtered = allTrips.filter { $0.createdBy == userID || $0.collaboratorIDs.contains(userID) }
-        return sortTripsReverseChronological(filtered)
+    private var sortedTrips: [Trip] {
+        sortTripsReverseChronological(trips)
     }
 
     private var recentTrips: [Trip] {
-        Array(userTrips.prefix(5))
+        Array(sortedTrips.prefix(5))
     }
 
     private func tripLogCount(_ trip: Trip) -> Int {
-        logs.filter { $0.tripID == trip.id }.count
+        cachedTripLogCounts[trip.id] ?? 0
     }
 
     private func tripDateText(_ trip: Trip) -> String? {
@@ -326,14 +412,6 @@ struct ProfileView: View {
     }
 
 
-    // MARK: - Stats Computation
-
-    private func recomputeStats() {
-        let userPlaceIDs = Set(logs.map { $0.placeID })
-        let relevantPlaces = places.filter { userPlaceIDs.contains($0.id) }
-        profileStats = ProfileStatsService.compute(logs: logs, places: relevantPlaces)
-    }
-
     // MARK: - Social Stats Section
 
     private var socialStatsSection: some View {
@@ -407,8 +485,8 @@ struct ProfileView: View {
                         .font(SonderTypography.headline)
                         .foregroundStyle(SonderColors.inkDark)
 
-                    if wantToGoCount > 0 {
-                        Text("\(wantToGoCount) saved\(listCount > 1 ? " \u{00B7} \(listCount) lists" : "")")
+                    if listCount > 0 {
+                        Text("\(listCount) list\(listCount == 1 ? "" : "s")")
                             .font(SonderTypography.caption)
                             .foregroundStyle(SonderColors.inkMuted)
                     } else {
@@ -681,38 +759,12 @@ struct ProfileView: View {
 
     // MARK: - City Data (shared)
 
-    private var cityCounts: [(city: String, count: Int)] {
-        var counts: [String: Int] = [:]
-        for place in userPlaces {
-            if let city = extractCity(from: place.address) {
-                counts[city, default: 0] += 1
-            }
-        }
-        return counts.map { (city: $0.key, count: $0.value) }
-            .sorted { $0.count > $1.count }
-    }
+    private var cityCounts: [(city: String, count: Int)] { cachedCityCounts }
 
     // MARK: - City Photo Helper
 
     private func cityPhotoURL(_ city: String, maxWidth: Int = 400) -> URL? {
-        let cityPlaces = userPlaces.filter { extractCity(from: $0.address) == city }
-        let cityLogs = logs.filter { log in cityPlaces.contains(where: { $0.id == log.placeID }) }
-
-        if let userPhoto = cityLogs.sorted(by: { $0.createdAt > $1.createdAt })
-            .first(where: { $0.photoURL != nil })?.photoURL,
-           let url = URL(string: userPhoto) {
-            return url
-        }
-
-        let placesByLogCount = cityPlaces.sorted { p1, p2 in
-            cityLogs.filter { $0.placeID == p1.id }.count > cityLogs.filter { $0.placeID == p2.id }.count
-        }
-        if let ref = placesByLogCount.first(where: { $0.photoReference != nil })?.photoReference,
-           let url = GooglePlacesService.photoURL(for: ref, maxWidth: maxWidth) {
-            return url
-        }
-
-        return nil
+        cachedCityPhotoURLs[city]
     }
 
     // MARK: - Top Cities Photo Mosaic
@@ -831,38 +883,18 @@ struct ProfileView: View {
 
     // MARK: - Computed Stats
 
-    private var userPlaces: [Place] {
-        let loggedPlaceIDs = Set(logs.map { $0.placeID })
-        return places.filter { loggedPlaceIDs.contains($0.id) }
-    }
-
-    private var uniqueCities: Set<String> {
-        Set(userPlaces.compactMap { extractCity(from: $0.address) })
-    }
-
-    private var uniqueCountries: Set<String> {
-        Set(userPlaces.compactMap { extractCountry(from: $0.address) })
-    }
+    private var userPlaces: [Place] { cachedUserPlaces }
+    private var uniqueCities: Set<String> { cachedUniqueCities }
+    private var uniqueCountries: Set<String> { cachedUniqueCountries }
 
     private var topTagsForShare: [String] {
-        let allTags = logs.flatMap { $0.tags }
-        let tagCounts = Dictionary(grouping: allTags, by: { $0 })
-            .mapValues { $0.count }
-            .sorted { $0.value > $1.value }
-        return Array(tagCounts.prefix(4).map { $0.key })
+        Array(cachedTopTagsWithCounts.prefix(4).map(\.tag))
     }
 
-    private var topTagsWithCounts: [(tag: String, count: Int)] {
-        let allTags = logs.flatMap { $0.tags }
-        guard !allTags.isEmpty else { return [] }
-        let tagCounts = Dictionary(grouping: allTags, by: { $0 })
-            .mapValues { $0.count }
-            .sorted { $0.value > $1.value }
-        return Array(tagCounts.prefix(6).map { (tag: $0.key, count: $0.value) })
-    }
+    private var topTagsWithCounts: [(tag: String, count: Int)] { cachedTopTagsWithCounts }
 
     private var topTags: [String] {
-        topTagsWithCounts.map(\.tag)
+        cachedTopTagsWithCounts.map(\.tag)
     }
 
     private func logsForTag(_ tag: String) -> [Log] {

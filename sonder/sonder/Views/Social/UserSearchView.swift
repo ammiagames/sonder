@@ -575,8 +575,7 @@ struct UserSearchRow: View {
                 isFollowing.toggle()
 
                 // Haptic feedback
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
+                SonderHaptics.impact(.light)
             } catch {
                 logger.error("Follow error: \(error.localizedDescription)")
             }

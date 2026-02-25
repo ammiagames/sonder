@@ -16,11 +16,16 @@ struct JournalPolaroidView: View {
     @Binding var selectedTrip: Trip?
     @Binding var selectedLog: Log?
 
-    @State private var scrollOffset: CGFloat = 0
-    @State private var cardCenters: [Int: CGFloat] = [:]  // index -> midY in scroll
-    @State private var scrolledID: String?
+    @State private var parallaxOffset: CGFloat = 0
+    @State private var currentCardIndex: Int = 0
     @State private var sessionSeed: UInt64 = .random(in: 0..<UInt64.max)
-    @State private var showOrphanedLogs: Bool = true
+    @State private var showOrphanedLogs: Bool = false
+    @State private var orphanedVisibleCount: Int = 12
+    private let orphanedPageSize = 12
+
+    // Cached groupings — rebuilt when data changes
+    @State private var cachedPlacesByID: [String: Place] = [:]
+    @State private var cachedLogsByTripID: [String: [Log]] = [:]
 
     init(
         trips: [Trip],
@@ -36,22 +41,17 @@ struct JournalPolaroidView: View {
         self.orphanedLogs = orphanedLogs
         self._selectedTrip = selectedTrip
         self._selectedLog = selectedLog
-        // Set initial scroll position to the most recent trip so it's focused
-        // on the very first render — .onAppear would be too late.
-        self._scrolledID = State(initialValue: trips.first?.id)
     }
 
-    private var placesByID: [String: Place] {
-        Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
-    }
-
-    /// Pre-grouped logs by tripID, built once per render pass.
-    private var logsByTripID: [String: [Log]] {
-        Dictionary(grouping: allLogs.filter { $0.tripID != nil }, by: { $0.tripID ?? "" })
-    }
+    private var placesByID: [String: Place] { cachedPlacesByID }
 
     private func logsForTrip(_ trip: Trip) -> [Log] {
-        logsByTripID[trip.id] ?? []
+        cachedLogsByTripID[trip.id] ?? []
+    }
+
+    private func rebuildJournalCaches() {
+        cachedPlacesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+        cachedLogsByTripID = Dictionary(grouping: allLogs.filter { $0.tripID != nil }, by: { $0.tripID ?? "" })
     }
 
     /// Alternating tilt so adjacent cards lean opposite directions.
@@ -64,15 +64,33 @@ struct JournalPolaroidView: View {
         SonderColors.terracotta
     }
 
+    private var visibleOrphanedLogs: [Log] {
+        Array(orphanedLogs.prefix(orphanedVisibleCount))
+    }
+
+    private var hasMoreOrphanedLogs: Bool {
+        orphanedVisibleCount < orphanedLogs.count
+    }
+
     var body: some View {
         GeometryReader { outerGeo in
             let cardHeight: CGFloat = 392
-            let cardSpacing: CGFloat = 48
+            let pageHeight = outerGeo.size.height
+
+            // Card centers are static in scroll-content space: card i always sits at
+            // i * pageHeight + pageHeight/2. Computing here avoids GeometryReader @State
+            // updates that would trigger re-renders during the initial tab animation.
+            let cardCenters: [Int: CGFloat] = pageHeight > 0
+                ? Dictionary(uniqueKeysWithValues: trips.indices.map { i in
+                    (i, CGFloat(i) * pageHeight + pageHeight / 2)
+                  })
+                : [:]
 
             ZStack {
                 topographicBackground
+                    .drawingGroup()  // Cache Canvas as Metal texture; parallax = GPU transform only
                     .scaleEffect(1.3)
-                    .offset(y: clampedParallax)
+                    .offset(y: parallaxOffset)
                     .ignoresSafeArea()
 
                 ScrollView {
@@ -86,76 +104,84 @@ struct JournalPolaroidView: View {
                             )
                             .allowsHitTesting(false)
 
-                            LazyVStack(spacing: cardSpacing) {
+                            LazyVStack(spacing: 0) {
                                 ForEach(Array(trips.enumerated()), id: \.element.id) { index, trip in
-                                    GeometryReader { cardGeo in
-                                        let midY = cardGeo.frame(in: .global).midY
-                                        let screenMid = outerGeo.size.height / 2
-                                        let distance = abs(midY - screenMid)
-                                        let maxDistance: CGFloat = outerGeo.size.height * 0.44
-                                        let normalizedDistance = min(distance / maxDistance, 1.0)
+                                    // Each page is full-screen height so .viewAligned snaps
+                                    // card centers to screen center with zero post-idle correction.
+                                    let isLast = index == trips.count - 1
 
-                                        // Centered card is full size; off-center cards shrink + fade
-                                        let scale = 1.0 - normalizedDistance * 0.10
-                                        let opacity = 1.0 - normalizedDistance * 0.35
-                                        let yShift = normalizedDistance * 6
+                                    ZStack {
+                                        GeometryReader { cardGeo in
+                                            let midY = cardGeo.frame(in: .global).midY
+                                            let screenMid = outerGeo.size.height / 2
+                                            let distance = abs(midY - screenMid)
+                                            let maxDistance: CGFloat = outerGeo.size.height * 0.44
+                                            let normalizedDistance = min(distance / maxDistance, 1.0)
 
-                                        polaroidCard(trip: trip, index: index, proximity: normalizedDistance)
-                                            .scaleEffect(scale)
-                                            .opacity(opacity)
-                                            .offset(y: yShift)
-                                            .rotationEffect(.degrees(edgeRotation(for: index, trip: trip)))
-                                            .onAppear {
-                                                updateCardCenter(index: index, from: cardGeo)
-                                            }
-                                            .onChange(of: midY) { _, _ in
-                                                updateCardCenter(index: index, from: cardGeo)
-                                            }
+                                            // Centered card is full size; off-center cards shrink + fade
+                                            let scale = 1.0 - normalizedDistance * 0.10
+                                            let opacity = 1.0 - normalizedDistance * 0.35
+                                            let yShift = normalizedDistance * 6
+
+                                            polaroidCard(trip: trip, index: index, proximity: normalizedDistance)
+                                                .scaleEffect(scale)
+                                                .opacity(opacity)
+                                                .offset(y: yShift)
+                                                .rotationEffect(.degrees(edgeRotation(for: index, trip: trip)))
+                                        }
+                                        .frame(height: cardHeight)
                                     }
-                                    .frame(height: cardHeight)
+                                    .frame(height: outerGeo.size.height)
+                                    // Loose memories row pinned to the bottom of the last card's page,
+                                    // as an overlay so it never displaces the centered polaroid.
+                                    .overlay(alignment: .bottom) {
+                                        if isLast && !orphanedLogs.isEmpty {
+                                            looseMemoriesButton
+                                                .padding(.bottom, 60)
+                                        }
+                                    }
                                     .id(trip.id)
                                 }
                             }
-                            .scrollTargetLayout()
-                            .padding(.top, (outerGeo.size.height - cardHeight) / 2)
-                            .padding(.bottom, trips.isEmpty ? 0 : (outerGeo.size.height - cardHeight) / 2)
                         }
-                        .coordinateSpace(name: "polaroidScroll")
-
-                        if !orphanedLogs.isEmpty {
-                            orphanedLogsSection
+                        if !orphanedLogs.isEmpty && showOrphanedLogs {
+                            orphanedContentSection
                         }
                     }
                 }
-                .scrollTargetBehavior(GentleCenterSnap(
-                    cardHeight: cardHeight,
-                    cardSpacing: cardSpacing,
-                    cardCount: trips.count
-                ))
-                .scrollPosition(id: $scrolledID, anchor: .center)
+                .scrollTargetBehavior(
+                    TripCardSnapBehavior(tripCount: trips.count, pageHeight: outerGeo.size.height)
+                )
                 .onScrollGeometryChange(for: CGFloat.self) { geo in
                     geo.contentOffset.y
                 } action: { _, newOffset in
-                    scrollOffset = -newOffset
+                    // Throttled parallax — only trigger body re-render when visible change > 2pt
+                    let newParallax = max(-100, min(100, -newOffset * 0.15))
+                    if abs(newParallax - parallaxOffset) > 2 {
+                        parallaxOffset = newParallax
+                    }
+
+                    if pageHeight > 0 && !trips.isEmpty {
+                        let idx = max(0, min(trips.count - 1, Int(round(newOffset / pageHeight))))
+                        if idx != currentCardIndex {
+                            currentCardIndex = idx
+                        }
+                    }
                 }
             }
-            .onChange(of: scrolledID) { oldValue, _ in
-                guard oldValue != nil else { return }
-                UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.32)
+            .onChange(of: currentCardIndex) { _, _ in
+                SonderHaptics.impact(.soft, intensity: 0.32)
+            }
+            .onAppear {
+                rebuildJournalCaches()
+                syncOrphanedPagination()
+            }
+            .onChange(of: allLogs.count) { _, _ in rebuildJournalCaches() }
+            .onChange(of: places.count) { _, _ in rebuildJournalCaches() }
+            .onChange(of: orphanedLogs.count) { _, _ in
+                syncOrphanedPagination()
             }
         }
-    }
-
-    private func updateCardCenter(index: Int, from geometry: GeometryProxy) {
-        let localMid = geometry.frame(in: .named("polaroidScroll")).midY
-        cardCenters[index] = localMid
-    }
-
-    // MARK: - Parallax
-
-    /// Clamped parallax offset so the topo background drifts gently with scroll.
-    private var clampedParallax: CGFloat {
-        max(-100, min(100, scrollOffset * 0.15))
     }
 
     // MARK: - Topographic Background
@@ -260,12 +286,6 @@ struct JournalPolaroidView: View {
     private func writingYOffset(for trip: Trip) -> CGFloat {
         let seed = abs(trip.id.hashValue >> 7)
         return CGFloat(seed % 3) - 1  // -1 to +1 pt
-    }
-
-    private func firstLogPhotoURL(for trip: Trip) -> URL? {
-        let photos = logsForTrip(trip).flatMap { $0.userPhotoURLs }
-        guard let first = photos.first else { return nil }
-        return URL(string: first)
     }
 
     private func captionDetails(for trip: Trip) -> String {
@@ -638,11 +658,7 @@ struct JournalPolaroidView: View {
                             polaroidPlaceholder(trip: trip)
                         }
                         .aspectRatio(contentMode: .fill)
-                    } else if let logPhotoURL = firstLogPhotoURL(for: trip) {
-                        DownsampledAsyncImage(url: logPhotoURL, targetSize: CGSize(width: 350, height: 350)) {
-                            polaroidPlaceholder(trip: trip)
-                        }
-                        .aspectRatio(contentMode: .fill)
+                        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                     } else {
                         polaroidPlaceholder(trip: trip)
                     }
@@ -751,58 +767,97 @@ struct JournalPolaroidView: View {
 
     // MARK: - Orphaned Logs
 
-    private var orphanedLogsSection: some View {
+    /// "Loose memories" row, shown at the bottom of the last trip's page.
+    private var looseMemoriesButton: some View {
+        Button {
+            let willExpand = !showOrphanedLogs
+            if willExpand { syncOrphanedPagination() }
+            SonderHaptics.impact(.soft, intensity: 0.42)
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showOrphanedLogs.toggle()
+            }
+        } label: {
+            HStack {
+                Text("Loose memories")
+                    .font(.system(.headline, design: .serif).weight(.semibold))
+                    .foregroundStyle(SonderColors.inkDark.opacity(0.85))
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(SonderColors.inkMuted)
+                    .rotationEffect(.degrees(showOrphanedLogs ? 90 : 0))
+                    .animation(.easeInOut(duration: 0.2), value: showOrphanedLogs)
+
+                Spacer()
+
+                Text("\(orphanedLogs.count)")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(SonderColors.inkMuted)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule().fill(Color.white.opacity(0.45)).allowsHitTesting(false)
+                    )
+                    .contentShape(Rectangle())
+            }
+            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .center)
+            .padding(.vertical, 8)
+            .background(Color.white.opacity(0.001))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 28)
+    }
+
+    /// Grid of orphaned logs, shown below the header page when expanded.
+    private var orphanedContentSection: some View {
         VStack(spacing: 16) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    showOrphanedLogs.toggle()
-                }
-            } label: {
-                HStack {
-                    Text("Loose memories")
-                        .font(.system(.headline, design: .serif).weight(.semibold))
-                        .foregroundStyle(SonderColors.inkDark.opacity(0.85))
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(SonderColors.inkMuted)
-                        .rotationEffect(.degrees(showOrphanedLogs ? 90 : 0))
-
-                    Spacer()
-
-                    Text("\(orphanedLogs.count)")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(SonderColors.inkMuted)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule().fill(Color.white.opacity(0.45))
-                        )
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)],
+                spacing: 16
+            ) {
+                ForEach(visibleOrphanedLogs, id: \.id) { log in
+                    miniPolaroidCard(log: log)
+                        .scrollTransition(.interactive, axis: .vertical) { content, phase in
+                            let parallax = min(abs(phase.value), 1)
+                            return content
+                                .scaleEffect(1 - parallax * 0.045)
+                                .offset(y: parallax * 6)
+                                .opacity(1 - Double(parallax) * 0.14)
+                        }
                 }
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 28)
+            .padding(.horizontal, 24)
+            .padding(.top, 4)
 
-            if showOrphanedLogs {
-                LazyVGrid(
-                    columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)],
-                    spacing: 16
-                ) {
-                    ForEach(orphanedLogs, id: \.id) { log in
-                        miniPolaroidCard(log: log)
+            if hasMoreOrphanedLogs {
+                Button {
+                    loadMoreOrphanedLogs()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Load more memories")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
                     }
+                    .foregroundStyle(SonderColors.terracotta)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule().fill(Color.white.opacity(0.55))
+                    )
                 }
-                .padding(.horizontal, 24)
-                .transition(.opacity)
+                .buttonStyle(.plain)
+                .padding(.top, 2)
             }
         }
-        .padding(.top, 28)
-        .padding(.bottom, showOrphanedLogs ? 100 : 400)
+        .padding(.bottom, 100)
     }
 
     private func miniPolaroidCard(log: Log) -> some View {
         let place = placesByID[log.placeID]
         return Button {
+            SonderHaptics.impact(.light, intensity: 0.5)
             selectedLog = log
         } label: {
             VStack(spacing: 0) {
@@ -812,6 +867,7 @@ struct JournalPolaroidView: View {
                             miniPolaroidPlaceholder(log: log, place: place)
                         }
                         .aspectRatio(contentMode: .fill)
+                        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                     } else {
                         miniPolaroidPlaceholder(log: log, place: place)
                     }
@@ -844,6 +900,7 @@ struct JournalPolaroidView: View {
                 .padding(.top, 7)
                 .padding(.bottom, 9)
             }
+            .frame(height: 185)
             .background(Color(red: 0.975, green: 0.964, blue: 0.947))
             .clipShape(RoundedRectangle(cornerRadius: frameRadius, style: .continuous))
             .overlay(
@@ -853,6 +910,23 @@ struct JournalPolaroidView: View {
             .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
         }
         .buttonStyle(.plain)
+    }
+
+    private func loadMoreOrphanedLogs() {
+        guard hasMoreOrphanedLogs else { return }
+        let nextCount = min(orphanedVisibleCount + orphanedPageSize, orphanedLogs.count)
+        guard nextCount > orphanedVisibleCount else { return }
+        orphanedVisibleCount = nextCount
+        SonderHaptics.impact(.medium, intensity: 0.55)
+    }
+
+    private func syncOrphanedPagination() {
+        let minimumVisible = min(orphanedPageSize, orphanedLogs.count)
+        if orphanedVisibleCount < minimumVisible {
+            orphanedVisibleCount = minimumVisible
+        } else if orphanedVisibleCount > orphanedLogs.count {
+            orphanedVisibleCount = orphanedLogs.count
+        }
     }
 
     // MARK: - Orphaned Log Placeholder Styles
@@ -1142,36 +1216,31 @@ struct JournalPolaroidView: View {
     }
 
     private func polaroidPlaceholder(trip: Trip) -> some View {
-        TripCoverPlaceholderView(seedKey: trip.id, title: trip.name, caption: "Loading memories...")
+        TripCoverPlaceholderView(seedKey: trip.id, title: trip.name, caption: "No cover photo")
     }
 }
 
-// MARK: - Gentle Center Snap
+// MARK: - Scroll Target Behavior
 
-/// Lets scroll physics determine how far the content travels, then nudges
-/// the final resting position to the nearest card center.  No velocity
-/// thresholds, no one-card limits — momentum is fully respected.
-private struct GentleCenterSnap: ScrollTargetBehavior {
-    let cardHeight: CGFloat
-    let cardSpacing: CGFloat
-    let cardCount: Int
+/// Snaps to trip pages while within the trips zone; leaves the scroll free
+/// once the user has scrolled past all trips into the orphaned content section.
+private struct TripCardSnapBehavior: ScrollTargetBehavior {
+    let tripCount: Int
+    let pageHeight: CGFloat
 
     func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
-        let stride = cardHeight + cardSpacing
-        guard stride > 0, cardCount > 0 else { return }
+        guard tripCount > 0, pageHeight > 0 else { return }
 
-        let contentOffset = target.rect.minY
+        let maxTripOffset = CGFloat(tripCount - 1) * pageHeight
+        let proposedOffset = target.rect.minY
 
-        // Past the card region — let scroll freely into orphaned logs
-        let maxSnappableOffset = stride * CGFloat(cardCount - 1)
-        if contentOffset > maxSnappableOffset + stride * 0.5 {
-            return
-        }
+        // Beyond the last trip page by more than half a page → free scroll (orphaned content)
+        guard proposedOffset <= maxTripOffset + pageHeight * 0.5 else { return }
 
-        // Round to the nearest card — physics already decided how far to go
-        let nearestIndex = round(contentOffset / stride)
-        let clamped = max(0, min(CGFloat(cardCount - 1), nearestIndex))
-        target.rect.origin.y = clamped * stride
+        // Within the trips zone → snap to nearest trip page
+        let nearestPage = (proposedOffset / pageHeight).rounded()
+        let clampedPage = max(0, min(CGFloat(tripCount - 1), nearestPage))
+        target.rect.origin.y = clampedPage * pageHeight
     }
 }
 

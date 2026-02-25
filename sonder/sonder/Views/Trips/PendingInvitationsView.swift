@@ -102,8 +102,7 @@ struct PendingInvitationsView: View {
                 try await tripService.acceptInvitation(item.invitation)
 
                 // Haptic feedback
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.success)
+                SonderHaptics.notification(.success)
 
                 // Remove from list with animation
                 withAnimation {

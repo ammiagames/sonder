@@ -135,6 +135,41 @@ enum SonderShadows {
     static let softY: CGFloat = 4
 }
 
+// MARK: - Haptics
+
+/// Shared haptic feedback generators — avoids allocating a new generator per call.
+/// UIKit's feedback generators are designed to be reused; creating one per tap is wasteful.
+enum SonderHaptics {
+    private static let soft = UIImpactFeedbackGenerator(style: .soft)
+    private static let light = UIImpactFeedbackGenerator(style: .light)
+    private static let medium = UIImpactFeedbackGenerator(style: .medium)
+    private static let selection = UISelectionFeedbackGenerator()
+    private static let notification = UINotificationFeedbackGenerator()
+
+    static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle, intensity: CGFloat = 1.0) {
+        let generator: UIImpactFeedbackGenerator
+        switch style {
+        case .soft: generator = soft
+        case .light: generator = light
+        case .medium: generator = medium
+        default: generator = UIImpactFeedbackGenerator(style: style)
+        }
+        if intensity < 1.0 {
+            generator.impactOccurred(intensity: intensity)
+        } else {
+            generator.impactOccurred()
+        }
+    }
+
+    static func selectionChanged() {
+        selection.selectionChanged()
+    }
+
+    static func notification(_ type: UINotificationFeedbackGenerator.FeedbackType) {
+        notification.notificationOccurred(type)
+    }
+}
+
 // MARK: - View Modifiers
 
 struct WarmButtonStyle: ButtonStyle {
@@ -161,5 +196,50 @@ extension View {
         self
             .frame(width: 56, height: 56)
             .contentShape(Rectangle())
+    }
+
+    /// Overlays a warm shimmer sweep — use on skeleton/placeholder elements.
+    func shimmer() -> some View {
+        modifier(ShimmerModifier())
+    }
+
+}
+
+struct ShimmerModifier: ViewModifier {
+    @State private var phase: CGFloat = -1
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            GeometryReader { geo in
+                let width = geo.size.width
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .white.opacity(0.25), location: 0.4),
+                        .init(color: .white.opacity(0.35), location: 0.5),
+                        .init(color: .white.opacity(0.25), location: 0.6),
+                        .init(color: .clear, location: 1),
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: width * 1.5)
+                .offset(x: phase * width * 1.5)
+            }
+            .clipped()
+            .onAppear {
+                withAnimation(
+                    .easeInOut(duration: 1.2)
+                    .repeatForever(autoreverses: false)
+                ) {
+                    phase = 1
+                }
+            }
+            .onDisappear {
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) { phase = -1 }
+            }
+        }
     }
 }

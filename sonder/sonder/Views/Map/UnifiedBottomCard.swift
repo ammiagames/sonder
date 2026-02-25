@@ -17,15 +17,25 @@ struct UnifiedBottomCard: View {
     var onExpandedChanged: ((Bool) -> Void)? = nil
 
     @State private var isExpandedState = false
+    @State private var showDirectionsDialog = false
     @State private var dragTranslation: CGFloat = 0
     @State private var compactHeight: CGFloat = 0
     @State private var measuredExpandedHeight: CGFloat = 0
     @State private var scrollCooldown = false
+    @State private var scrollCooldownTask: Task<Void, Never>?
     @State private var selectedTab: CombinedTab = .you
     @State private var tabPickerHeight: CGFloat = 0
     // Frozen heights — captured at drag start to prevent measurement feedback loops
     @State private var frozenCompactHeight: CGFloat = 0
     @State private var frozenExpandedHeight: CGFloat = 0
+    // Freeze whether expanded content is shown while dragging to avoid heavy
+    // view insertion/removal during live drag updates.
+    @State private var frozenShowExpanded = false
+    // Cached heavy content to avoid rebuilding large arrays on every drag frame.
+    @State private var userGalleryPhotos: [GalleryPhoto] = []
+    @State private var friendGalleryPhotos: [GalleryPhoto] = []
+    @State private var userTimelineEntries: [TimelineEntry] = []
+    @State private var friendTimelineEntries: [TimelineEntry] = []
 
     private enum CombinedTab: String, CaseIterable {
         case you = "You"
@@ -36,8 +46,11 @@ struct UnifiedBottomCard: View {
     private var isDragging: Bool { dragTranslation != 0 }
     private var isCombinedPin: Bool { if case .combined = pin { return true }; return false }
 
-    /// Show expanded detail content during drag-up (at ~30% progress) — not just after snap.
-    private var showExpandedContent: Bool { isExpandedState || dragProgress > 0.3 }
+    /// Keep expanded content visibility stable during drag to avoid layout churn.
+    private var showExpandedContent: Bool {
+        if isDragging { return frozenShowExpanded }
+        return isExpandedState
+    }
 
     /// Keep width stable while dragging to avoid text reflow jitter.
     /// Inset changes only when snapped compact/expanded.
@@ -73,31 +86,34 @@ struct UnifiedBottomCard: View {
         }
     }
 
-    /// Offset applied when dragging down from compact (for dismiss gesture).
-    private var dismissOffset: CGFloat {
-        if !isExpandedState && dragTranslation > 0 {
-            return dragTranslation
-        }
-        return 0
-    }
+    /// Y-offset that positions the card without changing its bounds.
+    ///
+    /// The card frame is always `expandedHeight` tall. In compact state the card
+    /// sits mostly below the screen; in expanded state it's fully visible.
+    /// During drag only this offset changes — the layer bounds stay fixed so
+    /// Core Animation never needs to re-render shadows or run layout passes.
+    private var cardYOffset: CGFloat {
+        let expandedH = isDragging ? frozenExpandedHeight : expandedHeight
+        let compactH  = isDragging ? frozenCompactHeight  : (compactHeight > 0 ? compactHeight : 120)
 
-    /// Stable layout height for content during drag.
-    /// Always uses frozen expanded height during drag so the inner VStack/ScrollView
-    /// layout doesn't churn on every frame — only the outer clip frame changes.
-    private var stableContentHeight: CGFloat {
+        let baseOffset: CGFloat
         if isDragging {
-            return frozenExpandedHeight
+            baseOffset = expandedH - displayHeight
+        } else if isExpandedState {
+            baseOffset = 0
+        } else {
+            baseOffset = expandedH - compactH
         }
-        return isExpandedState ? expandedHeight : (compactHeight > 0 ? compactHeight : 120)
+
+        // When dragging down from compact, slide the card further off-screen (dismiss gesture).
+        let dismissExtra: CGFloat = (!isExpandedState && dragTranslation > 0) ? dragTranslation : 0
+        return baseOffset + dismissExtra
     }
 
-    /// Progress from 0 (compact) to 1 (expanded) for interpolating visual properties.
-    private var dragProgress: CGFloat {
-        let baseCompact = isDragging ? frozenCompactHeight : (compactHeight > 0 ? compactHeight : 120)
-        let targetExpanded = isDragging ? frozenExpandedHeight : expandedHeight
-        let range = targetExpanded - baseCompact
-        guard range > 0 else { return isExpandedState ? 1 : 0 }
-        return (displayHeight - baseCompact) / range
+    /// Opacity that fades the card out during a downward dismiss drag.
+    private var dismissOpacity: Double {
+        let d: CGFloat = (!isExpandedState && dragTranslation > 0) ? dragTranslation : 0
+        return Double(d > 100 ? max(0, 1 - (d - 100) / 80) : 1)
     }
 
     var body: some View {
@@ -129,16 +145,18 @@ struct UnifiedBottomCard: View {
                     .padding(.horizontal, SonderSpacing.md)
                     .padding(.bottom, SonderSpacing.xxl)
                     .background {
-                        GeometryReader { geo in
-                            Color.clear
-                                .preference(
-                                    key: CompactHeightKey.self,
-                                    value: (!isExpandedState && !isDragging) ? geo.size.height + 19 : 0
-                                )
-                                .preference(
-                                    key: ExpandedContentHeightKey.self,
-                                    value: (showExpandedContent && !isDragging) ? geo.size.height + 40 + tabPickerHeight : 0
-                                )
+                        if !isDragging {
+                            GeometryReader { geo in
+                                Color.clear
+                                    .preference(
+                                        key: CompactHeightKey.self,
+                                        value: !isExpandedState ? geo.size.height + 19 : 0
+                                    )
+                                    .preference(
+                                        key: ExpandedContentHeightKey.self,
+                                        value: showExpandedContent ? geo.size.height + 40 + tabPickerHeight : 0
+                                    )
+                            }
                         }
                     }
             }
@@ -151,27 +169,45 @@ struct UnifiedBottomCard: View {
             }
         }
         .frame(maxWidth: .infinity)
-        // Inner frame: stable during drag so VStack/ScrollView don't re-layout every frame.
-        .frame(height: stableContentHeight, alignment: .top)
-        // Outer frame: controls visible height (clips overflow via clipShape below).
-        .frame(height: isDragging ? displayHeight : stableContentHeight, alignment: .top)
+        // Fixed height: the card is always expandedHeight tall. Visibility is
+        // controlled by cardYOffset (a transform), so the layer bounds — and
+        // therefore the shadow blurs — never change during drag. This keeps
+        // every drag frame to a cheap transform-only GPU operation.
+        .frame(height: expandedHeight, alignment: .top)
         .transaction { t in
             if isDragging { t.animation = nil }
         }
         .background(SonderColors.cream)
         .clipShape(RoundedRectangle(cornerRadius: 20))
+        .compositingGroup()
         .shadow(color: .black.opacity(isExpandedState ? 0.08 : 0.12), radius: 12, y: 4)
         .shadow(color: .black.opacity(0.10), radius: 8, y: 6)
         .padding(.horizontal, edgeInset)
-        .padding(.bottom, edgeInset)
-        .offset(y: dismissOffset)
-        .opacity(Double(dismissOffset > 100 ? max(0, 1 - (dismissOffset - 100) / 80) : 1))
-        .contentShape(Rectangle())
+        .offset(y: cardYOffset)
+        .opacity(dismissOpacity)
+        // Hit-test area: full card in expanded/dragging state; in compact state restrict
+        // to the bottom compactHeight of the layout frame, which is where the card is
+        // visually rendered (offset moves rendering only, not the layout frame).
+        .contentShape(
+            Path(CGRect(
+                x: 0,
+                y: (isExpandedState || isDragging) ? 0 : expandedHeight - max(compactHeight, 120),
+                width: 10000,
+                height: (isExpandedState || isDragging) ? expandedHeight : max(compactHeight, 120)
+            ))
+        )
         // Compact: exclusive overlay captures all drags (scroll is disabled anyway).
         .overlay {
             if !isExpandedState {
                 Color.clear
-                    .contentShape(Rectangle())
+                    .contentShape(
+                        Path(CGRect(
+                            x: 0,
+                            y: expandedHeight - max(compactHeight, 120),
+                            width: 10000,
+                            height: max(compactHeight, 120)
+                        ))
+                    )
                     .gesture(cardDragGesture)
             }
         }
@@ -192,6 +228,13 @@ struct UnifiedBottomCard: View {
         .onChange(of: isExpandedState) { _, expanded in
             onExpandedChanged?(expanded)
         }
+        .onAppear {
+            rebuildCachedContent()
+        }
+        .onChange(of: pin.id) { _, _ in
+            rebuildCachedContent()
+        }
+        .directionsConfirmationDialog(isPresented: $showDirectionsDialog, coordinate: pin.coordinate, name: pin.placeName, address: pin.placeAddress)
     }
 
     // MARK: - Drag Gesture (live tracking + snap on release)
@@ -206,6 +249,7 @@ struct UnifiedBottomCard: View {
                     // First frame — freeze heights to prevent measurement feedback
                     frozenCompactHeight = compactHeight > 0 ? compactHeight : 120
                     frozenExpandedHeight = expandedHeight
+                    frozenShowExpanded = isExpandedState
                 }
                 var t = Transaction()
                 t.animation = nil
@@ -237,7 +281,10 @@ struct UnifiedBottomCard: View {
                             isExpandedState = true
                             dragTranslation = 0
                         }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        scrollCooldownTask?.cancel()
+                        scrollCooldownTask = Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(500))
+                            guard !Task.isCancelled else { return }
                             scrollCooldown = false
                         }
                     } else if ty > 50 || predicted > 120 {
@@ -272,6 +319,7 @@ struct UnifiedBottomCard: View {
                 if dragTranslation == 0 {
                     frozenCompactHeight = compactHeight > 0 ? compactHeight : 120
                     frozenExpandedHeight = expandedHeight
+                    frozenShowExpanded = isExpandedState
                 }
                 var t = Transaction()
                 t.animation = nil
@@ -307,7 +355,10 @@ struct UnifiedBottomCard: View {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 isExpandedState = false
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            scrollCooldownTask?.cancel()
+            scrollCooldownTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled else { return }
                 scrollCooldown = false
             }
         }
@@ -335,7 +386,7 @@ struct UnifiedBottomCard: View {
                 compactHeader(log: log, logs: logs, place: place)
 
                 if showExpandedContent {
-                    photoGalleryHeader(userLogs: logs)
+                    photoGalleryHeader(photos: userGalleryPhotos)
 
                     if let note = log.note, !note.isEmpty {
                         Text(note)
@@ -350,18 +401,22 @@ struct UnifiedBottomCard: View {
 
                     ratingDetailRow(log: log)
 
-                    Text(log.createdAt.formatted(date: .long, time: .omitted))
-                        .font(SonderTypography.caption)
-                        .foregroundStyle(SonderColors.inkLight)
+                    HStack {
+                        Text(log.createdAt.formatted(date: .long, time: .omitted))
+                            .font(SonderTypography.caption)
+                            .foregroundStyle(SonderColors.inkLight)
+                        Spacer()
+                        directionsButton
+                    }
 
                     viewFullDetailButton { onNavigateToLog(log.id, place) }
                 }
             } else {
                 multiLogHeader(logs: logs, place: place)
                 if showExpandedContent {
-                    photoGalleryHeader(userLogs: logs)
+                    photoGalleryHeader(photos: userGalleryPhotos)
                     Divider()
-                    timelineView(personalLogs: logs, place: place)
+                    timelineView(entries: userTimelineEntries)
                 }
             }
         }
@@ -379,7 +434,7 @@ struct UnifiedBottomCard: View {
                 }
                 .frame(width: 56, height: 56)
                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-                .opacity(1 - dragProgress)
+                .opacity(showExpandedContent ? 0 : 1)
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -465,17 +520,18 @@ struct UnifiedBottomCard: View {
             if showExpandedContent {
                 if place.isFriendsLoved { friendsLovedBadge }
 
-                photoGalleryHeader(friendLogs: place.logs)
+                photoGalleryHeader(photos: friendGalleryPhotos)
 
                 HStack {
                     Spacer()
+                    directionsButton
                     WantToGoButton(placeID: place.id, placeName: place.name, placeAddress: place.address, photoReference: place.photoReference)
                 }
 
                 if !place.logs.isEmpty {
                     Divider()
                     friendsSectionHeader(count: place.friendCount)
-                    timelineView(friendLogs: place.logs)
+                    timelineView(entries: friendTimelineEntries)
                 }
             }
         }
@@ -527,20 +583,31 @@ struct UnifiedBottomCard: View {
             }
 
             if showExpandedContent {
-                // Content for selected tab (tab picker is outside ScrollView)
-                switch selectedTab {
-                case .you:
-                    photoGalleryHeader(userLogs: logs)
-                    Divider()
-                    timelineView(personalLogs: logs, place: place)
-                case .friends:
-                    photoGalleryHeader(friendLogs: friendPlace.logs)
-                    Divider()
-                    timelineView(friendLogs: friendPlace.logs)
+                // Both tab contents are always in the hierarchy so the card height
+                // stays stable (no jump when switching tabs). The inactive tab fades
+                // out via opacity; hit-testing is disabled for it.
+                ZStack(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+                        photoGalleryHeader(photos: userGalleryPhotos)
+                        Divider()
+                        timelineView(entries: userTimelineEntries)
+                    }
+                    .opacity(selectedTab == .you ? 1 : 0)
+                    .allowsHitTesting(selectedTab == .you)
+
+                    VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+                        photoGalleryHeader(photos: friendGalleryPhotos)
+                        Divider()
+                        timelineView(entries: friendTimelineEntries)
+                    }
+                    .opacity(selectedTab == .friends ? 1 : 0)
+                    .allowsHitTesting(selectedTab == .friends)
                 }
+                .animation(.easeInOut(duration: 0.22), value: selectedTab)
 
                 HStack {
                     Spacer()
+                    directionsButton
                     WantToGoButton(placeID: friendPlace.id, placeName: friendPlace.name, placeAddress: friendPlace.address, photoReference: friendPlace.photoReference)
                 }
             }
@@ -554,7 +621,9 @@ struct UnifiedBottomCard: View {
         HStack(spacing: 0) {
             ForEach(CombinedTab.allCases, id: \.self) { tab in
                 Button {
-                    selectedTab = tab
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        selectedTab = tab
+                    }
                 } label: {
                     Text(tab.rawValue)
                         .font(.system(size: 13, weight: .semibold))
@@ -577,12 +646,11 @@ struct UnifiedBottomCard: View {
     // MARK: - Photo Gallery Header
 
     @ViewBuilder
-    private func photoGalleryHeader(userLogs: [LogSnapshot] = [], friendLogs: [FeedItem] = []) -> some View {
-        let photos = collectGalleryPhotos(userLogs: userLogs, friendLogs: friendLogs)
+    private func photoGalleryHeader(photos: [GalleryPhoto]) -> some View {
         if photos.count == 1 {
-            galleryCell(photo: photos[0])
+            galleryCell(photo: photos[0], contentMode: .fit)
                 .frame(maxWidth: .infinity)
-                .frame(height: 180)
+                .frame(height: 240)
                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         } else if photos.count >= 2 {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -601,7 +669,7 @@ struct UnifiedBottomCard: View {
     }
 
     private struct GalleryPhoto: Identifiable {
-        let id = UUID()
+        let id: String
         let url: URL
         let isUser: Bool
         let avatarURL: String?
@@ -612,20 +680,36 @@ struct UnifiedBottomCard: View {
         var photos: [GalleryPhoto] = []
         for log in userLogs {
             if let urlString = log.photoURL, let url = URL(string: urlString) {
-                photos.append(GalleryPhoto(url: url, isUser: true, avatarURL: nil, username: nil))
+                photos.append(
+                    GalleryPhoto(
+                        id: "user-\(log.id)",
+                        url: url,
+                        isUser: true,
+                        avatarURL: nil,
+                        username: nil
+                    )
+                )
             }
         }
         for item in friendLogs {
             if let urlString = item.log.photoURL, let url = URL(string: urlString) {
-                photos.append(GalleryPhoto(url: url, isUser: false, avatarURL: item.user.avatarURL, username: item.user.username))
+                photos.append(
+                    GalleryPhoto(
+                        id: "friend-\(item.id)",
+                        url: url,
+                        isUser: false,
+                        avatarURL: item.user.avatarURL,
+                        username: item.user.username
+                    )
+                )
             }
         }
         return photos
     }
 
-    private func galleryCell(photo: GalleryPhoto) -> some View {
+    private func galleryCell(photo: GalleryPhoto, contentMode: ContentMode = .fill) -> some View {
         ZStack(alignment: .bottomLeading) {
-            DownsampledAsyncImage(url: photo.url, targetSize: CGSize(width: 180, height: 240)) {
+            DownsampledAsyncImage(url: photo.url, targetSize: CGSize(width: 180, height: 240), contentMode: contentMode) {
                 photoPlaceholder
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -660,8 +744,7 @@ struct UnifiedBottomCard: View {
     // MARK: - Timeline View
 
     @ViewBuilder
-    private func timelineView(personalLogs: [LogSnapshot] = [], place: Place? = nil, friendLogs: [FeedItem] = []) -> some View {
-        let entries = buildTimelineEntries(personalLogs: personalLogs, place: place, friendLogs: friendLogs)
+    private func timelineView(entries: [TimelineEntry]) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                 HStack(alignment: .top, spacing: SonderSpacing.sm) {
@@ -989,6 +1072,23 @@ struct UnifiedBottomCard: View {
         }
     }
 
+    private var directionsButton: some View {
+        Button { showDirectionsDialog = true } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "map")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Directions")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(SonderColors.inkDark)
+            .padding(.horizontal, SonderSpacing.sm)
+            .padding(.vertical, 6)
+            .background(SonderColors.warmGray)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
     private func viewFullDetailButton(action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
@@ -1052,6 +1152,28 @@ struct UnifiedBottomCard: View {
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(SonderColors.inkMuted)
             }
+    }
+
+    // MARK: - Caching
+
+    private func rebuildCachedContent() {
+        switch pin {
+        case .personal(let logs, let place):
+            userGalleryPhotos = collectGalleryPhotos(userLogs: logs, friendLogs: [])
+            friendGalleryPhotos = []
+            userTimelineEntries = buildTimelineEntries(personalLogs: logs, place: place, friendLogs: [])
+            friendTimelineEntries = []
+        case .friends(let place):
+            userGalleryPhotos = []
+            friendGalleryPhotos = collectGalleryPhotos(userLogs: [], friendLogs: place.logs)
+            userTimelineEntries = []
+            friendTimelineEntries = buildTimelineEntries(personalLogs: [], place: nil, friendLogs: place.logs)
+        case .combined(let logs, let place, let friendPlace):
+            userGalleryPhotos = collectGalleryPhotos(userLogs: logs, friendLogs: [])
+            friendGalleryPhotos = collectGalleryPhotos(userLogs: [], friendLogs: friendPlace.logs)
+            userTimelineEntries = buildTimelineEntries(personalLogs: logs, place: place, friendLogs: [])
+            friendTimelineEntries = buildTimelineEntries(personalLogs: [], place: nil, friendLogs: friendPlace.logs)
+        }
     }
 }
 

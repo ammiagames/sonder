@@ -89,7 +89,7 @@ final class SavedListsService {
         )
 
         modelContext.insert(list)
-        try? modelContext.save()
+        do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
         lists = getLocalLists(for: userID)
 
         // Push to Supabase
@@ -123,7 +123,7 @@ final class SavedListsService {
 
         // Delete the list locally
         modelContext.delete(list)
-        try? modelContext.save()
+        do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
         lists = getLocalLists(for: userID)
 
         // Delete from Supabase (cascade will handle want_to_go rows)
@@ -142,7 +142,7 @@ final class SavedListsService {
     func renameList(_ list: SavedList, newName: String) async {
         list.name = newName
         list.updatedAt = Date()
-        try? modelContext.save()
+        do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
 
         struct RenameUpdate: Encodable {
             let name: String
@@ -163,7 +163,7 @@ final class SavedListsService {
     func updateEmoji(_ list: SavedList, emoji: String) async {
         list.emoji = emoji
         list.updatedAt = Date()
-        try? modelContext.save()
+        do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
 
         struct EmojiUpdate: Encodable {
             let emoji: String
@@ -186,7 +186,7 @@ final class SavedListsService {
             list.sortOrder = index
             list.updatedAt = Date()
         }
-        try? modelContext.save()
+        do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
         lists = getLocalLists(for: userID)
 
         // Push new order to Supabase

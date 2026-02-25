@@ -20,8 +20,9 @@ struct OtherUserProfileView: View {
     @Environment(FeedService.self) private var feedService
     @Environment(TripService.self) private var tripService
 
-    @Query private var myLogs: [Log]
-    @Query private var myPlaces: [Place]
+    @Environment(\.modelContext) private var modelContext
+    @State private var myLogs: [Log] = []
+    @State private var myPlaces: [Place] = []
 
     @State private var user: User?
     @State private var isLoading = true
@@ -31,6 +32,15 @@ struct OtherUserProfileView: View {
     @State private var followingCount = 0
     @State private var userLogs: [FeedItem] = []
     @State private var userTrips: [Trip] = []
+
+    // Cached derived data — rebuilt when userLogs/myLogs change
+    @State private var cachedUniqueCities: Set<String> = []
+    @State private var cachedUniqueCountries: Set<String> = []
+    @State private var cachedCityCounts: [(city: String, count: Int)] = []
+    @State private var cachedTopTagsWithCounts: [(tag: String, count: Int)] = []
+    @State private var cachedInCommonPlaces: [InCommonPlace] = []
+    @State private var cachedInCommonCities: [String] = []
+    @State private var cachedRatingCounts: (skip: Int, okay: Int, great: Int, mustSee: Int) = (0, 0, 0, 0)
 
     var body: some View {
         ScrollView {
@@ -128,8 +138,19 @@ struct OtherUserProfileView: View {
             }
         }
         .task {
+            refreshMyData()
             await loadData()
         }
+    }
+
+    private func refreshMyData() {
+        guard let myUserID = authService.currentUser?.id else { return }
+        let logDescriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.userID == myUserID },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        myLogs = (try? modelContext.fetch(logDescriptor)) ?? []
+        myPlaces = (try? modelContext.fetch(FetchDescriptor<Place>())) ?? []
     }
 
     // MARK: - Profile Header
@@ -347,47 +368,21 @@ struct OtherUserProfileView: View {
 
     // MARK: - Computed Stats
 
-    private var uniqueCities: Set<String> {
-        Set(userLogs.compactMap { ProfileStatsService.extractCity(from: $0.place.address) })
-    }
+    private var uniqueCities: Set<String> { cachedUniqueCities }
+    private var uniqueCountries: Set<String> { cachedUniqueCountries }
+    private var cityCounts: [(city: String, count: Int)] { cachedCityCounts }
+    private var topTagsWithCounts: [(tag: String, count: Int)] { cachedTopTagsWithCounts }
 
-    private var uniqueCountries: Set<String> {
-        Set(userLogs.compactMap { ProfileStatsService.extractCountry(from: $0.place.address) })
-    }
-
-    private var cityCounts: [(city: String, count: Int)] {
-        var counts: [String: Int] = [:]
-        for item in userLogs {
-            if let city = ProfileStatsService.extractCity(from: item.place.address) {
-                counts[city, default: 0] += 1
-            }
-        }
-        return counts.map { (city: $0.key, count: $0.value) }
-            .sorted { $0.count > $1.count }
-    }
-
-    private var ratingCounts: (skip: Int, okay: Int, great: Int, mustSee: Int) {
-        var skip = 0, okay = 0, great = 0, mustSee = 0
-        for item in userLogs {
-            switch item.rating {
-            case .skip: skip += 1
-            case .okay: okay += 1
-            case .great: great += 1
-            case .mustSee: mustSee += 1
-            }
-        }
-        return (skip, okay, great, mustSee)
-    }
-
-    private var skipCount: Int { ratingCounts.skip }
-    private var okayCount: Int { ratingCounts.okay }
-    private var greatCount: Int { ratingCounts.great }
-    private var mustSeeCount: Int { ratingCounts.mustSee }
+    private var ratingCounts: (skip: Int, okay: Int, great: Int, mustSee: Int) { cachedRatingCounts }
+    private var skipCount: Int { cachedRatingCounts.skip }
+    private var okayCount: Int { cachedRatingCounts.okay }
+    private var greatCount: Int { cachedRatingCounts.great }
+    private var mustSeeCount: Int { cachedRatingCounts.mustSee }
 
     private var ratingPhilosophy: String {
         let total = userLogs.count
         guard total > 0 else { return "" }
-        let counts = ratingCounts
+        let counts = cachedRatingCounts
         let mustSeePct = Double(counts.mustSee) / Double(total)
         let skipPct = Double(counts.skip) / Double(total)
         let positivePct = Double(counts.great + counts.mustSee) / Double(total)
@@ -403,15 +398,6 @@ struct OtherUserProfileView: View {
         } else {
             return "Every place tells a story"
         }
-    }
-
-    private var topTagsWithCounts: [(tag: String, count: Int)] {
-        let allTags = userLogs.flatMap { $0.log.tags }
-        guard !allTags.isEmpty else { return [] }
-        let tagCounts = Dictionary(grouping: allTags, by: { $0 })
-            .mapValues { $0.count }
-            .sorted { $0.value > $1.value }
-        return Array(tagCounts.prefix(6).map { (tag: $0.key, count: $0.value) })
     }
 
     private func cityPhotoURL(_ city: String, maxWidth: Int = 400) -> URL? {
@@ -759,59 +745,8 @@ struct OtherUserProfileView: View {
 
     // MARK: - In Common
 
-    /// Places both users have logged, sorted by most recent, capped at 10.
-    private var inCommonPlaces: [InCommonPlace] {
-        let myPlacesByID = Dictionary(uniqueKeysWithValues: myPlaces.map { ($0.id, $0) })
-        let myLogsByPlaceID: [String: Log] = {
-            let grouped = Dictionary(grouping: myLogs, by: { $0.placeID })
-            return grouped.compactMapValues { $0.sorted { $0.createdAt > $1.createdAt }.first }
-        }()
-        let theirLogsByPlaceID = Dictionary(grouping: userLogs, by: { $0.place.id })
-
-        let myPlaceIDs = Set(myLogs.map { $0.placeID })
-        let commonIDs = myPlaceIDs.intersection(Set(theirLogsByPlaceID.keys))
-
-        return commonIDs.compactMap { placeID -> InCommonPlace? in
-            guard let myLog = myLogsByPlaceID[placeID],
-                  let theirItems = theirLogsByPlaceID[placeID],
-                  let theirItem = theirItems.first else { return nil }
-
-            let place = myPlacesByID[placeID]
-            let name = place?.name ?? theirItem.place.name
-            let address = place?.address ?? theirItem.place.address
-            let city = ProfileStatsService.extractCity(from: address) ?? ""
-
-            // Photo: prefer either user's uploaded photo, then Google reference
-            let photoURL: URL? = {
-                if let url = theirItem.log.photoURL, let u = URL(string: url) { return u }
-                if let url = myLog.photoURL, let u = URL(string: url) { return u }
-                if let ref = theirItem.place.photoReference ?? place?.photoReference {
-                    return GooglePlacesService.photoURL(for: ref, maxWidth: 300)
-                }
-                return nil
-            }()
-
-            return InCommonPlace(
-                id: placeID,
-                name: name,
-                city: city,
-                myRating: myLog.rating,
-                theirRating: theirItem.rating,
-                photoURL: photoURL,
-                latestDate: max(myLog.createdAt, theirItem.createdAt)
-            )
-        }
-        .sorted { $0.latestDate > $1.latestDate }
-        .prefix(10)
-        .map { $0 }
-    }
-
-    /// Cities both users have logged in.
-    private var inCommonCities: [String] {
-        let myCities = Set(myPlaces.compactMap { ProfileStatsService.extractCity(from: $0.address) })
-        let theirCities = Set(userLogs.compactMap { ProfileStatsService.extractCity(from: $0.place.address) })
-        return Array(myCities.intersection(theirCities)).sorted()
-    }
+    private var inCommonPlaces: [InCommonPlace] { cachedInCommonPlaces }
+    private var inCommonCities: [String] { cachedInCommonCities }
 
     private var citiesNarrative: String? {
         let cities = inCommonCities
@@ -821,7 +756,8 @@ struct OtherUserProfileView: View {
         case 2: return "You've both explored \(cities[0]) and \(cities[1])"
         case 3: return "You've both explored \(cities[0]), \(cities[1]), and \(cities[2])"
         default:
-            return "You've both explored \(cities[0]), \(cities[1]), \(cities[2]), and \(cities.count - 3) more"
+            let first3 = cities.prefix(3).joined(separator: ", ")
+            return "You've both explored \(first3), and \(cities.count - 3) more"
         }
     }
 
@@ -1041,6 +977,95 @@ struct OtherUserProfileView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Cache Rebuild
+
+    private func rebuildOtherUserCaches() {
+        // Unique cities & countries
+        cachedUniqueCities = Set(userLogs.compactMap { ProfileStatsService.extractCity(from: $0.place.address) })
+        cachedUniqueCountries = Set(userLogs.compactMap { ProfileStatsService.extractCountry(from: $0.place.address) })
+
+        // City counts
+        var cityCts: [String: Int] = [:]
+        for item in userLogs {
+            if let city = ProfileStatsService.extractCity(from: item.place.address) {
+                cityCts[city, default: 0] += 1
+            }
+        }
+        cachedCityCounts = cityCts.map { (city: $0.key, count: $0.value) }
+            .sorted { $0.count > $1.count }
+
+        // Top tags
+        let allTags = userLogs.flatMap { $0.log.tags }
+        if allTags.isEmpty {
+            cachedTopTagsWithCounts = []
+        } else {
+            let tagCounts = Dictionary(grouping: allTags, by: { $0 })
+                .mapValues { $0.count }
+                .sorted { $0.value > $1.value }
+            cachedTopTagsWithCounts = Array(tagCounts.prefix(6).map { (tag: $0.key, count: $0.value) })
+        }
+
+        // Rating counts
+        var skip = 0, okay = 0, great = 0, mustSee = 0
+        for item in userLogs {
+            switch item.rating {
+            case .skip: skip += 1
+            case .okay: okay += 1
+            case .great: great += 1
+            case .mustSee: mustSee += 1
+            }
+        }
+        cachedRatingCounts = (skip, okay, great, mustSee)
+
+        // In common places
+        let myPlacesByID = Dictionary(uniqueKeysWithValues: myPlaces.map { ($0.id, $0) })
+        let myLogsByPlaceID: [String: Log] = {
+            let grouped = Dictionary(grouping: myLogs, by: { $0.placeID })
+            return grouped.compactMapValues { $0.sorted { $0.createdAt > $1.createdAt }.first }
+        }()
+        let theirLogsByPlaceID = Dictionary(grouping: userLogs, by: { $0.place.id })
+        let myPlaceIDs = Set(myLogs.map { $0.placeID })
+        let commonIDs = myPlaceIDs.intersection(Set(theirLogsByPlaceID.keys))
+
+        cachedInCommonPlaces = commonIDs.compactMap { placeID -> InCommonPlace? in
+            guard let myLog = myLogsByPlaceID[placeID],
+                  let theirItems = theirLogsByPlaceID[placeID],
+                  let theirItem = theirItems.first else { return nil }
+
+            let place = myPlacesByID[placeID]
+            let name = place?.name ?? theirItem.place.name
+            let address = place?.address ?? theirItem.place.address
+            let city = ProfileStatsService.extractCity(from: address) ?? ""
+
+            let photoURL: URL? = {
+                if let url = theirItem.log.photoURL, let u = URL(string: url) { return u }
+                if let url = myLog.photoURL, let u = URL(string: url) { return u }
+                if let ref = theirItem.place.photoReference ?? place?.photoReference {
+                    return GooglePlacesService.photoURL(for: ref, maxWidth: 300)
+                }
+                return nil
+            }()
+
+            return InCommonPlace(
+                id: placeID,
+                name: name,
+                city: city,
+                myRating: myLog.rating,
+                theirRating: theirItem.rating,
+                photoURL: photoURL,
+                latestDate: max(myLog.createdAt, theirItem.createdAt)
+            )
+        }
+        .sorted { $0.latestDate > $1.latestDate }
+        .prefix(10)
+        .map { $0 }
+
+        // In common cities
+        let myCities = Set(myPlaces.compactMap { ProfileStatsService.extractCity(from: $0.address) })
+        let theirCities = cachedUniqueCities
+        cachedInCommonCities = Array(myCities.intersection(theirCities)).sorted()
+    }
+
     // MARK: - Data Loading
 
     private func loadData() async {
@@ -1084,6 +1109,7 @@ struct OtherUserProfileView: View {
             logger.error("Error loading user trips: \(error.localizedDescription)")
         }
 
+        rebuildOtherUserCaches()
         isLoading = false
     }
 
@@ -1103,7 +1129,7 @@ struct OtherUserProfileView: View {
                 }
                 isFollowing.toggle()
 
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                SonderHaptics.impact(.light)
             } catch {
                 logger.error("Follow error: \(error.localizedDescription)")
             }

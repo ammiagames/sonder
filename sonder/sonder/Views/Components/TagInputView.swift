@@ -10,14 +10,16 @@ import SwiftUI
 /// Tag input component with suggestions and freeform entry
 struct TagInputView: View {
     @Binding var selectedTags: [String]
+    var recentTags: [String] = []
     @State private var inputText = ""
     @FocusState private var isInputFocused: Bool
 
-    private let suggestedTags = [
+    private let fallbackSuggestedTags = [
         "food", "coffee", "bar", "restaurant",
         "hike", "viewpoint", "museum", "beach",
         "hotel", "shopping"
     ]
+    private let maxSuggestionCount = 10
 
     var body: some View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
@@ -77,7 +79,12 @@ struct TagInputView: View {
     }
 
     private var availableSuggestions: [String] {
-        suggestedTags.filter { !selectedTags.contains($0) }
+        prioritizedTagSuggestions(
+            recentTags: recentTags,
+            fallbackTags: fallbackSuggestedTags,
+            selectedTags: selectedTags,
+            limit: maxSuggestionCount
+        )
     }
 
     private func addCustomTag() {
@@ -94,14 +101,15 @@ struct TagInputView: View {
     }
 
     private func addTag(_ tag: String) {
-        guard !selectedTags.contains(tag) && selectedTags.count < 10 else { return }
+        let key = normalizedTagKey(tag)
+        let alreadySelected = selectedTags.contains { normalizedTagKey($0) == key }
+        guard !alreadySelected && selectedTags.count < 10 else { return }
 
         withAnimation(.spring(response: 0.3)) {
             selectedTags.append(tag)
         }
 
-        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-        impactFeedback.impactOccurred()
+        SonderHaptics.impact(.light)
     }
 }
 

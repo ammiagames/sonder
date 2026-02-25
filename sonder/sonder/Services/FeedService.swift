@@ -33,8 +33,8 @@ final class FeedService {
 
     // Realtime
     private var realtimeChannel: RealtimeChannelV2?
-    private var realtimeLogTask: Task<Void, Never>?
-    private var realtimeTripTask: Task<Void, Never>?
+    private nonisolated(unsafe) var realtimeLogTask: Task<Void, Never>?
+    private nonisolated(unsafe) var realtimeTripTask: Task<Void, Never>?
 
     // Cached following IDs to avoid repeated network calls
     private var cachedFollowingIDs: [String]?
@@ -42,6 +42,11 @@ final class FeedService {
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
+    }
+
+    deinit {
+        realtimeLogTask?.cancel()
+        realtimeTripTask?.cancel()
     }
 
     // MARK: - Feed Loading
@@ -107,6 +112,11 @@ final class FeedService {
 
             var merged = standaloneLogs + tripFeedEntries + tripCreatedEntries
             merged.sort { $0.sortDate > $1.sortDate }
+
+            // Apply sliding window on initial load too (not just pagination)
+            if merged.count > maxItemsInMemory {
+                merged = Array(merged.prefix(maxItemsInMemory))
+            }
 
             feedEntries = merged
             lastFetchedDate = logResponses.last?.createdAt
@@ -223,8 +233,8 @@ final class FeedService {
 
         let tripIDs = trips.map { $0.id }
 
-        // Fetch logs for these trips
-        let tripLogs: [TripLogWithTripID] = try await supabase
+        // Fetch logs and activities in parallel (independent queries)
+        async let tripLogsTask: [TripLogWithTripID] = supabase
             .from("logs")
             .select("""
                 id, rating, photo_urls, created_at, trip_id,
@@ -236,21 +246,10 @@ final class FeedService {
             .execute()
             .value
 
-        // Fetch activities for these trips (non-fatal)
-        let activities: [TripActivityResponse]
-        do {
-            activities = try await supabase
-                .from("trip_activity")
-                .select("id, trip_id, activity_type, log_id, place_name, created_at")
-                .in("trip_id", values: tripIDs)
-                .order("created_at", ascending: false)
-                .limit(200)
-                .execute()
-                .value
-        } catch {
-            logger.warning("Error fetching trip activities (non-fatal): \(error.localizedDescription)")
-            activities = []
-        }
+        async let activitiesTask: [TripActivityResponse] = fetchTripActivities(tripIDs: tripIDs)
+
+        let tripLogs = try await tripLogsTask
+        let activities = await activitiesTask
 
         // Latest activity per trip for subtitle
         let latestActivityByTrip = Dictionary(grouping: activities) { $0.tripID }
@@ -340,6 +339,23 @@ final class FeedService {
             .map { $0.toFeedTripCreatedItem() }
     }
 
+    /// Fetch trip activities (non-fatal — returns empty on failure)
+    private func fetchTripActivities(tripIDs: [String]) async -> [TripActivityResponse] {
+        do {
+            return try await supabase
+                .from("trip_activity")
+                .select("id, trip_id, activity_type, log_id, place_name, created_at")
+                .in("trip_id", values: tripIDs)
+                .order("created_at", ascending: false)
+                .limit(200)
+                .execute()
+                .value
+        } catch {
+            logger.warning("Error fetching trip activities (non-fatal): \(error.localizedDescription)")
+            return []
+        }
+    }
+
     /// Get IDs of users the current user is following (cached for 60s)
     private func getFollowingIDs(for userID: String) async throws -> [String] {
         // Return cached value if fresh (< 60 seconds old)
@@ -392,20 +408,20 @@ final class FeedService {
 
             try await channel.subscribeWithError()
 
-            realtimeLogTask = Task {
+            realtimeLogTask = Task { [weak self] in
                 for await change in logChanges {
                     if let userID = change.record["user_id"]?.stringValue,
                        followingIDs.contains(userID) {
-                        self.newPostsAvailable = true
+                        self?.newPostsAvailable = true
                     }
                 }
             }
 
-            realtimeTripTask = Task {
+            realtimeTripTask = Task { [weak self] in
                 for await change in tripActivityChanges {
                     if let userID = change.record["user_id"]?.stringValue,
                        followingIDs.contains(userID) {
-                        self.newPostsAvailable = true
+                        self?.newPostsAvailable = true
                     }
                 }
             }

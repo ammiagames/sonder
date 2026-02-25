@@ -35,6 +35,7 @@ struct SearchPlaceView: View {
     @State private var isLoadingDetails = false
     @State private var detailsError: String?
     @State private var removingPlaceIds: Set<String> = []
+    @State private var autocompleteTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -118,11 +119,23 @@ struct SearchPlaceView: View {
             }
             loadNearbyPlaces()
         }
+        .onChange(of: locationService.authorizationStatus) { _, newStatus in
+            let isNowAuthorized = newStatus == .authorizedWhenInUse || newStatus == .authorizedAlways
+            guard isNowAuthorized else { return }
+            // If permission is granted while this screen is open, immediately load nearby.
+            loadNearbyPlaces()
+        }
+        .onChange(of: locationService.currentLocation?.latitude) { _, _ in
+            guard locationService.isAuthorized, nearbyPlaces.isEmpty, !isLoadingNearby else { return }
+            // Retry when location resolves after an earlier timeout.
+            loadNearbyPlaces()
+        }
         .sheet(isPresented: $showCustomPlace) {
             CreateCustomPlaceView { place in
                 showCustomPlace = false
                 // Present rating after sheet dismisses
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(400))
                     placeToLog = place
                 }
             }
@@ -134,7 +147,7 @@ struct SearchPlaceView: View {
                     showPreview = false
                     searchText = ""
                     // Dismiss the cover on next frame so preview is already gone
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         placeToLog = nil
                     }
                     onLogComplete?(coord)
@@ -156,7 +169,8 @@ struct SearchPlaceView: View {
             )
             .frame(height: 22)
             .onChange(of: searchText) { _, newValue in
-                Task {
+                autocompleteTask?.cancel()
+                autocompleteTask = Task {
                     predictions = await placesService.autocomplete(
                         query: newValue,
                         location: locationService.currentLocation
@@ -230,7 +244,7 @@ struct SearchPlaceView: View {
                             address: place.address,
                             photoReference: place.photoReference,
                             placeId: place.id,
-                            onBookmark: {}
+                            onLogDirect: { logPlaceDirectly(byID: place.id) }
                         )
                     }
                     .buttonStyle(.plain)
@@ -247,7 +261,7 @@ struct SearchPlaceView: View {
                         address: prediction.secondaryText,
                         placeId: prediction.placeId,
                         distanceText: formatDistance(meters: prediction.distanceMeters),
-                        onBookmark: {}
+                        onLogDirect: { logPlaceDirectly(byID: prediction.placeId) }
                     )
                 }
                 .buttonStyle(.plain)
@@ -288,7 +302,7 @@ struct SearchPlaceView: View {
                         photoReference: place.photoReference,
                         placeId: place.placeId,
                         distanceText: distanceToNearby(place),
-                        onBookmark: {}
+                        onLogDirect: { logPlaceDirectly(byID: place.placeId) }
                     )
                 }
                 .buttonStyle(.plain)
@@ -364,7 +378,8 @@ struct SearchPlaceView: View {
                             name: search.name,
                             address: search.address,
                             photoReference: cachedPlace?.photoReference,
-                            placeId: search.placeId
+                            placeId: search.placeId,
+                            onLogDirect: { logPlaceDirectly(byID: search.placeId) }
                         ) {
                             // Step 1: Animate the row out
                             _ = withAnimation(.easeOut(duration: 0.25)) {
@@ -372,7 +387,8 @@ struct SearchPlaceView: View {
                             }
 
                             // Step 2: Delete data after animation completes
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(300))
                                 cacheService.clearRecentSearch(placeId: search.placeId)
                                 removingPlaceIds.remove(search.placeId)
                             }
@@ -425,6 +441,11 @@ struct SearchPlaceView: View {
     // MARK: - Actions
 
     private func loadNearbyPlaces() {
+        guard !isLoadingNearby else {
+            logger.debug("[Nearby] Already loading — skipping")
+            return
+        }
+
         logger.debug("[Nearby] isAuthorized: \(locationService.isAuthorized), currentLocation: \(String(describing: locationService.currentLocation))")
         guard locationService.isAuthorized else {
             logger.debug("[Nearby] Not authorized — skipping")
@@ -470,9 +491,35 @@ struct SearchPlaceView: View {
         }
     }
 
+    /// Fetches place details and jumps straight to the rating screen, skipping the preview.
+    private func logPlaceDirectly(byID placeId: String) {
+        Task {
+            isLoadingDetails = true
+            detailsError = nil
+
+            if let details = await placesService.getPlaceDetails(placeId: placeId) {
+                let place = cacheService.cachePlace(from: details)
+                cacheService.addRecentSearch(placeId: place.id, name: place.name, address: place.address)
+                isLoadingDetails = false
+                placeToLog = place
+                return
+            }
+
+            if let cachedPlace = cacheService.getPlace(by: placeId) {
+                isLoadingDetails = false
+                placeToLog = cachedPlace
+                return
+            }
+
+            isLoadingDetails = false
+            detailsError = placesService.error?.localizedDescription ?? "Failed to load place details"
+        }
+    }
+
     /// Fetches full place details by ID and navigates to the preview screen.
     /// Uses cached data when offline so recent searches still work without network.
     private func selectPlace(byID placeId: String) {
+        guard !isLoadingDetails else { return }
         Task {
             isLoadingDetails = true
             detailsError = nil

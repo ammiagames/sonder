@@ -40,8 +40,7 @@ struct RatingButton: View {
 
     var body: some View {
         Button(action: {
-            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-            impactFeedback.impactOccurred()
+            SonderHaptics.impact(.medium)
             action()
         }) {
             VStack(spacing: SonderSpacing.xs) {

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - Feed Log Detail View (Magazine Spread)
 
@@ -23,6 +24,7 @@ struct FeedLogDetailView: View {
     @State private var isLoadingDetails = false
     @State private var placeToLog: Place?
     @State private var contentAppeared = false
+    @State private var showDirectionsDialog = false
 
     private var hasPhotos: Bool { !feedItem.log.photoURLs.isEmpty }
 
@@ -138,6 +140,16 @@ struct FeedLogDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showDirectionsDialog = true
+                } label: {
+                    Image(systemName: "map")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(SonderColors.inkMuted)
+                        .toolbarIcon()
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 WantToGoButton(
                     placeID: feedItem.place.id,
                     placeName: feedItem.place.name,
@@ -147,6 +159,12 @@ struct FeedLogDetailView: View {
                 )
             }
         }
+        .directionsConfirmationDialog(
+            isPresented: $showDirectionsDialog,
+            coordinate: CLLocationCoordinate2D(latitude: feedItem.place.latitude, longitude: feedItem.place.longitude),
+            name: feedItem.place.name,
+            address: feedItem.place.address
+        )
         .navigationDestination(item: $selectedUserID) { userID in
             OtherUserProfileView(userID: userID)
         }

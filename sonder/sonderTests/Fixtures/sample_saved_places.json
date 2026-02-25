@@ -1,0 +1,57 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "geometry": {
+        "coordinates": [
+          -74.006,
+          40.7128
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "Title": "Joe's Pizza",
+        "Google Maps URL": "http://maps.google.com/?cid=12345678901234567",
+        "Location": {
+          "Latitude": "40.7128",
+          "Longitude": "-74.006"
+        },
+        "Address": "7 Carmine St, New York, NY 10014",
+        "Published": "2025-06-15T10:30:00Z"
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          -122.4194,
+          37.7749
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "Title": "Tartine Bakery",
+        "Google Maps URL": "http://maps.google.com/?cid=98765432109876543",
+        "Location": {
+          "Latitude": "37.7749",
+          "Longitude": "-122.4194"
+        }
+      },
+      "type": "Feature"
+    },
+    {
+      "geometry": {
+        "coordinates": [
+          139.6917,
+          35.6895
+        ],
+        "type": "Point"
+      },
+      "properties": {
+        "Title": "Ramen Nagi",
+        "Google Maps URL": "http://maps.google.com/?cid=11111111111111111"
+      },
+      "type": "Feature"
+    }
+  ]
+}

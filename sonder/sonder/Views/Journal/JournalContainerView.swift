@@ -29,8 +29,8 @@ struct JournalContainerView: View {
     @Environment(AuthenticationService.self) private var authService
     @Environment(SyncEngine.self) private var syncEngine
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
-    @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
+    @State private var allUserLogs: [Log] = []
+    @State private var allUserTrips: [Trip] = []
     @Query private var places: [Place]
 
     var popToRoot: UUID = UUID()
@@ -47,22 +47,42 @@ struct JournalContainerView: View {
     @State private var showAssignLogs = false
     @State private var displayStyle: JournalDisplayStyle = .polaroid
 
+    // Cached derived data — rebuilt when source data changes
+    @State private var cachedPlacesByID: [String: Place] = [:]
+    @State private var cachedOrphanedLogs: [Log] = []
+
     // MARK: - Computed Data
 
-    /// O(P) dictionary for O(1) place lookups
-    private var placesByID: [String: Place] {
-        Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
-    }
+    /// O(1) dictionary lookup — rebuilt via rebuildJournalCaches()
+    private var placesByID: [String: Place] { cachedPlacesByID }
 
-    private var userLogs: [Log] {
-        guard let userID = authService.currentUser?.id else { return [] }
-        return allLogs.filter { $0.userID == userID }
-    }
+    private var userLogs: [Log] { allUserLogs }
 
     private var userTrips: [Trip] {
-        guard let userID = authService.currentUser?.id else { return [] }
-        let filtered = allTrips.filter { $0.createdBy == userID || $0.collaboratorIDs.contains(userID) }
-        return sortTripsReverseChronological(filtered)
+        sortTripsReverseChronological(allUserTrips)
+    }
+
+    private func refreshData() {
+        guard let userID = authService.currentUser?.id else { return }
+        let logDescriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.userID == userID },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        allUserLogs = (try? modelContext.fetch(logDescriptor)) ?? []
+
+        let tripDescriptor = FetchDescriptor<Trip>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        let allTrips = (try? modelContext.fetch(tripDescriptor)) ?? []
+        allUserTrips = allTrips.filter { $0.isAccessible(by: userID) }
+
+        rebuildJournalCaches()
+    }
+
+    private func rebuildJournalCaches() {
+        cachedPlacesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+        let tripIDs = Set(allUserTrips.map(\.id))
+        cachedOrphanedLogs = allUserLogs.filter { $0.tripID.map { !tripIDs.contains($0) } ?? true }
     }
 
     private var filteredTrips: [Trip] {
@@ -74,10 +94,7 @@ struct JournalContainerView: View {
         }
     }
 
-    private var orphanedLogs: [Log] {
-        let tripIDs = Set(userTrips.map(\.id))
-        return userLogs.filter { $0.tripID.map { !tripIDs.contains($0) } ?? true }
-    }
+    private var orphanedLogs: [Log] { cachedOrphanedLogs }
 
     private var filteredLogs: [Log] {
         var logs = userLogs
@@ -157,9 +174,12 @@ struct JournalContainerView: View {
                     }
                 }
             }
+            .task { refreshData() }
+            .onChange(of: syncEngine.lastSyncDate) { _, _ in refreshData() }
             .sheet(isPresented: $showCreateTrip) {
                 CreateEditTripView(mode: .create, onTripCreated: { trip in
                     newlyCreatedTrip = trip
+                    refreshData()
                 })
             }
             .navigationDestination(item: $selectedLog) { log in
@@ -220,7 +240,7 @@ struct JournalContainerView: View {
         case .masonry:
             MasonryTripsGrid(
                 trips: filteredTrips,
-                allLogs: allLogs,
+                allLogs: allUserLogs,
                 places: places,
                 filteredLogs: filteredLogs,
                 selectedTrip: $selectedTrip,
@@ -231,7 +251,7 @@ struct JournalContainerView: View {
         case .polaroid:
             JournalPolaroidView(
                 trips: filteredTrips,
-                allLogs: allLogs,
+                allLogs: allUserLogs,
                 places: Array(places),
                 orphanedLogs: orphanedLogs,
                 selectedTrip: $selectedTrip,
@@ -240,7 +260,7 @@ struct JournalContainerView: View {
         case .boardingPass:
             JournalBoardingPassView(
                 trips: filteredTrips,
-                allLogs: allLogs,
+                allLogs: allUserLogs,
                 places: Array(places),
                 orphanedLogs: orphanedLogs,
                 selectedTrip: $selectedTrip,

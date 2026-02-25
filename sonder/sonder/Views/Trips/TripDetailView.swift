@@ -17,14 +17,13 @@ struct TripDetailView: View {
     @Environment(SyncEngine.self) private var syncEngine
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @Query private var allLogs: [Log]
+    @State private var allLogs: [Log] = []
     @Query private var places: [Place]
 
     let trip: Trip
     var onDelete: (() -> Void)? = nil
 
     @State private var showEditTrip = false
-    @State private var showCollaborators = false
     @State private var showShareTrip = false
     @State private var showStoryPage = false
     @State private var storyStartIndex = 0
@@ -43,6 +42,9 @@ struct TripDetailView: View {
     @State private var routeDetailLog: Log?
     @State private var routeDetailPlace: Place?
     @State private var showReorder = false
+    @State private var showBulkImport = false
+    @State private var cardWrapTask: Task<Void, Never>?
+    @State private var measuredViewWidth: CGFloat = 0
 
 
     // MARK: - Capsule Spacing Constants
@@ -52,58 +54,54 @@ struct TripDetailView: View {
     private let narrowColumn: CGFloat = 40
     private let breathingRoom: CGFloat = 80
 
+    // Cached computed data — rebuilt only when inputs change (via refreshLogs)
+    @State private var cachedTripLogs: [Log] = []
+    @State private var cachedLogsByDay: [(date: Date, logs: [Log])] = []
+    @State private var cachedPlacesByID: [String: Place] = [:]
+    @State private var cachedTripPlaces: [Place] = []
+    @State private var cachedRatingCounts: (mustSee: Int, great: Int, okay: Int, skip: Int) = (0, 0, 0, 0)
+    @State private var cachedTripDayCount: Int = 1
+
     /// Logs belonging to this trip, sorted by user-defined order (tripSortOrder) then visitedAt
-    private var tripLogs: [Log] {
-        allLogs
-            .filter { $0.tripID == trip.id }
-            .sorted {
-                if let a = $0.tripSortOrder, let b = $1.tripSortOrder {
-                    return a < b
-                }
-                return $0.visitedAt < $1.visitedAt
+    private var tripLogs: [Log] { cachedTripLogs }
+
+    private func refreshLogs() {
+        let tripID = trip.id
+        let descriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.tripID == tripID }
+        )
+        allLogs = (try? modelContext.fetch(descriptor)) ?? []
+        rebuildDerivedCaches()
+    }
+
+    private func rebuildDerivedCaches() {
+        // Sorted trip logs
+        let sorted = allLogs.sorted {
+            if let a = $0.tripSortOrder, let b = $1.tripSortOrder {
+                return a < b
             }
-    }
+            return $0.visitedAt < $1.visitedAt
+        }
+        cachedTripLogs = sorted
 
-    /// Whether any log in this trip has a custom sort order (user reordered)
-    private var isCustomOrdered: Bool {
-        tripLogs.contains { $0.tripSortOrder != nil }
-    }
-
-    /// Logs grouped by calendar day (visitedAt), sorted ascending. Only used in chronological mode.
-    private var logsByDay: [(date: Date, logs: [Log])] {
+        // Logs by day
         let calendar = Calendar.current
-        let grouped = Dictionary(grouping: tripLogs) { log in
+        let grouped = Dictionary(grouping: sorted) { log in
             calendar.startOfDay(for: log.visitedAt)
         }
-        return grouped.sorted { $0.key < $1.key }
+        cachedLogsByDay = grouped.sorted { $0.key < $1.key }
             .map { (date: $0.key, logs: $0.value) }
-    }
 
-    /// O(1) place lookups — built once per render, shared by all sub-views
-    private var placesByID: [String: Place] {
-        Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
-    }
+        // Place lookup
+        let placeMap = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+        cachedPlacesByID = placeMap
 
-    /// Places for trip logs
-    private var tripPlaces: [Place] {
-        tripLogs.compactMap { placesByID[$0.placeID] }
-    }
+        // Trip places
+        cachedTripPlaces = sorted.compactMap { placeMap[$0.placeID] }
 
-    private var isOwner: Bool {
-        trip.createdBy == authService.currentUser?.id
-    }
-
-    private var tripDayCount: Int {
-        if let start = trip.startDate, let end = trip.endDate {
-            let days = Calendar.current.dateComponents([.day], from: start, to: end).day ?? 0
-            return max(1, days + 1)
-        }
-        return max(1, Set(tripLogs.map { Calendar.current.startOfDay(for: $0.createdAt) }).count)
-    }
-
-    private var ratingCounts: (mustSee: Int, great: Int, okay: Int, skip: Int) {
+        // Rating counts
         var mustSee = 0, great = 0, okay = 0, skip = 0
-        for log in tripLogs {
+        for log in sorted {
             switch log.rating {
             case .mustSee: mustSee += 1
             case .great: great += 1
@@ -111,13 +109,52 @@ struct TripDetailView: View {
             case .skip: skip += 1
             }
         }
-        return (mustSee, great, okay, skip)
+        cachedRatingCounts = (mustSee, great, okay, skip)
+
+        // Day count
+        if let start = trip.startDate, let end = trip.endDate {
+            let days = calendar.dateComponents([.day], from: start, to: end).day ?? 0
+            cachedTripDayCount = max(1, days + 1)
+        } else {
+            cachedTripDayCount = max(1, Set(sorted.map { calendar.startOfDay(for: $0.createdAt) }).count)
+        }
     }
+
+    /// Whether any log in this trip has a custom sort order (user reordered)
+    private var isCustomOrdered: Bool {
+        cachedTripLogs.contains { $0.tripSortOrder != nil }
+    }
+
+    /// Logs grouped by calendar day (visitedAt), sorted ascending. Only used in chronological mode.
+    private var logsByDay: [(date: Date, logs: [Log])] { cachedLogsByDay }
+
+    /// O(1) place lookups — built once, shared by all sub-views
+    private var placesByID: [String: Place] { cachedPlacesByID }
+
+    /// Places for trip logs
+    private var tripPlaces: [Place] { cachedTripPlaces }
+
+    private var isOwner: Bool {
+        trip.createdBy == authService.currentUser?.id
+    }
+
+    private var tripDayCount: Int { cachedTripDayCount }
+
+    private var ratingCounts: (mustSee: Int, great: Int, okay: Int, skip: Int) { cachedRatingCounts }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
                 capsuleCover
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.onAppear { measuredViewWidth = geo.size.width }
+                        }
+                    )
+
+                if let description = displayTripDescription {
+                    tripDescriptionSection(description)
+                }
 
                 if !tripLogs.isEmpty {
                     capsuleOverview
@@ -159,47 +196,45 @@ struct TripDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    if isOwner {
-                        Button {
-                            showEditTrip = true
-                        } label: {
-                            Label("Edit Trip", systemImage: "pencil")
-                        }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if isOwner {
+                    Button {
+                        showBulkImport = true
+                    } label: {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .foregroundStyle(SonderColors.terracotta)
+                            .toolbarIcon()
                     }
-
-                    if isOwner && tripLogs.count >= 2 {
-                        Button {
-                            showReorder = true
-                        } label: {
-                            Label("Reorder", systemImage: "arrow.up.arrow.down")
-                        }
-
-                        if isCustomOrdered {
-                            Button {
-                                resetToDateOrder()
-                            } label: {
-                                Label("Reset to Date Order", systemImage: "calendar.badge.clock")
-                            }
-                        }
-                    }
+                    .accessibilityLabel("Import from Photos")
 
                     Button {
-                        showCollaborators = true
+                        showReorder = true
                     } label: {
-                        Label("Collaborators", systemImage: "person.2")
+                        Image(systemName: "arrow.up.arrow.down")
+                            .foregroundStyle(tripLogs.count >= 2 ? SonderColors.terracotta : SonderColors.inkLight)
+                            .toolbarIcon()
                     }
+                    .disabled(tripLogs.isEmpty)
+                    .accessibilityLabel("Manage stops")
 
                     Button {
-                        showShareTrip = true
+                        showEditTrip = true
                     } label: {
-                        Label("Share Trip", systemImage: "square.and.arrow.up")
+                        Image(systemName: "pencil")
+                            .foregroundStyle(SonderColors.terracotta)
+                            .toolbarIcon()
                     }
+                    .accessibilityLabel("Edit trip")
+                }
+
+                Button {
+                    showShareTrip = true
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "square.and.arrow.up")
+                        .foregroundStyle(SonderColors.terracotta)
                         .toolbarIcon()
                 }
+                .accessibilityLabel("Share trip")
             }
         }
         .sheet(isPresented: $showEditTrip) {
@@ -210,9 +245,6 @@ struct TripDetailView: View {
                 onDelete?()
                 dismiss()
             })
-        }
-        .sheet(isPresented: $showCollaborators) {
-            TripCollaboratorsView(trip: trip)
         }
         .sheet(isPresented: $showShareTrip) {
             ShareTripView(trip: trip, tripLogs: tripLogs, places: Array(places))
@@ -260,6 +292,12 @@ struct TripDetailView: View {
         }
         .fullScreenCover(isPresented: $showExpandedMap) {
             expandedMapView
+        }
+        .fullScreenCover(isPresented: $showBulkImport) {
+            BulkPhotoImportView(tripID: trip.id, tripName: trip.name)
+        }
+        .onChange(of: showBulkImport) { _, isShowing in
+            if !isShowing { refreshLogs() }
         }
     }
 
@@ -343,8 +381,11 @@ struct TripDetailView: View {
                     .tint(.white)
             }
         }
+        .task { refreshLogs() }
+        .onChange(of: syncEngine.lastSyncDate) { _, _ in refreshLogs() }
+        .onChange(of: places.count) { _, _ in rebuildDerivedCaches() }
         .onAppear {
-            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            SonderHaptics.impact(.soft)
         }
     }
 
@@ -406,20 +447,51 @@ struct TripDetailView: View {
         return nil
     }
 
+    private var displayTripDescription: String? {
+        guard let raw = trip.tripDescription?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return nil
+        }
+        return raw
+    }
+
+    // MARK: - Description
+
+    private func tripDescriptionSection(_ description: String) -> some View {
+        descStyle1(description)
+            .padding(.vertical, sectionGap * 0.3)
+    }
+
+    // Quote marks style
+    private func descStyle1(_ description: String) -> some View {
+        Text(description)
+            .font(.system(size: 16, design: .serif))
+            .foregroundStyle(SonderColors.inkMuted)
+            .lineSpacing(7)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, narrowColumn + 4)
+            .padding(.vertical, sectionGap * 0.45)
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .topLeading) {
+                Text("\u{201C}")
+                    .font(.system(size: 72, weight: .light, design: .serif))
+                    .foregroundStyle(SonderColors.terracotta.opacity(0.22))
+                    .offset(x: contentPadding, y: -8)
+                    .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                Text("\u{201D}")
+                    .font(.system(size: 72, weight: .light, design: .serif))
+                    .foregroundStyle(SonderColors.terracotta.opacity(0.22))
+                    .offset(x: -contentPadding, y: 8)
+                    .allowsHitTesting(false)
+            }
+    }
+
     // MARK: - Act 2: Overview
 
     private var capsuleOverview: some View {
         VStack(spacing: sectionGap) {
-            // Description
-            if let description = trip.tripDescription, !description.isEmpty {
-                Text(description)
-                    .font(.system(size: 16))
-                    .foregroundStyle(SonderColors.inkMuted)
-                    .lineSpacing(7)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, narrowColumn)
-            }
-
             // Stats row — Wrapped style
             HStack(spacing: SonderSpacing.xxl) {
                 overviewStat(value: "\(tripLogs.count)", label: tripLogs.count == 1 ? "place" : "places")
@@ -607,6 +679,7 @@ struct TripDetailView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
+                        cardWrapTask?.cancel()
                         selectedStopIndex = nil
                         showExpandedMap = false
                     } label: {
@@ -678,7 +751,7 @@ struct TripDetailView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 320)
+            .frame(height: 500)
             .offset(y: max(0, cardDragOffset))
             .gesture(
                 DragGesture(minimumDistance: 10)
@@ -707,7 +780,10 @@ struct TripDetailView: View {
                     // Swiped backward from first → wrap to last
                     isWrapping = true
                     selectedStopIndex = n - 1
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    cardWrapTask?.cancel()
+                    cardWrapTask = Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(350))
+                        guard !Task.isCancelled else { return }
                         var t = Transaction()
                         t.disablesAnimations = true
                         withTransaction(t) {
@@ -719,7 +795,10 @@ struct TripDetailView: View {
                     // Swiped forward from last → wrap to first
                     isWrapping = true
                     selectedStopIndex = 0
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    cardWrapTask?.cancel()
+                    cardWrapTask = Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(350))
+                        guard !Task.isCancelled else { return }
                         var t = Transaction()
                         t.disablesAnimations = true
                         withTransaction(t) {
@@ -743,11 +822,15 @@ struct TripDetailView: View {
 
         let hasPhoto = log.photoURL != nil
 
-        return VStack(alignment: .leading, spacing: 0) {
-            // Hero photo — only when a real photo exists
+        return VStack(spacing: 0) {
+            // Pushes card to the bottom of the fixed-height TabView frame
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 0) {
+            // Hero photo — height based on cached image aspect ratio
             if hasPhoto {
                 cachedCardPhoto(log: log, place: place)
-                    .frame(height: 140)
+                    .frame(height: computedPhotoHeight(for: log, place: place))
                     .frame(maxWidth: .infinity)
                     .clipped()
             }
@@ -846,16 +929,32 @@ struct TripDetailView: View {
                 }
             }
             .padding(SonderSpacing.md)
+            }
+            .background(SonderColors.cream.opacity(0.95))
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+            .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+            .padding(.horizontal, SonderSpacing.md)
+            .padding(.bottom, SonderSpacing.md)
+            .onTapGesture {
+                routeDetailLog = stop.log
+                routeDetailPlace = stop.place
+                showRouteLogDetail = true
+            }
         }
-        .background(SonderColors.cream.opacity(0.95))
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
-        .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
-        .padding(.horizontal, SonderSpacing.md)
-        .onTapGesture {
-            routeDetailLog = stop.log
-            routeDetailPlace = stop.place
-            showRouteLogDetail = true
+    }
+
+    /// Computes photo display height for stop cards based on cached image aspect ratio.
+    /// Uses the image's natural height at card width, capped at 220pt.
+    /// Falls back to 160pt for uncached/async images.
+    private func computedPhotoHeight(for log: Log, place: Place) -> CGFloat {
+        let cardWidth = (measuredViewWidth > 0 ? measuredViewWidth : 390) - SonderSpacing.md * 2
+        let maxHeight: CGFloat = 220
+        if let image = cachedImage(for: log, place: place) {
+            guard image.size.width > 0 else { return maxHeight }
+            let ratio = image.size.height / image.size.width
+            return min(cardWidth * ratio, maxHeight)
         }
+        return 160
     }
 
     // MARK: - Cached Card Photo
@@ -1121,7 +1220,7 @@ struct TripDetailView: View {
                     .offset(y: phase.isIdentity ? 0 : 20)
             }
             .onAppear {
-                UISelectionFeedbackGenerator().selectionChanged()
+                SonderHaptics.selectionChanged()
             }
 
             // Place entries with connective tissue
@@ -1702,7 +1801,7 @@ struct TripDetailView: View {
                 .offset(y: phase.isIdentity ? 0 : 30)
         }
         .onAppear {
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            SonderHaptics.notification(.success)
         }
     }
 
@@ -1738,19 +1837,7 @@ struct TripDetailView: View {
             try? modelContext.save()
         }
 
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-    }
-
-    private func resetToDateOrder() {
-        let now = Date()
-        for log in tripLogs {
-            log.tripSortOrder = nil
-            log.syncStatus = .pending
-            log.updatedAt = now
-        }
-        try? modelContext.save()
-        Task { await syncEngine.syncNow() }
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        SonderHaptics.notification(.success)
     }
 
     // MARK: - Helpers
@@ -2023,6 +2110,7 @@ private struct ReorderTripLogsSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var orderedLogs: [Log] = []
+    @State private var pendingRemovals: [Log] = []
 
     var body: some View {
         NavigationStack {
@@ -2054,10 +2142,15 @@ private struct ReorderTripLogsSheet: View {
                 .onMove { source, destination in
                     orderedLogs.move(fromOffsets: source, toOffset: destination)
                 }
+                .onDelete { offsets in
+                    for index in offsets {
+                        stageRemoval(of: orderedLogs[index])
+                    }
+                }
             }
             .listStyle(.plain)
             .environment(\.editMode, .constant(.active))
-            .navigationTitle("Reorder Logs")
+            .navigationTitle("Manage Stops")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -2082,6 +2175,11 @@ private struct ReorderTripLogsSheet: View {
                 orderedLogs = tripLogs
             }
         }
+    }
+
+    private func stageRemoval(of log: Log) {
+        orderedLogs.removeAll { $0.id == log.id }
+        pendingRemovals.append(log)
     }
 
     @ViewBuilder
@@ -2125,9 +2223,15 @@ private struct ReorderTripLogsSheet: View {
             log.syncStatus = .pending
             log.updatedAt = now
         }
+        for log in pendingRemovals {
+            log.tripID = nil
+            log.tripSortOrder = nil
+            log.syncStatus = .pending
+            log.updatedAt = now
+        }
         try? modelContext.save()
         Task { await syncEngine.syncNow() }
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        SonderHaptics.notification(.success)
         dismiss()
     }
 }

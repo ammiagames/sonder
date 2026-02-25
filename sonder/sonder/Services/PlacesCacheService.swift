@@ -9,11 +9,13 @@ import Foundation
 import SwiftData
 import CoreLocation
 import UIKit
+import os
 
 /// Service for caching places and managing recent searches
 @Observable
 @MainActor
 final class PlacesCacheService {
+    private let logger = Logger(subsystem: "com.sonder.app", category: "PlacesCacheService")
     private let modelContext: ModelContext
 
     /// Triggers view updates when recent searches change
@@ -53,7 +55,7 @@ final class PlacesCacheService {
         // Enforce max limit
         trimRecentSearches()
 
-        try? modelContext.save()
+        do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
         recentSearchesVersion += 1
     }
 
@@ -75,7 +77,7 @@ final class PlacesCacheService {
         if let search = try? modelContext.fetch(descriptor).first {
             removeCachedPhoto(for: search.placeId)
             modelContext.delete(search)
-            try? modelContext.save()
+            do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
             recentSearchesVersion += 1
         }
     }
@@ -89,7 +91,7 @@ final class PlacesCacheService {
                 removeCachedPhoto(for: search.placeId)
                 modelContext.delete(search)
             }
-            try? modelContext.save()
+            do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
         }
     }
 
@@ -114,7 +116,9 @@ final class PlacesCacheService {
 
     /// Directory for cached place photos.
     private static let photoCacheDir: URL = {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            return FileManager.default.temporaryDirectory.appendingPathComponent("place-photos", isDirectory: true)
+        }
         let dir = caches.appendingPathComponent("place-photos", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
@@ -191,7 +195,7 @@ final class PlacesCacheService {
             existing.longitude = details.longitude
             existing.types = details.types
             existing.photoReference = details.photoReference
-            try? modelContext.save()
+            do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
             return existing
         }
 
@@ -207,7 +211,7 @@ final class PlacesCacheService {
         )
 
         modelContext.insert(place)
-        try? modelContext.save()
+        do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
         return place
     }
 
@@ -223,7 +227,7 @@ final class PlacesCacheService {
             // Update photo if we have a new one
             if existing.photoReference == nil, let photoRef = nearby.photoReference {
                 existing.photoReference = photoRef
-                try? modelContext.save()
+                do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
             }
             return existing
         }
@@ -240,7 +244,7 @@ final class PlacesCacheService {
         )
 
         modelContext.insert(place)
-        try? modelContext.save()
+        do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
         return place
     }
 
@@ -253,12 +257,16 @@ final class PlacesCacheService {
         let missing = Array(allPlaces.filter { $0.photoReference == nil }.prefix(limit))
         guard !missing.isEmpty else { return }
 
+        // Capture IDs as value types before entering task group —
+        // SwiftData model objects are not safe to access from child tasks.
+        let missingIDs = missing.map { $0.id }
+
         // Fetch place details concurrently
         let results = await withTaskGroup(of: (String, String?).self) { group in
-            for place in missing {
+            for placeID in missingIDs {
                 group.addTask {
-                    let details = await placesService.getPlaceDetails(placeId: place.id)
-                    return (place.id, details?.photoReference)
+                    let details = await placesService.getPlaceDetails(placeId: placeID)
+                    return (placeID, details?.photoReference)
                 }
             }
             var map: [String: String] = [:]
@@ -275,7 +283,7 @@ final class PlacesCacheService {
             }
         }
 
-        try? modelContext.save()
+        do { try modelContext.save() } catch { logger.error("SwiftData save failed: \(error.localizedDescription)") }
     }
 
     /// Get a cached place by ID

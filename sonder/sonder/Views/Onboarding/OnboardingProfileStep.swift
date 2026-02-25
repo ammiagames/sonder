@@ -431,8 +431,7 @@ struct OnboardingProfileStep: View {
                 try modelContext.save()
                 await authService.syncUserProfile(user)
 
-                let feedback = UINotificationFeedbackGenerator()
-                feedback.notificationOccurred(.success)
+                SonderHaptics.notification(.success)
 
                 await MainActor.run { onContinue() }
             } catch {

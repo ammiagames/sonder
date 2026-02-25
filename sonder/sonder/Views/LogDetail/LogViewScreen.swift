@@ -51,9 +51,13 @@ struct LogViewScreen: View {
     var onDelete: (() -> Void)?
     var isNewLog: Bool = false
     var onLogComplete: ((CLLocationCoordinate2D) -> Void)? = nil
+    /// Reports edit-mode state to the parent so it can block pop-to-root while editing.
+    var externalIsEditing: Binding<Bool>? = nil
 
-    @Query(sort: \Trip.createdAt, order: .reverse) private var allTrips: [Trip]
-    @Query(sort: \Log.createdAt, order: .reverse) private var allLogs: [Log]
+    @State private var allTrips: [Trip] = []
+    @State private var allLogs: [Log] = []
+    @State private var cachedAvailableTrips: [Trip] = []
+    @State private var cachedRecentTags: [String] = []
 
     // MARK: - View-mode state
 
@@ -63,6 +67,7 @@ struct LogViewScreen: View {
     @State private var placeToLog: Place?
     @State private var contentAppeared = false
     @State private var showShareLog = false
+    @State private var showDirectionsDialog = false
     @State private var showFullscreenPhoto = false
     @State private var fullscreenPhotoIndex = 0
 
@@ -128,12 +133,29 @@ struct LogViewScreen: View {
 
     private var heroHeight: CGFloat { isEditing ? 300 : 520 }
 
-    /// Trips the user can add logs to (owned + collaborating), sorted by most recently used.
-    private var availableTrips: [Trip] {
-        guard let userID = authService.currentUser?.id else { return [] }
-        let accessible = allTrips.filter { trip in
-            trip.createdBy == userID || trip.collaboratorIDs.contains(userID)
-        }
+    private var availableTrips: [Trip] { cachedAvailableTrips }
+
+    private var recentTagSuggestions: [String] { cachedRecentTags }
+
+    private func refreshQueryData() {
+        guard let userID = authService.currentUser?.id else { return }
+        let logDescriptor = FetchDescriptor<Log>(
+            predicate: #Predicate { $0.userID == userID },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        allLogs = (try? modelContext.fetch(logDescriptor)) ?? []
+
+        let tripDescriptor = FetchDescriptor<Trip>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        let fetchedTrips = (try? modelContext.fetch(tripDescriptor)) ?? []
+        allTrips = fetchedTrips.filter { $0.isAccessible(by: userID) }
+
+        rebuildDerivedCaches(userID: userID)
+    }
+
+    private func rebuildDerivedCaches(userID: String) {
+        // Available trips sorted by most recently used
         let latestLogByTrip: [String: Date] = allLogs.reduce(into: [:]) { map, log in
             guard let tripID = log.tripID else { return }
             if let existing = map[tripID] {
@@ -142,11 +164,14 @@ struct LogViewScreen: View {
                 map[tripID] = log.createdAt
             }
         }
-        return accessible.sorted { a, b in
+        cachedAvailableTrips = allTrips.sorted { a, b in
             let aDate = latestLogByTrip[a.id] ?? a.createdAt
             let bDate = latestLogByTrip[b.id] ?? b.createdAt
             return aDate > bDate
         }
+
+        // Recent tag suggestions
+        cachedRecentTags = recentTagsByUsage(logs: allLogs, userID: userID)
     }
 
     /// Chips to display: first 3 available trips, plus the currently selected trip if not already shown.
@@ -210,6 +235,7 @@ struct LogViewScreen: View {
 
     private var mainContent: some View {
         mainContentBody
+            .task { refreshQueryData() }
             .onAppear {
                 if isNewLog && !isEditing {
                     enterEditMode()
@@ -221,8 +247,10 @@ struct LogViewScreen: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(isEditing)
+            .toolbar(showNewLogConfirmation ? .hidden : .automatic, for: .navigationBar)
             .toolbar { toolbarContent }
             .preference(key: HideTabBarGradientKey.self, value: (isEditing && (hasChanges || isNewLog)) || showSavedToast)
+            .preference(key: HideSonderTabBarKey.self, value: isNoteFocused)
             .overlay { loadingOverlay }
             .modifier(ViewModeSheets(
                 selectedPlaceDetails: $selectedPlaceDetails,
@@ -268,7 +296,9 @@ struct LogViewScreen: View {
                         onAddCover: {
                             showNewLogConfirmation = false
                             showCoverImagePicker = true
-                        }
+                        },
+                        placeName: place.name,
+                        ratingEmoji: log.rating.emoji
                     )
                     .ignoresSafeArea()
                 }
@@ -277,12 +307,11 @@ struct LogViewScreen: View {
                 EditableImagePicker { image in
                     showCoverImagePicker = false
                     if let trip = coverNudgeTrip, let userId = authService.currentUser?.id {
+                        let tripID = trip.id
+                        let engine = syncEngine
                         Task {
                             if let url = await photoService.uploadPhoto(image, for: userId) {
-                                trip.coverPhotoURL = url
-                                trip.updatedAt = Date()
-                                trip.syncStatus = .pending
-                                try? modelContext.save()
+                                engine.updateTripCoverPhoto(tripID: tripID, url: url)
                             }
                         }
                     }
@@ -297,8 +326,15 @@ struct LogViewScreen: View {
             }
             .onDisappear {
                 if isNewLog && !newLogSaved {
-                    modelContext.delete(log)
-                    try? modelContext.save()
+                    // Fetch fresh by ID to avoid stale-object crash if sync already modified/deleted it
+                    let logID = log.id
+                    let descriptor = FetchDescriptor<Log>(
+                        predicate: #Predicate { $0.id == logID }
+                    )
+                    if let freshLog = try? modelContext.fetch(descriptor).first {
+                        modelContext.delete(freshLog)
+                        try? modelContext.save()
+                    }
                 }
             }
             .onChange(of: editableFieldsSnapshot) { _, _ in
@@ -319,6 +355,7 @@ struct LogViewScreen: View {
                     selectedPhotoItems = []
                 }
             }
+            .directionsConfirmationDialog(isPresented: $showDirectionsDialog, coordinate: place.coordinate, name: place.name, address: place.address)
     }
 
     private var mainContentBody: some View {
@@ -335,6 +372,11 @@ struct LogViewScreen: View {
                 }
                 .animation(.easeInOut(duration: 0.35), value: isEditing)
             }
+            .onTapGesture {
+                if isEditing && isNoteFocused {
+                    isNoteFocused = false
+                }
+            }
             .scrollDismissesKeyboard(isEditing ? .interactively : .never)
             .background(SonderColors.cream)
             .scrollContentBackground(.hidden)
@@ -343,6 +385,19 @@ struct LogViewScreen: View {
                 saveToastOverlay
             }
         }
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 30)
+                .onEnded { value in
+                    // Swipe to the left (negative width) to dismiss edit mode if no changes
+                    if isEditing && !hasChanges && !isNewLog {
+                        if value.translation.width < -100 && abs(value.translation.height) < 50 {
+                            SonderHaptics.impact(.light)
+                            exitEditMode()
+                        }
+                    }
+                }
+        )
     }
 
     @ViewBuilder
@@ -399,7 +454,7 @@ struct LogViewScreen: View {
             if editPhotos.isEmpty {
                 PhotoPlaceholderView(icon: placeholderIcon, prompt: placeholderPrompt)
             } else {
-                let index = min(highlightedPhotoIndex, editPhotos.count - 1)
+                let index = min(max(0, highlightedPhotoIndex), editPhotos.count - 1)
                 switch editPhotos[index].source {
                 case .remote(let urlString):
                     if urlString.hasPrefix("pending-upload:") {
@@ -500,22 +555,28 @@ struct LogViewScreen: View {
                     HStack(spacing: SonderSpacing.xs) {
                         ForEach(Array(editPhotos.enumerated()), id: \.element.id) { index, photo in
                             photoThumbnail(at: index, photo: photo)
+                                .scaleEffect(draggingPhotoID == photo.id ? 1.12 : 1.0)
                                 .zIndex(draggingPhotoID == photo.id ? 1 : 0)
                                 .shadow(color: draggingPhotoID == photo.id ? .black.opacity(0.2) : .clear, radius: 6, y: 2)
                                 .offset(x: draggingPhotoID == photo.id ? dragOffset : 0)
                                 .animation(.spring(response: 0.3, dampingFraction: 0.75), value: editPhotos.map(\.id))
+                                .animation(.easeOut(duration: 0.2), value: draggingPhotoID)
                                 .gesture(
-                                    LongPressGesture(minimumDuration: 0.15)
+                                    LongPressGesture(minimumDuration: 0.1)
                                         .sequenced(before: DragGesture())
                                         .onChanged { value in
                                             switch value {
                                             case .second(true, let drag):
                                                 if draggingPhotoID == nil {
                                                     draggingPhotoID = photo.id
-                                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                                    SonderHaptics.impact(.medium)
                                                 }
                                                 guard draggingPhotoID == photo.id else { return }
-                                                dragOffset = drag?.translation.width ?? 0
+                                                let raw = drag?.translation.width ?? 0
+                                                let itemWidth: CGFloat = 64 + SonderSpacing.xs
+                                                let maxLeft = -CGFloat(index) * itemWidth
+                                                let maxRight = CGFloat(editPhotos.count - 1 - index) * itemWidth
+                                                dragOffset = min(max(raw, maxLeft), maxRight)
                                                 checkPhotoReorder()
                                             default: break
                                             }
@@ -552,6 +613,8 @@ struct LogViewScreen: View {
                         }
 
                     }
+                    .padding(.top, 14)
+                    .padding(.bottom, 6)
                 }
                 .scrollDisabled(draggingPhotoID != nil)
             }
@@ -647,7 +710,7 @@ struct LogViewScreen: View {
         editPhotos.move(fromOffsets: IndexSet(integer: currentIndex), toOffset: targetIndex > currentIndex ? targetIndex + 1 : targetIndex)
         dragOffset -= CGFloat(steps) * itemWidth
         hasChanges = true
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        SonderHaptics.impact(.light)
     }
 
     private var noPhotoHero: some View {
@@ -946,7 +1009,10 @@ struct LogViewScreen: View {
                 .font(SonderTypography.headline)
                 .foregroundStyle(SonderColors.inkDark)
 
-            TagInputView(selectedTags: $editTags)
+            TagInputView(
+                selectedTags: $editTags,
+                recentTags: recentTagSuggestions
+            )
         }
     }
 
@@ -1034,7 +1100,7 @@ struct LogViewScreen: View {
             withAnimation(.easeInOut(duration: 0.15)) {
                 editSelectedTripID = isSelected ? nil : trip.id
             }
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            SonderHaptics.impact(.light)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "suitcase.fill")
@@ -1172,6 +1238,15 @@ struct LogViewScreen: View {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 4) {
                     Button {
+                        showDirectionsDialog = true
+                    } label: {
+                        Image(systemName: "map")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(SonderColors.inkMuted)
+                            .toolbarIcon()
+                    }
+
+                    Button {
                         showShareLog = true
                     } label: {
                         Image(systemName: "square.and.arrow.up")
@@ -1224,8 +1299,10 @@ struct LogViewScreen: View {
         withAnimation(.easeInOut(duration: 0.35)) {
             isEditing = true
         }
+        externalIsEditing?.wrappedValue = true
         // Delay flag so onChange doesn't fire on initial snapshot
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(100))
             editModeInitialized = true
         }
     }
@@ -1237,6 +1314,7 @@ struct LogViewScreen: View {
         photoSuggestionService.clearSuggestions()
         suggestionsLoaded = false
         editPhotos = []
+        externalIsEditing?.wrappedValue = false
         if isNewLog {
             // For new logs, exiting edit mode means discarding — dismiss to trigger onDisappear cleanup
             dismiss()
@@ -1279,39 +1357,23 @@ struct LogViewScreen: View {
         // Queue new photos for background upload
         if !imagesToUpload.isEmpty {
             let logID = log.id
-            let context = modelContext
             let engine = syncEngine
             let newURLs = photoService.queueBatchUpload(
                 images: imagesToUpload,
                 for: userId,
                 logID: logID
             ) { results in
-                let idToFind = logID
-                let descriptor = FetchDescriptor<Log>(
-                    predicate: #Predicate { log in log.id == idToFind }
-                )
-                guard let log = try? context.fetch(descriptor).first else { return }
+                guard let updatedURLs = engine.replacePendingPhotoURLs(logID: logID, uploadResults: results) else { return }
 
-                log.photoURLs = log.photoURLs.compactMap { url in
-                    if url.hasPrefix("pending-upload:") {
-                        let placeholderID = String(url.dropFirst("pending-upload:".count))
-                        return results[placeholderID]
-                    }
-                    return url
-                }
-                log.updatedAt = Date()
-                try? context.save()
-
-                // Update crop state keys from pending-upload to real URLs
-                if let cropData = UserDefaults.standard.data(forKey: "cropStates:\(idToFind)"),
+                // Update crop state keys from pending-upload to real URLs (UserDefaults only — safe without SwiftData)
+                if let cropData = UserDefaults.standard.data(forKey: "cropStates:\(logID)"),
                    let saved = try? JSONDecoder().decode(SavedCropStates.self, from: cropData) {
                     var updatedByURL = saved.byURL
                     var updatedOriginalURLs = saved.originalURLs ?? [:]
-                    let currentURLs = log.photoURLs
 
                     for (i, entry) in saved.ordered.enumerated() {
-                        guard i < currentURLs.count else { continue }
-                        let url = currentURLs[i]
+                        guard i < updatedURLs.count else { continue }
+                        let url = updatedURLs[i]
                         guard !url.hasPrefix("pending-upload:") else { continue }
                         if let state = entry { updatedByURL[url] = state }
                         if let orderedOriginals = saved.orderedOriginals,
@@ -1326,11 +1388,9 @@ struct LogViewScreen: View {
                         originalURLs: updatedOriginalURLs, orderedOriginals: saved.orderedOriginals
                     )
                     if let data = try? JSONEncoder().encode(updated) {
-                        UserDefaults.standard.set(data, forKey: "cropStates:\(idToFind)")
+                        UserDefaults.standard.set(data, forKey: "cropStates:\(logID)")
                     }
                 }
-
-                Task { await engine.syncNow() }
             }
 
             // Fill pending-upload URLs at the correct positions
@@ -1365,39 +1425,10 @@ struct LogViewScreen: View {
             if isNewLog {
                 newLogSaved = true
 
-                // Auto-assign trip cover if needed
-                if let tripID = editSelectedTripID,
-                   let trip = allTrips.first(where: { $0.id == tripID }) {
-                    if trip.coverPhotoURL == nil || (trip.coverPhotoURL?.contains("googleapis.com") == true) {
-                        if let firstLocalPhoto = editPhotos.first(where: { photo in
-                            if case .local = photo.source { return true }
-                            return false
-                        }), case .local(_, let original) = firstLocalPhoto.source {
-                            let tripToUpdate = trip
-                            Task {
-                                if let url = await photoService.uploadPhoto(original, for: userId) {
-                                    tripToUpdate.coverPhotoURL = url
-                                    tripToUpdate.updatedAt = Date()
-                                    tripToUpdate.syncStatus = .pending
-                                    try? modelContext.save()
-                                }
-                            }
-                        } else if trip.coverPhotoURL == nil,
-                                  let ref = place.photoReference,
-                                  let url = GooglePlacesService.photoURL(for: ref) {
-                            trip.coverPhotoURL = url.absoluteString
-                            trip.updatedAt = Date()
-                            trip.syncStatus = .pending
-                            try? modelContext.save()
-                            coverNudgeTrip = trip
-                        }
-                    }
-                }
-
                 editPhotos = []
                 hasChanges = false
 
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                SonderHaptics.notification(.success)
 
                 // Remove WantToGo bookmark
                 Task { await wantToGoService.removeBookmarkIfLoggedPlace(placeID: place.id, userID: userId) }
@@ -1411,11 +1442,12 @@ struct LogViewScreen: View {
                 editPhotos = []
                 hasChanges = false
 
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                SonderHaptics.notification(.success)
 
                 // Exit edit mode and show toast simultaneously
                 isNoteFocused = false
                 editModeInitialized = false
+                externalIsEditing?.wrappedValue = false
                 withAnimation(.easeInOut(duration: 0.35)) {
                     isEditing = false
                     showSavedToast = true
@@ -1441,7 +1473,7 @@ struct LogViewScreen: View {
             highlightedPhotoIndex = editPhotos.count - 1
         }
         hasChanges = true
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        SonderHaptics.impact(.light)
     }
 
     // MARK: - Crop
@@ -1478,7 +1510,7 @@ struct LogViewScreen: View {
 
         switch editPhotos[index].source {
         case .remote(let urlString):
-            let original = cropSourceImage!
+            guard let original = cropSourceImage else { return }
             // Preserve existing originalURL, or set to current URL (first-time crop)
             editPhotos[index].originalURL = editPhotos[index].originalURL ?? urlString
             editPhotos[index].source = .local(display: croppedImage, original: original)

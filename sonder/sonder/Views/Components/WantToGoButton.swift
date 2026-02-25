@@ -13,25 +13,43 @@ private let logger = Logger(subsystem: "com.sonder.app", category: "WantToGoButt
 /// Bookmark toggle button for saving places to Want to Go list.
 /// Tap: if not saved → add to default list. If already saved → open list picker.
 /// Long press: always opens list picker.
+///
+/// - Parameters:
+///   - iconSize: SF Symbol font size (default 20). Pass 18 for list-row contexts.
+///   - unsavedColor: Tint when not yet saved (default `inkDark`). Pass `inkLight` for list-row contexts.
 struct WantToGoButton: View {
     let placeID: String
     let placeName: String?
     let placeAddress: String?
     let photoReference: String?
     let sourceLogID: String?
+    let iconSize: CGFloat
+    let unsavedColor: Color
 
     @Environment(AuthenticationService.self) private var authService
     @Environment(WantToGoService.self) private var wantToGoService
+    @Environment(GooglePlacesService.self) private var placesService
+    @Environment(PlacesCacheService.self) private var cacheService
 
     @State private var isLoading = false
     @State private var showListPicker = false
 
-    init(placeID: String, placeName: String? = nil, placeAddress: String? = nil, photoReference: String? = nil, sourceLogID: String? = nil) {
+    init(
+        placeID: String,
+        placeName: String? = nil,
+        placeAddress: String? = nil,
+        photoReference: String? = nil,
+        sourceLogID: String? = nil,
+        iconSize: CGFloat = 20,
+        unsavedColor: Color = SonderColors.inkDark
+    ) {
         self.placeID = placeID
         self.placeName = placeName
         self.placeAddress = placeAddress
         self.photoReference = photoReference
         self.sourceLogID = sourceLogID
+        self.iconSize = iconSize
+        self.unsavedColor = unsavedColor
     }
 
     /// Computed from the observable service so SwiftUI tracks changes
@@ -44,17 +62,9 @@ struct WantToGoButton: View {
         Button {
             handleTap()
         } label: {
-            Group {
-                if isLoading {
-                    ProgressView()
-                        .tint(SonderColors.terracotta)
-                        .frame(width: 24, height: 24)
-                } else {
-                    Image(systemName: isWantToGo ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 20))
-                        .foregroundStyle(isWantToGo ? SonderColors.terracotta : SonderColors.inkDark)
-                }
-            }
+            Image(systemName: isWantToGo ? "bookmark.fill" : "bookmark")
+                .font(.system(size: iconSize))
+                .foregroundStyle(isWantToGo ? SonderColors.terracotta : unsavedColor)
         }
         .disabled(isLoading)
         .simultaneousGesture(
@@ -97,12 +107,21 @@ struct WantToGoButton: View {
                     sourceLogID: sourceLogID
                 )
 
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
+                SonderHaptics.impact(.light)
+
+                await ensurePlaceCached()
             } catch {
                 logger.error("Error adding to want to go: \(error.localizedDescription)")
             }
             isLoading = false
+        }
+    }
+
+    /// Fetch and cache place details so the map has coordinates for this pin.
+    private func ensurePlaceCached() async {
+        if cacheService.getPlace(by: placeID) != nil { return }
+        if let details = await placesService.getPlaceDetails(placeId: placeID) {
+            _ = cacheService.cachePlace(from: details)
         }
     }
 }
@@ -144,14 +163,9 @@ struct WantToGoButtonLarge: View {
             handleTap()
         } label: {
             HStack {
-                if isLoading {
-                    ProgressView()
-                        .tint(isWantToGo ? SonderColors.inkMuted : .white)
-                } else {
-                    Image(systemName: isWantToGo ? "bookmark.fill" : "bookmark")
-                    Text(isWantToGo ? "Saved" : "Want to Go")
-                        .font(SonderTypography.headline)
-                }
+                Image(systemName: isWantToGo ? "bookmark.fill" : "bookmark")
+                Text(isWantToGo ? "Saved" : "Want to Go")
+                    .font(SonderTypography.headline)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, SonderSpacing.sm)
@@ -200,8 +214,7 @@ struct WantToGoButtonLarge: View {
                     sourceLogID: sourceLogID
                 )
 
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
+                SonderHaptics.impact(.light)
             } catch {
                 logger.error("Error adding to want to go: \(error.localizedDescription)")
             }

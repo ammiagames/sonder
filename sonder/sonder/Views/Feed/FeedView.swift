@@ -25,15 +25,16 @@ struct FeedView: View {
     @State private var selectedUserID: String?
     @State private var selectedFeedItem: FeedItem?
     @State private var selectedTripID: String?
+    @State private var scrollToTopTrigger: UUID?
     @State private var emptyIconScale: CGFloat = 1.0
+    /// Temporary: toggle note display style for A/B comparison
+    @State private var noteStyle: NoteDisplayStyle = .original
 
     var body: some View {
         NavigationStack {
             Group {
                 if !feedService.hasLoadedOnce {
-                    // Splash overlay covers this — just show blank cream
-                    Color.clear
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    skeletonContent
                 } else if feedService.feedEntries.isEmpty && feedService.isDiscoveryMode {
                     // Not following anyone and no public content to show
                     ScrollView {
@@ -71,6 +72,36 @@ struct FeedView: View {
                     }
                 }
 
+                // Temporary: note style picker for A/B comparison
+                ToolbarItem(placement: .principal) {
+                    Menu {
+                        ForEach(NoteDisplayStyle.allCases) { style in
+                            Button {
+                                noteStyle = style
+                            } label: {
+                                HStack {
+                                    Text(style.rawValue)
+                                    if noteStyle == style {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(noteStyle.rawValue)
+                                .font(.system(size: 13, weight: .medium))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundStyle(SonderColors.terracotta)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(SonderColors.terracotta.opacity(0.1))
+                        .clipShape(Capsule())
+                    }
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showUserSearch = true
@@ -97,9 +128,16 @@ struct FeedView: View {
                 await loadInitialData()
             }
             .onChange(of: popToRoot) {
+                let hadActiveDestination = selectedUserID != nil || selectedFeedItem != nil || selectedTripID != nil
                 selectedUserID = nil
                 selectedFeedItem = nil
                 selectedTripID = nil
+
+                // If we're already at the feed root, tab re-tap should scroll to top.
+                // If we're currently in a pushed destination, just pop back and keep position.
+                if !hadActiveDestination {
+                    scrollToTopTrigger = popToRoot
+                }
             }
         }
     }
@@ -117,7 +155,7 @@ struct FeedView: View {
     private var greetingText: String {
         let hour = Calendar.current.component(.hour, from: Date())
         let firstName = authService.currentUser?.firstName
-        let name = firstName?.isEmpty == false ? firstName! : "traveler"
+        let name = (firstName?.isEmpty == false ? firstName : nil) ?? "traveler"
         switch hour {
         case 5..<12: return "Good morning, \(name)"
         case 12..<17: return "Good afternoon, \(name)"
@@ -155,6 +193,7 @@ struct FeedView: View {
                         emptyIconScale = 1.08
                     }
                 }
+                .onDisappear { emptyIconScale = 1.0 }
 
             VStack(spacing: SonderSpacing.xs) {
                 Text("Nothing here yet")
@@ -202,6 +241,7 @@ struct FeedView: View {
                         emptyIconScale = 1.08
                     }
                 }
+                .onDisappear { emptyIconScale = 1.0 }
 
             VStack(spacing: SonderSpacing.xs) {
                 Text("Your feed is waiting")
@@ -261,6 +301,23 @@ struct FeedView: View {
 
     // MARK: - Feed Content
 
+    // MARK: - Skeleton Content
+
+    private var skeletonContent: some View {
+        ScrollView {
+            LazyVStack(spacing: SonderSpacing.md) {
+                greetingHeader
+                ForEach(0..<3, id: \.self) { _ in
+                    FeedItemCardSkeleton()
+                }
+            }
+            .padding(SonderSpacing.md)
+        }
+        .scrollDisabled(true)
+    }
+
+    // MARK: - Feed Content
+
     private var feedContent: some View {
         ScrollViewReader { proxy in
         ScrollView {
@@ -296,16 +353,13 @@ struct FeedView: View {
                     case .log(let feedItem):
                         FeedItemCard(
                             feedItem: feedItem,
-                            isWantToGo: isWantToGo(placeID: feedItem.place.id),
                             onUserTap: {
                                 selectedUserID = feedItem.user.id
                             },
                             onPlaceTap: {
                                 selectedFeedItem = feedItem
                             },
-                            onWantToGoTap: {
-                                toggleWantToGo(for: feedItem)
-                            }
+                            noteStyle: noteStyle
                         )
                         .feedCardEntrance(index: index)
                     case .tripCreated(let item):
@@ -313,6 +367,21 @@ struct FeedView: View {
                             selectedUserID = item.user.id
                         }
                         .feedCardEntrance(index: index)
+                    }
+
+                    // Auto-pagination: trigger loadMore when near the end of the list
+                    if index >= feedService.feedEntries.count - 3,
+                       feedService.hasMore,
+                       !feedService.isLoading,
+                       !feedService.isDiscoveryMode {
+                        Color.clear.frame(height: 0)
+                            .onAppear {
+                                Task {
+                                    if let userID = authService.currentUser?.id {
+                                        await feedService.loadMoreFeed(for: userID)
+                                    }
+                                }
+                            }
                     }
                 }
 
@@ -330,7 +399,8 @@ struct FeedView: View {
                 await feedService.refreshFeed(for: userID)
             }
         }
-        .onChange(of: popToRoot) {
+        .onChange(of: scrollToTopTrigger) { _, trigger in
+            guard trigger != nil else { return }
             withAnimation {
                 proxy.scrollTo("feedTop", anchor: .top)
             }
@@ -419,34 +489,6 @@ struct FeedView: View {
         _ = await (feedTask, wantToGoTask, realtimeTask)
     }
 
-    // MARK: - Want to Go
-
-    private func isWantToGo(placeID: String) -> Bool {
-        guard let userID = authService.currentUser?.id else { return false }
-        return wantToGoService.isInWantToGo(placeID: placeID, userID: userID)
-    }
-
-    private func toggleWantToGo(for item: FeedItem) {
-        guard let userID = authService.currentUser?.id else { return }
-
-        Task {
-            do {
-                try await wantToGoService.toggleWantToGo(
-                    placeID: item.place.id,
-                    userID: userID,
-                    placeName: item.place.name,
-                    placeAddress: item.place.address,
-                    photoReference: item.place.photoReference,
-                    sourceLogID: item.log.id
-                )
-
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
-            } catch {
-                logger.error("Error toggling want to go: \(error.localizedDescription)")
-            }
-        }
-    }
 }
 
 // MARK: - Card Entrance Animation
@@ -454,8 +496,6 @@ struct FeedView: View {
 struct FeedCardEntranceModifier: ViewModifier {
     let index: Int
     @State private var hasAppeared = false
-
-    private static let hapticGenerator = UIImpactFeedbackGenerator(style: .soft)
 
     func body(content: Content) -> some View {
         content
@@ -469,8 +509,10 @@ struct FeedCardEntranceModifier: ViewModifier {
                     hasAppeared = true
                 }
                 if index < 8 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                        Self.hapticGenerator.impactOccurred()
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(Int(delay * 1000)))
+                        guard !Task.isCancelled else { return }
+                        SonderHaptics.impact(.soft)
                     }
                 }
             }

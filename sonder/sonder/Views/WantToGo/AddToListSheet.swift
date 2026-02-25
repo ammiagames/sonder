@@ -78,6 +78,7 @@ struct AddToListSheet: View {
                 .padding(.bottom, 80)
             }
             .background(SonderColors.cream)
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Save to...")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -147,7 +148,8 @@ struct AddToListSheet: View {
             withAnimation(.easeInOut(duration: 0.2)) {
                 isCreatingList = true
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(100))
                 isNewListFocused = true
             }
         } label: {
@@ -244,8 +246,7 @@ struct AddToListSheet: View {
                         listID: list.id
                     )
                 }
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
+                SonderHaptics.impact(.light)
             } catch {
                 logger.error("Error toggling list membership: \(error.localizedDescription)")
             }
@@ -258,7 +259,7 @@ struct AddToListSheet: View {
         Task {
             do {
                 try await wantToGoService.removeFromWantToGo(placeID: placeID, userID: userID)
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                SonderHaptics.notification(.success)
                 dismiss()
             } catch {
                 logger.error("Error unsaving place: \(error.localizedDescription)")
@@ -291,8 +292,7 @@ struct AddToListSheet: View {
                 newListEmoji = "\u{2B50}\u{FE0F}"
             }
 
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.success)
+            SonderHaptics.notification(.success)
         }
     }
 }
