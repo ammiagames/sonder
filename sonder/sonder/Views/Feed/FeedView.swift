@@ -370,7 +370,7 @@ struct FeedView: View {
                     }
 
                     // Auto-pagination: trigger loadMore when near the end of the list
-                    if index >= feedService.feedEntries.count - 3,
+                    if feedService.feedEntries.count >= 3, index >= feedService.feedEntries.count - 3,
                        feedService.hasMore,
                        !feedService.isLoading,
                        !feedService.isDiscoveryMode {

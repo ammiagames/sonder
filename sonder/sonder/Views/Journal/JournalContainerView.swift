@@ -40,6 +40,7 @@ struct JournalContainerView: View {
     @State private var searchText = ""
     @State private var debouncedSearchText = ""
     @State private var searchDebounceTask: Task<Void, Never>?
+    @State private var assignLogsDelayTask: Task<Void, Never>?
     @State private var showCreateTrip = false
     @State private var selectedLog: Log?
     @State private var selectedTrip: Trip?
@@ -80,7 +81,7 @@ struct JournalContainerView: View {
     }
 
     private func rebuildJournalCaches() {
-        cachedPlacesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+        cachedPlacesByID = Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let tripIDs = Set(allUserTrips.map(\.id))
         cachedOrphanedLogs = allUserLogs.filter { $0.tripID.map { !tripIDs.contains($0) } ?? true }
     }
@@ -212,8 +213,10 @@ struct JournalContainerView: View {
             }
             .onChange(of: showCreateTrip) { _, isShowing in
                 if !isShowing, newlyCreatedTrip != nil, !orphanedLogs.isEmpty {
-                    Task { @MainActor in
+                    assignLogsDelayTask?.cancel()
+                    assignLogsDelayTask = Task { @MainActor in
                         try? await Task.sleep(for: .milliseconds(300))
+                        guard !Task.isCancelled else { return }
                         showAssignLogs = true
                     }
                 }

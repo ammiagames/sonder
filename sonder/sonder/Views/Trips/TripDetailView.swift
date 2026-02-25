@@ -93,7 +93,7 @@ struct TripDetailView: View {
             .map { (date: $0.key, logs: $0.value) }
 
         // Place lookup
-        let placeMap = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+        let placeMap = Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         cachedPlacesByID = placeMap
 
         // Trip places

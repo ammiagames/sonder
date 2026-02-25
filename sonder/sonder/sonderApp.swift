@@ -227,10 +227,11 @@ struct SonderApp: App {
         photoSuggestionService.checkCurrentAuthorizationStatus()
 
         // Wire place import service
+        guard let wantToGo = wantToGoService, let savedLists = savedListsService else { return }
         placeImportService = PlaceImportService(
             googlePlacesService: googlePlacesService,
-            wantToGoService: wantToGoService!,
-            savedListsService: savedListsService!,
+            wantToGoService: wantToGo,
+            savedListsService: savedLists,
             placesCacheService: cache
         )
 
@@ -292,6 +293,7 @@ struct RootView: View {
 
     @State private var onboardingComplete = false
     @State private var initialTab: Int = 0
+    @State private var bootstrappedUserID: String?
 
     var body: some View {
         contentView
@@ -313,36 +315,15 @@ struct RootView: View {
             .environment(placeImportService)
             .onChange(of: authService.currentUser?.id) { _, newID in
                 if let userID = newID {
-                    Task {
-                        await socialService.refreshCounts(for: userID)
-                        // Configure proximity service (don't prompt — only resume if already authorized)
-                        proximityService.configure(wantToGoService: wantToGoService, userID: userID)
-                        proximityService.setupNotificationCategories()
-                        await proximityService.resumeMonitoringIfAuthorized()
-                    }
-                    // Bootstrap saved lists
-                    Task {
-                        await savedListsService.fetchLists(for: userID)
-                    }
-                    // Defer full sync so the feed can load first
-                    Task {
-                        try? await Task.sleep(for: .seconds(2))
-                        await syncEngine.syncNow()
-                    }
+                    bootstrapUser(userID)
                 } else {
-                    // User logged out - stop monitoring
+                    bootstrappedUserID = nil
                     proximityService.stopMonitoring()
                 }
             }
             .task {
                 if let userID = authService.currentUser?.id {
-                    await socialService.refreshCounts(for: userID)
-                    // Configure proximity service (don't prompt — only resume if already authorized)
-                    proximityService.configure(wantToGoService: wantToGoService, userID: userID)
-                    proximityService.setupNotificationCategories()
-                    await proximityService.resumeMonitoringIfAuthorized()
-                    // Bootstrap saved lists
-                    await savedListsService.fetchLists(for: userID)
+                    bootstrapUser(userID)
                 }
             }
             .onOpenURL { url in
@@ -366,6 +347,30 @@ struct RootView: View {
             }
         } else {
             AuthenticationView()
+        }
+    }
+
+    // MARK: - User Bootstrap
+
+    /// One-time setup per user ID — skips if already bootstrapped for this user.
+    /// Called from both .task (initial appearance) and .onChange (user change).
+    private func bootstrapUser(_ userID: String) {
+        guard bootstrappedUserID != userID else { return }
+        bootstrappedUserID = userID
+
+        Task {
+            await socialService.refreshCounts(for: userID)
+            proximityService.configure(wantToGoService: wantToGoService, userID: userID)
+            proximityService.setupNotificationCategories()
+            await proximityService.resumeMonitoringIfAuthorized()
+        }
+        Task {
+            await savedListsService.fetchLists(for: userID)
+        }
+        // Defer full sync so the feed can load first
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            await syncEngine.syncNow()
         }
     }
 

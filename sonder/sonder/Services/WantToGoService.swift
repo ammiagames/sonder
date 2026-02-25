@@ -503,7 +503,7 @@ extension WantToGoService {
                 predicate: #Predicate { missingIDArray.contains($0.id) }
             )
             let cachedPlaces = (try? modelContext.fetch(placeDescriptor)) ?? []
-            let cachedPlacesByID = Dictionary(uniqueKeysWithValues: cachedPlaces.map { ($0.id, $0) })
+            let cachedPlacesByID = Dictionary(cachedPlaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
             // Build a response lookup for O(1) access instead of O(n) .first calls
             let responseByPlaceID = Dictionary(response.map { ($0.place_id, $0) }, uniquingKeysWith: { first, _ in first })

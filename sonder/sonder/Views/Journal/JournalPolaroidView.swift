@@ -50,7 +50,7 @@ struct JournalPolaroidView: View {
     }
 
     private func rebuildJournalCaches() {
-        cachedPlacesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+        cachedPlacesByID = Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         cachedLogsByTripID = Dictionary(grouping: allLogs.filter { $0.tripID != nil }, by: { $0.tripID ?? "" })
     }
 
@@ -81,9 +81,9 @@ struct JournalPolaroidView: View {
             // i * pageHeight + pageHeight/2. Computing here avoids GeometryReader @State
             // updates that would trigger re-renders during the initial tab animation.
             let cardCenters: [Int: CGFloat] = pageHeight > 0
-                ? Dictionary(uniqueKeysWithValues: trips.indices.map { i in
+                ? Dictionary(trips.indices.map { i in
                     (i, CGFloat(i) * pageHeight + pageHeight / 2)
-                  })
+                  }, uniquingKeysWith: { first, _ in first })
                 : [:]
 
             ZStack {

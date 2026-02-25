@@ -246,7 +246,7 @@ private struct DirectionsMenuOverlay: View {
         let dest = address.isEmpty ? name : "\(name), \(address)"
         guard let encoded = dest.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return }
         let nativeURL = URL(string: "comgooglemaps://?daddr=\(encoded)&directionsmode=driving")
-        let webURL = URL(string: "https://maps.google.com/maps?daddr=\(encoded)")!
+        guard let webURL = URL(string: "https://maps.google.com/maps?daddr=\(encoded)") else { return }
         let target = (nativeURL.flatMap { UIApplication.shared.canOpenURL($0) ? $0 : nil }) ?? webURL
         UIApplication.shared.open(target)
     }

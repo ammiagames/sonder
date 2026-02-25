@@ -658,7 +658,7 @@ struct ShareTripView: View {
     // MARK: - Photo Loading
 
     private func loadPhotos() async {
-        let placesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+        let placesByID = Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         let sortedLogs = tripLogs.sorted { a, b in
             let ratingOrder: [Rating: Int] = [.mustSee: 0, .great: 1, .okay: 2, .skip: 3]

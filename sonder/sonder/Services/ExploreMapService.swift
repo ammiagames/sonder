@@ -125,7 +125,7 @@ final class ExploreMapService {
     func computeUnifiedPins(personalLogs: [Log], places: [Place]) -> [UnifiedMapPin] {
         // Build lookup: placeID -> ([LogSnapshot], Place)
         var personalByPlaceID: [String: ([LogSnapshot], Place)] = [:]
-        let placesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+        let placesByID = Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         for log in personalLogs {
             guard let place = placesByID[log.placeID] else { continue }

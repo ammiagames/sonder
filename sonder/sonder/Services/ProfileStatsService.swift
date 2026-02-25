@@ -15,7 +15,7 @@ enum ProfileStatsService {
     // MARK: - Main Entry Point
 
     static func compute(logs: [Log], places: [Place]) -> ProfileStats {
-        let placeMap = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+        let placeMap = Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         let tasteDNA = computeTasteDNA(logs: logs, placeMap: placeMap)
         let archetype = classifyArchetype(tasteDNA: tasteDNA, logs: logs, placeMap: placeMap)

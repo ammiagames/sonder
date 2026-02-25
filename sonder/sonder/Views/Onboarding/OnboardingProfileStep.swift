@@ -30,6 +30,7 @@ struct OnboardingProfileStep: View {
     // Username validation
     @State private var usernameStatus: UsernameStatus = .empty
     @State private var usernameCheckTask: Task<Void, Never>?
+    @State private var saveTask: Task<Void, Never>?
 
     private let maxBioLength = 150
 
@@ -399,12 +400,14 @@ struct OnboardingProfileStep: View {
 
         isSaving = true
 
-        Task {
+        saveTask?.cancel()
+        saveTask = Task {
             // Upload photo if selected
             var newAvatarURL = user.avatarURL
             if let image = selectedImage {
                 isUploading = true
                 newAvatarURL = await photoService.uploadPhoto(image, for: user.id)
+                guard !Task.isCancelled else { isUploading = false; isSaving = false; return }
                 isUploading = false
             }
 
@@ -429,6 +432,7 @@ struct OnboardingProfileStep: View {
 
             do {
                 try modelContext.save()
+                guard !Task.isCancelled else { isSaving = false; return }
                 await authService.syncUserProfile(user)
 
                 SonderHaptics.notification(.success)

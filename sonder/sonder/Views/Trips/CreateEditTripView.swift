@@ -79,7 +79,7 @@ struct CreateEditTripView: View {
     }
 
     private func rebuildCreateEditTripCaches(userID: String) {
-        cachedPlacesByID = Dictionary(uniqueKeysWithValues: allPlaces.map { ($0.id, $0) })
+        cachedPlacesByID = Dictionary(allPlaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let tripIDs = Set(allTrips.map(\.id))
         cachedOrphanedLogs = allLogs.filter { $0.userID == userID && ($0.tripID.map { !tripIDs.contains($0) } ?? true) }
     }

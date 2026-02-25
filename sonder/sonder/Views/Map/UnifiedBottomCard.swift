@@ -231,6 +231,9 @@ struct UnifiedBottomCard: View {
         .onAppear {
             rebuildCachedContent()
         }
+        .onDisappear {
+            scrollCooldownTask?.cancel()
+        }
         .onChange(of: pin.id) { _, _ in
             rebuildCachedContent()
         }

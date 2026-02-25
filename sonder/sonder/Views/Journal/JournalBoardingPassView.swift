@@ -516,7 +516,7 @@ struct JournalBoardingPassView: View {
     }
 
     private func rebuildBoardingPassCaches() {
-        cachedPlacesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+        cachedPlacesByID = Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         cachedLogsByTripID = Dictionary(grouping: allLogs.filter { $0.tripID != nil }, by: { $0.tripID ?? "" })
     }
 

@@ -25,6 +25,7 @@ struct FeedLogDetailView: View {
     @State private var placeToLog: Place?
     @State private var contentAppeared = false
     @State private var showDirectionsDialog = false
+    @State private var detailFetchTask: Task<Void, Never>?
 
     private var hasPhotos: Bool { !feedItem.log.photoURLs.isEmpty }
 
@@ -310,9 +311,12 @@ struct FeedLogDetailView: View {
     // MARK: - Fetch Place Details
 
     private func fetchPlaceDetails() {
-        Task {
+        detailFetchTask?.cancel()
+        detailFetchTask = Task {
             isLoadingDetails = true
+            guard !Task.isCancelled else { isLoadingDetails = false; return }
             if let details = await placesService.getPlaceDetails(placeId: feedItem.place.id) {
+                guard !Task.isCancelled else { isLoadingDetails = false; return }
                 selectedPlaceDetails = details
             }
             isLoadingDetails = false

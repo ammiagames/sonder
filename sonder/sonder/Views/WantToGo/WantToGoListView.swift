@@ -469,7 +469,7 @@ struct WantToGoListView: View {
     private func refreshItemsFromLocal() {
         guard let userID = authService.currentUser?.id else { return }
         let localItems = wantToGoService.getWantToGoList(for: userID, listID: selectedListID)
-        let existingByPlaceID = Dictionary(uniqueKeysWithValues: items.map { ($0.place.id, $0) })
+        let existingByPlaceID = Dictionary(items.map { ($0.place.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         withAnimation(.easeOut(duration: 0.25)) {
             items = deduplicateByPlace(localItems.map { wtg in

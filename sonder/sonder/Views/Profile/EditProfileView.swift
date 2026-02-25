@@ -27,6 +27,7 @@ struct EditProfileView: View {
     @State private var showImagePicker = false
     @State private var isUploading = false
     @State private var isSaving = false
+    @State private var saveTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -228,12 +229,14 @@ struct EditProfileView: View {
 
         isSaving = true
 
-        Task {
+        saveTask?.cancel()
+        saveTask = Task {
             // Upload new photo if selected
             var newAvatarURL = user.avatarURL
             if let image = selectedImage {
                 isUploading = true
                 newAvatarURL = await photoService.uploadPhoto(image, for: user.id)
+                guard !Task.isCancelled else { isUploading = false; isSaving = false; return }
                 isUploading = false
             }
 
@@ -258,6 +261,8 @@ struct EditProfileView: View {
             do {
                 // Save to local SwiftData
                 try modelContext.save()
+
+                guard !Task.isCancelled else { isSaving = false; return }
 
                 // Sync user profile to Supabase
                 await authService.syncUserProfile(user)

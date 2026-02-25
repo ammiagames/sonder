@@ -31,6 +31,7 @@ struct PlacePreviewView: View {
     @State private var heroImage: UIImage?
     @State private var photoLoadFailed = false
     @State private var shimmerPhase: CGFloat = -1
+    @State private var bookmarkTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -120,7 +121,8 @@ struct PlacePreviewView: View {
 
         isTogglingBookmark = true
 
-        Task {
+        bookmarkTask?.cancel()
+        bookmarkTask = Task {
             do {
                 try await wantToGoService.toggleWantToGo(
                     placeID: details.placeId,
@@ -130,13 +132,16 @@ struct PlacePreviewView: View {
                     photoReference: details.photoReference,
                     sourceLogID: nil
                 )
+                guard !Task.isCancelled else { return }
                 isBookmarked.toggle()
 
                 SonderHaptics.impact(.light)
             } catch {
-                logger.error("Error toggling bookmark: \(error.localizedDescription)")
+                if !Task.isCancelled {
+                    logger.error("Error toggling bookmark: \(error.localizedDescription)")
+                }
             }
-            isTogglingBookmark = false
+            if !Task.isCancelled { isTogglingBookmark = false }
         }
     }
 

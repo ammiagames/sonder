@@ -30,6 +30,8 @@ struct UserSearchView: View {
     @State private var inviteContact: ContactsService.UnmatchedContact?
     @State private var contactsLoaded = false
     @State private var contactsSearchText = ""
+    @State private var searchDebounceTask: Task<Void, Never>?
+    @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -357,8 +359,10 @@ struct UserSearchView: View {
         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         .onChange(of: searchText) { _, newValue in
             // Debounced search
-            Task {
+            searchDebounceTask?.cancel()
+            searchDebounceTask = Task {
                 try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
                 if searchText == newValue && !newValue.isEmpty {
                     performSearch()
                 }
@@ -428,14 +432,17 @@ struct UserSearchView: View {
 
         isSearching = true
 
-        Task {
+        searchTask?.cancel()
+        searchTask = Task {
             do {
                 searchResults = try await socialService.searchUsers(query: searchText)
             } catch {
-                logger.error("Search error: \(error.localizedDescription)")
-                searchResults = []
+                if !Task.isCancelled {
+                    logger.error("Search error: \(error.localizedDescription)")
+                    searchResults = []
+                }
             }
-            isSearching = false
+            if !Task.isCancelled { isSearching = false }
         }
     }
 

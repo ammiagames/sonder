@@ -28,6 +28,7 @@ struct AddToListSheet: View {
     @State private var newListName = ""
     @State private var newListEmoji = "\u{2B50}\u{FE0F}"
     @FocusState private var isNewListFocused: Bool
+    @State private var activeTask: Task<Void, Never>?
 
     private var userID: String? { authService.currentUser?.id }
 
@@ -231,7 +232,8 @@ struct AddToListSheet: View {
     private func toggleMembership(list: SavedList, isCurrentlyIn: Bool) {
         guard let userID else { return }
 
-        Task {
+        activeTask?.cancel()
+        activeTask = Task {
             do {
                 if isCurrentlyIn {
                     try await wantToGoService.removeFromWantToGo(placeID: placeID, userID: userID, listID: list.id)
@@ -246,9 +248,12 @@ struct AddToListSheet: View {
                         listID: list.id
                     )
                 }
+                guard !Task.isCancelled else { return }
                 SonderHaptics.impact(.light)
             } catch {
-                logger.error("Error toggling list membership: \(error.localizedDescription)")
+                if !Task.isCancelled {
+                    logger.error("Error toggling list membership: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -256,13 +261,17 @@ struct AddToListSheet: View {
     private func unsaveCompletely() {
         guard let userID else { return }
 
-        Task {
+        activeTask?.cancel()
+        activeTask = Task {
             do {
                 try await wantToGoService.removeFromWantToGo(placeID: placeID, userID: userID)
+                guard !Task.isCancelled else { return }
                 SonderHaptics.notification(.success)
                 dismiss()
             } catch {
-                logger.error("Error unsaving place: \(error.localizedDescription)")
+                if !Task.isCancelled {
+                    logger.error("Error unsaving place: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -272,7 +281,8 @@ struct AddToListSheet: View {
         let name = newListName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
 
-        Task {
+        activeTask?.cancel()
+        activeTask = Task {
             if let newList = await savedListsService.createList(name: name, emoji: newListEmoji, userID: userID) {
                 // Auto-add place to the new list
                 try? await wantToGoService.addToWantToGo(
@@ -285,6 +295,8 @@ struct AddToListSheet: View {
                     listID: newList.id
                 )
             }
+
+            guard !Task.isCancelled else { return }
 
             withAnimation(.easeInOut(duration: 0.2)) {
                 isCreatingList = false

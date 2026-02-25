@@ -61,7 +61,7 @@ struct MasonryTripsGrid: View {
         cachedLogCounts = counts
 
         // Place lookup: O(P)
-        cachedPlacesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
+        cachedPlacesByID = Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         // Column assignments: O(T)
         let assignments = assignMasonryColumns(trips: trips, estimateHeight: estimateCardHeight)

@@ -1018,7 +1018,7 @@ struct OtherUserProfileView: View {
         cachedRatingCounts = (skip, okay, great, mustSee)
 
         // In common places
-        let myPlacesByID = Dictionary(uniqueKeysWithValues: myPlaces.map { ($0.id, $0) })
+        let myPlacesByID = Dictionary(myPlaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let myLogsByPlaceID: [String: Log] = {
             let grouped = Dictionary(grouping: myLogs, by: { $0.placeID })
             return grouped.compactMapValues { $0.sorted { $0.createdAt > $1.createdAt }.first }

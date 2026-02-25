@@ -28,6 +28,8 @@ struct OnboardingFriendsStep: View {
 
     // Invite
     @State private var inviteContact: ContactsService.UnmatchedContact?
+    @State private var searchDebounceTask: Task<Void, Never>?
+    @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -346,8 +348,10 @@ struct OnboardingFriendsStep: View {
         .background(SonderColors.warmGray)
         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         .onChange(of: searchText) { _, newValue in
-            Task {
+            searchDebounceTask?.cancel()
+            searchDebounceTask = Task {
                 try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
                 if searchText == newValue && !newValue.isEmpty {
                     performSearch()
                 }
@@ -446,13 +450,14 @@ struct OnboardingFriendsStep: View {
         guard !searchText.isEmpty else { return }
         isSearching = true
 
-        Task {
+        searchTask?.cancel()
+        searchTask = Task {
             do {
                 searchResults = try await socialService.searchUsers(query: searchText)
             } catch {
-                searchResults = []
+                if !Task.isCancelled { searchResults = [] }
             }
-            isSearching = false
+            if !Task.isCancelled { isSearching = false }
         }
     }
 }
