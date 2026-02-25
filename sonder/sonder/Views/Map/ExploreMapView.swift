@@ -97,6 +97,8 @@ struct ExploreMapView: View {
     @State private var lastFullLoadAt: Date?
     @State private var wtgGeneration: UInt64 = 0
     @State private var pinDropCleanupTask: Task<Void, Never>?
+    @State private var removalCleanupTasks: [Task<Void, Never>] = []
+    @State private var detailFetchTask: Task<Void, Never>?
     @State private var previousWTGPlaceIDs: Set<String> = []
 
     /// When set to true (by ProfileView), focuses the map on personal places only
@@ -121,6 +123,9 @@ struct ExploreMapView: View {
                             detailPlace = nil
                             mapSelection = nil
                         }, externalIsEditing: $isDetailEditing)
+                    } else {
+                        // Data became stale (deleted/synced) — dismiss gracefully
+                        Color.clear.onAppear { showDetail = false }
                     }
                 }
                 .navigationDestination(item: $selectedFeedItem) { feedItem in
@@ -282,6 +287,9 @@ struct ExploreMapView: View {
                 recomputeTask?.cancel()
                 pinDropCleanupTask?.cancel()
                 dissolveTask?.cancel()
+                for task in removalCleanupTasks { task.cancel() }
+                removalCleanupTasks.removeAll()
+                detailFetchTask?.cancel()
             }
     }
 
@@ -912,8 +920,9 @@ struct ExploreMapView: View {
 
     /// Removes ghost pins from cached arrays after the shrink-fade animation completes.
     private func scheduleRemovalCleanup(ids: Set<String>, isWTG: Bool) {
-        Task {
+        let task = Task {
             try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
             if isWTG {
                 removingWTGIDs.subtract(ids)
                 cachedStandaloneWTG.removeAll { ids.contains($0.id) }
@@ -923,6 +932,7 @@ struct ExploreMapView: View {
                 cachedAnnotatedPins.removeAll { ids.contains($0.pin.id) }
             }
         }
+        removalCleanupTasks.append(task)
     }
 
     // MARK: - Data Loading
@@ -1249,9 +1259,12 @@ struct ExploreMapView: View {
     }
 
     private func fetchPlaceDetails(placeID: String) {
-        Task {
+        detailFetchTask?.cancel()
+        detailFetchTask = Task {
             isLoadingDetails = true
+            guard !Task.isCancelled else { isLoadingDetails = false; return }
             if let details = await placesService.getPlaceDetails(placeId: placeID) {
+                guard !Task.isCancelled else { isLoadingDetails = false; return }
                 selectedPlaceDetails = details
             }
             isLoadingDetails = false

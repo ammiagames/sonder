@@ -18,9 +18,9 @@ final class PhotoIndexService {
 
     private let modelContainer: ModelContainer
     private var storedFetchResult: PHFetchResult<PHAsset>?
-    private nonisolated(unsafe) var libraryObserver: IndexLibraryChangeObserver?
-    private nonisolated(unsafe) var buildTask: Task<Void, Never>?
-    private nonisolated(unsafe) var libraryChangeTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var libraryObserver: IndexLibraryChangeObserver?
+    @ObservationIgnored private nonisolated(unsafe) var buildTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var libraryChangeTask: Task<Void, Never>?
     private var lastIncrementalRefreshAt: Date?
 
     private struct IndexedPhotoCandidate: Sendable {

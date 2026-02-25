@@ -33,8 +33,8 @@ final class FeedService {
 
     // Realtime
     private var realtimeChannel: RealtimeChannelV2?
-    private nonisolated(unsafe) var realtimeLogTask: Task<Void, Never>?
-    private nonisolated(unsafe) var realtimeTripTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var realtimeLogTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var realtimeTripTask: Task<Void, Never>?
 
     // Cached following IDs to avoid repeated network calls
     private var cachedFollowingIDs: [String]?

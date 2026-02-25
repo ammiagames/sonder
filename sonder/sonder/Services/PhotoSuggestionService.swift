@@ -34,8 +34,8 @@ final class PhotoSuggestionService {
     private let maxSuggestions = 15
 
     private var enumerationTask: Task<[PHAsset], Never>?
-    private nonisolated(unsafe) var libraryObserver: LibraryChangeObserver?
-    private nonisolated(unsafe) var debounceTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var libraryObserver: LibraryChangeObserver?
+    @ObservationIgnored private nonisolated(unsafe) var debounceTask: Task<Void, Never>?
 
     // Callback for observer-triggered re-fetches — set by the view
     var onLibraryChange: (() async -> Void)?

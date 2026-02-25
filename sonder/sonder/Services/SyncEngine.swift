@@ -147,8 +147,8 @@ final class SyncEngine {
 
     private let modelContext: ModelContext
     private let supabase = SupabaseConfig.client
-    private nonisolated(unsafe) var syncTask: Task<Void, Never>?
-    private let networkMonitor = NWPathMonitor()
+    @ObservationIgnored private nonisolated(unsafe) var syncTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var networkMonitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.sonder.networkMonitor")
 
     init(modelContext: ModelContext, startAutomatically: Bool = true) {

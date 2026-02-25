@@ -265,6 +265,9 @@ struct ProfileView: View {
                     if let log = logs.first(where: { $0.id == logID }),
                        let place = places.first(where: { $0.id == placeID }) {
                         LogViewScreen(log: log, place: place)
+                    } else {
+                        // Data became stale — pop back
+                        Color.clear.onAppear { activeDestination = nil }
                     }
                 case .trip(let trip):
                     TripDetailView(trip: trip)

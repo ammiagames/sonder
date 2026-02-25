@@ -32,17 +32,17 @@ struct OtherUserMapView: View {
     }
 
     /// Logs grouped by place ID, sorted most-recent-first within each group.
-    private var groupedLogs: [(placeID: String, place: FeedItem.FeedPlace, items: [FeedItem])] {
+    private var groupedLogs: [(placeID: String, place: FeedItem.FeedPlace, bestItem: FeedItem, items: [FeedItem])] {
         let grouped = Dictionary(grouping: logs) { $0.place.id }
         return grouped.compactMap { (placeID, items) in
             let sorted = items.sorted { $0.log.createdAt > $1.log.createdAt }
             guard let first = sorted.first else { return nil }
-            return (placeID: placeID, place: first.place, items: sorted)
+            return (placeID: placeID, place: first.place, bestItem: first, items: sorted)
         }
     }
 
     /// Converts a grouped log entry into a UnifiedMapPin.friends for the shared card.
-    private func makePin(for group: (placeID: String, place: FeedItem.FeedPlace, items: [FeedItem])) -> UnifiedMapPin {
+    private func makePin(for group: (placeID: String, place: FeedItem.FeedPlace, bestItem: FeedItem, items: [FeedItem])) -> UnifiedMapPin {
         let explorePlace = ExploreMapPlace(
             id: group.placeID,
             name: group.place.name,
@@ -63,7 +63,7 @@ struct OtherUserMapView: View {
                 Map(position: $cameraPosition, selection: $selectedPlaceID) {
                     ForEach(groupedLogs, id: \.placeID) { group in
                         let isSelected = selectedPlaceID == group.placeID
-                        let bestItem = group.items[0]
+                        let bestItem = group.bestItem
                         Annotation(
                             group.place.name,
                             coordinate: CLLocationCoordinate2D(
