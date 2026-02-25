@@ -15,11 +15,12 @@ struct CityLogsView: View {
     /// Exposed as static for testability.
     static func buildTripGroups(logs: [Log], trips: [Trip]) -> [(trip: Trip?, logs: [Log])] {
         let grouped = Dictionary(grouping: logs) { $0.tripID }
+        let tripsByID = Dictionary(uniqueKeysWithValues: trips.map { ($0.id, $0) })
         var sections: [(trip: Trip?, logs: [Log])] = []
         var orphanedLogs: [Log] = []
 
         for (tripID, groupLogs) in grouped {
-            if let tripID, let trip = trips.first(where: { $0.id == tripID }) {
+            if let tripID, let trip = tripsByID[tripID] {
                 sections.append((trip: trip, logs: groupLogs))
             } else if tripID != nil {
                 // Logs with a tripID that no longer matches a local Trip
@@ -41,6 +42,10 @@ struct CityLogsView: View {
         }
 
         return sections
+    }
+
+    private var placesByID: [String: Place] {
+        Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
     }
 
     private var uniquePlaces: [Place] {
@@ -108,8 +113,7 @@ struct CityLogsView: View {
 
             // Log cards
             ForEach(logs, id: \.id) { log in
-                let place = places.first(where: { $0.id == log.placeID })
-                logCard(log: log, place: place)
+                logCard(log: log, place: placesByID[log.placeID])
             }
         }
         .padding(SonderSpacing.sm)

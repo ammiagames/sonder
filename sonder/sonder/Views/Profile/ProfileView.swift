@@ -53,6 +53,7 @@ struct ProfileView: View {
     @State private var cachedCityCounts: [(city: String, count: Int)] = []
     @State private var cachedTripLogCounts: [String: Int] = [:]
     @State private var cachedCityPhotoURLs: [String: URL] = [:]
+    @State private var cachedCityByPlaceID: [String: String] = [:]  // placeID → city
 
     private func refreshData() {
         guard let userID = authService.currentUser?.id else { return }
@@ -93,30 +94,34 @@ struct ProfileView: View {
                 .map { (tag: $0.key, count: $0.value) }
         }
 
-        // City counts
+        // City counts + placeID→city mapping (single pass over uPlaces)
         var counts: [String: Int] = [:]
+        var cityByPlaceID: [String: String] = [:]
+        var placesByCity: [String: [Place]] = [:]
         for place in uPlaces {
             if let city = extractCity(from: place.address) {
                 counts[city, default: 0] += 1
+                cityByPlaceID[place.id] = city
+                placesByCity[city, default: []].append(place)
             }
         }
         cachedCityCounts = counts.map { (city: $0.key, count: $0.value) }
             .sorted { $0.count > $1.count }
+        cachedCityByPlaceID = cityByPlaceID
 
         // Trip log counts
         var tripCounts: [String: Int] = [:]
+        var logCountByPlaceID: [String: Int] = [:]
         for log in logs {
             if let tripID = log.tripID { tripCounts[tripID, default: 0] += 1 }
+            logCountByPlaceID[log.placeID, default: 0] += 1
         }
         cachedTripLogCounts = tripCounts
 
-        // City photo URLs (pre-computed with O(n) placeID→logCount dictionary)
-        var logCountByPlaceID: [String: Int] = [:]
-        for log in logs { logCountByPlaceID[log.placeID, default: 0] += 1 }
-
+        // City photo URLs (uses pre-built placesByCity to avoid repeated filtering)
         var cityURLs: [String: URL] = [:]
         for (city, _) in cachedCityCounts.prefix(5) {
-            let cityPlaces = uPlaces.filter { extractCity(from: $0.address) == city }
+            let cityPlaces = placesByCity[city] ?? []
             let cityPlaceIDs = Set(cityPlaces.map(\.id))
             let cityLogs = logs.filter { cityPlaceIDs.contains($0.placeID) }
 
@@ -906,11 +911,8 @@ struct ProfileView: View {
     }
 
     private func logsForCity(_ city: String) -> [Log] {
-        logs.filter { log in
-            guard let place = places.first(where: { $0.id == log.placeID }) else { return false }
-            return extractCity(from: place.address) == city
-        }
-        .sorted { $0.createdAt > $1.createdAt }
+        logs.filter { cachedCityByPlaceID[$0.placeID] == city }
+            .sorted { $0.createdAt > $1.createdAt }
     }
 
     private func extractCity(from address: String) -> String? {

@@ -273,6 +273,7 @@ final class PhotoSuggestionService {
 
     func clearSuggestions() {
         enumerationTask?.cancel()
+        cachingManager.stopCachingImagesForAllAssets()
         suggestions = []
         isLoading = false
     }
