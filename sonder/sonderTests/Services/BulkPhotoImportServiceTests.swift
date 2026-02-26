@@ -294,4 +294,184 @@ struct BulkPhotoImportServiceTests {
         #expect(newLogs[0].tripSortOrder == 1)
         #expect(newLogs[1].tripSortOrder == 2)
     }
+
+    // MARK: - movePhotos
+
+    @Test func movePhotos_movesPhotosBetweenClusters() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        let p1 = PhotoMetadata(id: "p1", coordinate: nil, creationDate: nil)
+        let p2 = PhotoMetadata(id: "p2", coordinate: nil, creationDate: nil)
+        let p3 = PhotoMetadata(id: "p3", coordinate: nil, creationDate: nil)
+        let cluster1 = PhotoCluster(photoMetadata: [p1, p2])
+        let cluster2 = PhotoCluster(photoMetadata: [p3])
+
+        service.clusters = [cluster1, cluster2]
+
+        service.movePhotos(photoIDs: ["p1"], toClusterID: cluster2.id)
+
+        // cluster1 should have 1 photo, cluster2 should have 2
+        #expect(service.clusters.count == 2)
+        let c1 = service.clusters.first(where: { $0.id == cluster1.id })!
+        let c2 = service.clusters.first(where: { $0.id == cluster2.id })!
+        #expect(c1.photoMetadata.count == 1)
+        #expect(c1.photoMetadata[0].id == "p2")
+        #expect(c2.photoMetadata.count == 2)
+        #expect(c2.photoMetadata.map(\.id).contains("p1"))
+    }
+
+    @Test func movePhotos_recalculatesCentroid() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        let p1 = PhotoMetadata(id: "p1", coordinate: CLLocationCoordinate2D(latitude: 40.0, longitude: -74.0), creationDate: nil)
+        let p2 = PhotoMetadata(id: "p2", coordinate: CLLocationCoordinate2D(latitude: 42.0, longitude: -72.0), creationDate: nil)
+        let p3 = PhotoMetadata(id: "p3", coordinate: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0), creationDate: nil)
+        let cluster1 = PhotoCluster(photoMetadata: [p1, p2], centroid: CLLocationCoordinate2D(latitude: 41.0, longitude: -73.0))
+        let cluster2 = PhotoCluster(photoMetadata: [p3], centroid: CLLocationCoordinate2D(latitude: 34.0, longitude: -118.0))
+
+        service.clusters = [cluster1, cluster2]
+
+        // Move p2 from cluster1 to cluster2
+        service.movePhotos(photoIDs: ["p2"], toClusterID: cluster2.id)
+
+        // cluster1 centroid should now be just p1: (40, -74)
+        let c1 = service.clusters.first(where: { $0.id == cluster1.id })!
+        #expect(c1.centroid!.latitude == 40.0)
+        #expect(c1.centroid!.longitude == -74.0)
+
+        // cluster2 centroid should be average of p3 and p2: ((34+42)/2, (-118+-72)/2) = (38, -95)
+        let c2 = service.clusters.first(where: { $0.id == cluster2.id })!
+        #expect(c2.centroid!.latitude == 38.0)
+        #expect(c2.centroid!.longitude == -95.0)
+    }
+
+    @Test func movePhotos_removesEmptySourceCluster() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        let p1 = PhotoMetadata(id: "p1", coordinate: nil, creationDate: nil)
+        let p2 = PhotoMetadata(id: "p2", coordinate: nil, creationDate: nil)
+        let cluster1 = PhotoCluster(photoMetadata: [p1])
+        let cluster2 = PhotoCluster(photoMetadata: [p2])
+
+        service.clusters = [cluster1, cluster2]
+
+        // Move only photo out of cluster1
+        service.movePhotos(photoIDs: ["p1"], toClusterID: cluster2.id)
+
+        #expect(service.clusters.count == 1)
+        #expect(service.clusters[0].id == cluster2.id)
+        #expect(service.clusters[0].photoMetadata.count == 2)
+    }
+
+    @Test func movePhotos_noOpForSameCluster() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        let p1 = PhotoMetadata(id: "p1", coordinate: nil, creationDate: nil)
+        let cluster = PhotoCluster(photoMetadata: [p1])
+
+        service.clusters = [cluster]
+
+        // Move photo to its own cluster — should be a no-op
+        service.movePhotos(photoIDs: ["p1"], toClusterID: cluster.id)
+
+        #expect(service.clusters.count == 1)
+        #expect(service.clusters[0].photoMetadata.count == 1)
+    }
+
+    // MARK: - moveUnlocatedPhotos
+
+    @Test func moveUnlocatedPhotos_movesToCluster() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        let p1 = PhotoMetadata(id: "p1", coordinate: nil, creationDate: nil)
+        let unlocated = PhotoMetadata(id: "u1", coordinate: nil, creationDate: nil)
+        let cluster = PhotoCluster(photoMetadata: [p1])
+
+        service.clusters = [cluster]
+        service.unlocatedPhotos = [unlocated]
+
+        service.moveUnlocatedPhotos(photoIDs: ["u1"], toClusterID: cluster.id)
+
+        #expect(service.unlocatedPhotos.isEmpty)
+        #expect(service.clusters[0].photoMetadata.count == 2)
+        #expect(service.clusters[0].photoMetadata.map(\.id).contains("u1"))
+    }
+
+    // MARK: - addEmptyCluster
+
+    @Test func addEmptyCluster_appendsNewCluster() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        service.clusters = []
+
+        let newID = service.addEmptyCluster()
+
+        #expect(service.clusters.count == 1)
+        #expect(service.clusters[0].id == newID)
+        #expect(service.clusters[0].photoMetadata.isEmpty)
+        #expect(service.clusters[0].suggestedPlaces.isEmpty)
+        #expect(service.clusters[0].confirmedPlace == nil)
+        #expect(service.clusters[0].rating == nil)
+        #expect(service.clusters[0].date != nil) // Date() is set
+    }
 }

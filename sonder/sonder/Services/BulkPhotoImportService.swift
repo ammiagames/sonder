@@ -184,6 +184,75 @@ final class BulkPhotoImportService {
         clusters.removeAll { $0.id == clusterID }
     }
 
+    /// Move photos from their current clusters into the target cluster.
+    /// Removes source clusters that become empty after the move.
+    func movePhotos(photoIDs: Set<String>, toClusterID: UUID) {
+        guard let targetIndex = clusters.firstIndex(where: { $0.id == toClusterID }) else { return }
+
+        // Collect matching photos from all non-target clusters
+        var movedPhotos: [PhotoMetadata] = []
+        var emptiedClusterIDs: [UUID] = []
+
+        for i in clusters.indices where clusters[i].id != toClusterID {
+            let matching = clusters[i].photoMetadata.filter { photoIDs.contains($0.id) }
+            guard !matching.isEmpty else { continue }
+
+            clusters[i].photoMetadata.removeAll { photoIDs.contains($0.id) }
+
+            if clusters[i].photoMetadata.isEmpty {
+                emptiedClusterIDs.append(clusters[i].id)
+            } else {
+                recalculateCentroid(at: i)
+            }
+
+            movedPhotos.append(contentsOf: matching)
+        }
+
+        guard !movedPhotos.isEmpty else { return }
+
+        // Remove emptied source clusters (iterate in reverse to keep indices stable)
+        clusters.removeAll { emptiedClusterIDs.contains($0.id) }
+
+        // Re-find target index after removals
+        guard let newTargetIndex = clusters.firstIndex(where: { $0.id == toClusterID }) else { return }
+        clusters[newTargetIndex].photoMetadata.append(contentsOf: movedPhotos)
+        recalculateCentroid(at: newTargetIndex)
+    }
+
+    /// Move unlocated photos into a cluster.
+    func moveUnlocatedPhotos(photoIDs: Set<String>, toClusterID: UUID) {
+        guard let targetIndex = clusters.firstIndex(where: { $0.id == toClusterID }) else { return }
+
+        let matching = unlocatedPhotos.filter { photoIDs.contains($0.id) }
+        guard !matching.isEmpty else { return }
+
+        unlocatedPhotos.removeAll { photoIDs.contains($0.id) }
+        clusters[targetIndex].photoMetadata.append(contentsOf: matching)
+        recalculateCentroid(at: targetIndex)
+    }
+
+    /// Create a new empty cluster for manual population.
+    @discardableResult
+    func addEmptyCluster() -> UUID {
+        let cluster = PhotoCluster(photoMetadata: [], date: Date())
+        clusters.append(cluster)
+        return cluster.id
+    }
+
+    // MARK: - Centroid
+
+    /// Recalculate a cluster's centroid from its photos' coordinates.
+    private func recalculateCentroid(at index: Int) {
+        let geotagged = clusters[index].photoMetadata.compactMap(\.coordinate)
+        guard !geotagged.isEmpty else {
+            clusters[index].centroid = nil
+            return
+        }
+        let lat = geotagged.map(\.latitude).reduce(0, +) / Double(geotagged.count)
+        let lon = geotagged.map(\.longitude).reduce(0, +) / Double(geotagged.count)
+        clusters[index].centroid = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+    }
+
     /// Select a suggested place for a cluster (from the nearbySearch results).
     func selectSuggestedPlace(for clusterID: UUID, nearbyPlace: NearbyPlace) {
         guard let index = clusters.firstIndex(where: { $0.id == clusterID }) else { return }
