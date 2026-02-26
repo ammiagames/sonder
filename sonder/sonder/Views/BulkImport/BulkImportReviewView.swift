@@ -140,7 +140,10 @@ struct BulkImportReviewView: View {
     // MARK: - Place Row
 
     private func placeRow(for cluster: PhotoCluster) -> some View {
-        HStack {
+        let selectedPlaceID = cluster.confirmedPlace?.id ?? cluster.suggestedPlaces.first?.placeId
+
+        return VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            // Place name + address
             if let place = cluster.confirmedPlace {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(place.name)
@@ -162,20 +165,69 @@ struct BulkImportReviewView: View {
                         .lineLimit(1)
                 }
             } else {
-                Text("No place found")
-                    .font(SonderTypography.headline)
-                    .foregroundStyle(SonderColors.inkLight)
+                HStack {
+                    Text("No place found")
+                        .font(SonderTypography.headline)
+                        .foregroundStyle(SonderColors.inkLight)
+                    Spacer()
+                    searchButton(for: cluster)
+                }
             }
 
-            Spacer()
+            // Inline place chips (up to 5 suggestions + search button)
+            if !cluster.suggestedPlaces.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: SonderSpacing.xs) {
+                        ForEach(cluster.suggestedPlaces.prefix(5)) { nearbyPlace in
+                            placeChip(
+                                nearbyPlace: nearbyPlace,
+                                isSelected: nearbyPlace.placeId == selectedPlaceID,
+                                clusterID: cluster.id
+                            )
+                        }
 
-            Button("Change") {
-                editingClusterID = cluster.id
-                showSearchPlace = true
+                        searchButton(for: cluster)
+                    }
+                }
             }
-            .font(SonderTypography.caption)
-            .foregroundStyle(SonderColors.terracotta)
         }
+    }
+
+    private func placeChip(nearbyPlace: NearbyPlace, isSelected: Bool, clusterID: UUID) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            importService.selectSuggestedPlace(for: clusterID, nearbyPlace: nearbyPlace)
+        } label: {
+            Text(nearbyPlace.name)
+                .font(SonderTypography.caption)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .foregroundStyle(isSelected ? SonderColors.terracotta : SonderColors.inkDark)
+                .background(isSelected ? SonderColors.terracotta.opacity(0.15) : SonderColors.warmGray)
+                .overlay(
+                    Capsule()
+                        .stroke(isSelected ? SonderColors.terracotta : Color.clear, lineWidth: 1)
+                )
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func searchButton(for cluster: PhotoCluster) -> some View {
+        Button {
+            editingClusterID = cluster.id
+            showSearchPlace = true
+        } label: {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundStyle(SonderColors.inkMuted)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(SonderColors.warmGray)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Compact Rating Picker
