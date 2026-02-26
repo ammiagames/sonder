@@ -257,6 +257,11 @@ final class BulkPhotoImportService {
         }
     }
 
+    /// Permanently discard all excluded photos from this import session.
+    func discardAllExcluded() {
+        excludedPhotos.removeAll()
+    }
+
     /// Exclude a photo from the unlocated pool.
     func excludeUnlocatedPhoto(_ photoID: String) {
         guard let index = unlocatedPhotos.firstIndex(where: { $0.id == photoID }) else { return }

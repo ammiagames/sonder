@@ -601,6 +601,48 @@ struct BulkPhotoImportServiceTests {
         #expect(service.clusters[0].photoMetadata.map(\.id) == ["p1", "p2"])
     }
 
+    @Test func discardAllExcluded_clearsPool() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        let e1 = PhotoMetadata(id: "e1", coordinate: nil, creationDate: nil)
+        let e2 = PhotoMetadata(id: "e2", coordinate: nil, creationDate: nil)
+        let e3 = PhotoMetadata(id: "e3", coordinate: nil, creationDate: nil)
+        service.excludedPhotos = [e1, e2, e3]
+
+        service.discardAllExcluded()
+
+        #expect(service.excludedPhotos.isEmpty)
+    }
+
+    @Test func discardAllExcluded_noOpWhenEmpty() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        service.excludedPhotos = []
+        service.discardAllExcluded()
+
+        #expect(service.excludedPhotos.isEmpty)
+    }
+
     @Test func excludeUnlocatedPhoto_movesToExcludedPool() throws {
         let container = try makeTestContainer()
         let context = container.mainContext

@@ -391,6 +391,20 @@ struct BulkImportReviewView: View {
                                             .padding(3)
                                     }
                                 }
+                                .overlay(alignment: .topTrailing) {
+                                    Button {
+                                        withAnimation {
+                                            importService.excludePhoto(photo.id, fromClusterID: cluster.id)
+                                        }
+                                        SonderHaptics.impact(.light)
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 16))
+                                            .foregroundStyle(.white)
+                                            .background(Circle().fill(.black.opacity(0.5)))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                                 .draggable(photo.id)
                                 .contextMenu {
                                     if index != 0 {
@@ -699,6 +713,20 @@ struct BulkImportReviewView: View {
                                 RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
                                     .strokeBorder(SonderColors.inkLight, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
                             )
+                            .overlay(alignment: .topTrailing) {
+                                Button {
+                                    withAnimation {
+                                        importService.excludeUnlocatedPhoto(photo.id)
+                                    }
+                                    SonderHaptics.impact(.light)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(.white)
+                                        .background(Circle().fill(.black.opacity(0.5)))
+                                }
+                                .buttonStyle(.plain)
+                            }
                             .draggable(photo.id)
                             .contextMenu {
                                 Button(role: .destructive) {
@@ -733,6 +761,20 @@ struct BulkImportReviewView: View {
                 Text("\(importService.excludedPhotos.count) excluded")
                     .font(SonderTypography.subheadline)
                     .foregroundStyle(SonderColors.inkMuted)
+
+                Spacer()
+
+                Button {
+                    withAnimation {
+                        importService.discardAllExcluded()
+                    }
+                    SonderHaptics.impact(.light)
+                } label: {
+                    Text("Discard all")
+                        .font(SonderTypography.caption)
+                        .foregroundStyle(.red.opacity(0.8))
+                }
+                .buttonStyle(.plain)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {

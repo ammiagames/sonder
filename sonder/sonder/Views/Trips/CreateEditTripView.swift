@@ -25,9 +25,6 @@ struct CreateEditTripView: View {
     @Environment(SyncEngine.self) private var syncEngine
 
     @Environment(\.modelContext) private var modelContext
-    @State private var allLogs: [Log] = []
-    @State private var allPlaces: [Place] = []
-    @State private var allTrips: [Trip] = []
 
     let mode: TripFormMode
     var onTripCreated: ((Trip) -> Void)?
@@ -45,10 +42,7 @@ struct CreateEditTripView: View {
     @State private var showSavedToast = false
     @State private var showDateRangePicker = false
     @State private var showDeleteAlert = false
-    @State private var selectedLogIDs: Set<String> = []
-    @State private var showLogPicker = false
-    @State private var cachedOrphanedLogs: [Log] = []
-    @State private var cachedPlacesByID: [String: Place] = [:]
+    @State private var showBulkImport = false
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
@@ -60,28 +54,15 @@ struct CreateEditTripView: View {
         return nil
     }
 
-    private var orphanedLogs: [Log] { cachedOrphanedLogs }
-
-    private var placesByID: [String: Place] { cachedPlacesByID }
-
     private func refreshData() {
-        guard let userID = authService.currentUser?.id else { return }
-        let logDescriptor = FetchDescriptor<Log>(
-            predicate: #Predicate { $0.userID == userID },
-            sortBy: [SortDescriptor(\.visitedAt, order: .reverse)]
-        )
-        allLogs = (try? modelContext.fetch(logDescriptor)) ?? []
-
-        allPlaces = (try? modelContext.fetch(FetchDescriptor<Place>())) ?? []
-        allTrips = (try? modelContext.fetch(FetchDescriptor<Trip>())) ?? []
-
-        rebuildCreateEditTripCaches(userID: userID)
-    }
-
-    private func rebuildCreateEditTripCaches(userID: String) {
-        cachedPlacesByID = Dictionary(allPlaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let tripIDs = Set(allTrips.map(\.id))
-        cachedOrphanedLogs = allLogs.filter { $0.userID == userID && ($0.tripID.map { !tripIDs.contains($0) } ?? true) }
+        // Reload trip data from SwiftData after bulk import dismiss
+        if let trip = existingTrip {
+            name = trip.name
+            tripDescription = trip.tripDescription ?? ""
+            startDate = trip.startDate
+            endDate = trip.endDate
+            coverPhotoURL = trip.coverPhotoURL
+        }
     }
 
     var body: some View {
@@ -143,43 +124,24 @@ struct CreateEditTripView: View {
                     Text("Choose start and end dates from a single calendar.")
                 }
 
-                // Add Logs section (edit mode only)
-                if isEditing && !orphanedLogs.isEmpty {
+                // Import from Photos section (edit mode only)
+                if isEditing {
                     Section {
-                        DisclosureGroup(isExpanded: $showLogPicker) {
-                            HStack {
-                                Spacer()
-                                Button(selectedLogIDs.count == orphanedLogs.count ? "Deselect All" : "Select All") {
-                                    if selectedLogIDs.count == orphanedLogs.count {
-                                        selectedLogIDs.removeAll()
-                                    } else {
-                                        selectedLogIDs = Set(orphanedLogs.map(\.id))
-                                        autoFillDatesIfNeeded()
-                                    }
-                                }
-                                .font(SonderTypography.caption)
-                                .fontWeight(.medium)
-                                .foregroundStyle(SonderColors.terracotta)
-                            }
-
-                            ForEach(orphanedLogs, id: \.id) { log in
-                                if let place = placesByID[log.placeID] {
-                                    logPickerRow(log: log, place: place)
-                                }
-                            }
+                        Button {
+                            showBulkImport = true
                         } label: {
-                            HStack(spacing: SonderSpacing.xs) {
-                                Text("Add Logs")
-                                if !selectedLogIDs.isEmpty {
-                                    Text("\(selectedLogIDs.count)")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 20, height: 20)
-                                        .background(SonderColors.terracotta)
-                                        .clipShape(Circle())
-                                }
+                            HStack(spacing: SonderSpacing.sm) {
+                                Image(systemName: "camera.fill")
+                                    .foregroundStyle(SonderColors.terracotta)
+                                Text("Import from Photos")
+                                    .foregroundStyle(SonderColors.inkDark)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(SonderColors.inkLight)
                             }
                         }
+                        .buttonStyle(.plain)
                     }
                 }
 
@@ -247,7 +209,6 @@ struct CreateEditTripView: View {
             } message: {
                 Text("Do you also want to delete all logs in this trip?")
             }
-            .task { refreshData() }
             .onAppear {
                 loadExistingData()
             }
@@ -266,6 +227,14 @@ struct CreateEditTripView: View {
                     startDate: $startDate,
                     endDate: $endDate
                 )
+            }
+            .fullScreenCover(isPresented: $showBulkImport) {
+                if let trip = existingTrip {
+                    BulkPhotoImportView(tripID: trip.id, tripName: trip.name)
+                }
+            }
+            .onChange(of: showBulkImport) { _, isShowing in
+                if !isShowing { refreshData() }
             }
         }
     }
@@ -417,11 +386,6 @@ struct CreateEditTripView: View {
                     savedTrip = newTrip
                 }
 
-                // Assign selected logs to the trip (edit mode only)
-                if isEditing && !selectedLogIDs.isEmpty {
-                    try await tripService.associateLogs(ids: selectedLogIDs, with: savedTrip)
-                }
-
                 // Haptic feedback
                 SonderHaptics.notification(.success)
 
@@ -440,96 +404,6 @@ struct CreateEditTripView: View {
 
             isSaving = false
         }
-    }
-
-    // MARK: - Log Picker
-
-    private func logPickerRow(log: Log, place: Place) -> some View {
-        let isSelected = selectedLogIDs.contains(log.id)
-
-        return Button {
-            SonderHaptics.selectionChanged()
-            if isSelected {
-                selectedLogIDs.remove(log.id)
-            } else {
-                selectedLogIDs.insert(log.id)
-                autoFillDatesIfNeeded()
-            }
-        } label: {
-            HStack(spacing: SonderSpacing.sm) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(isSelected ? SonderColors.terracotta : SonderColors.inkLight)
-
-                logPickerPhoto(log: log, place: place)
-                    .frame(width: 44, height: 44)
-                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(place.name)
-                            .font(SonderTypography.caption)
-                            .fontWeight(.medium)
-                            .foregroundStyle(SonderColors.inkDark)
-                            .lineLimit(1)
-
-                        Spacer()
-
-                        Text(log.rating.emoji)
-                            .font(.system(size: 14))
-                    }
-
-                    Text(log.visitedAt.formatted(date: .abbreviated, time: .omitted))
-                        .font(.system(size: 11))
-                        .foregroundStyle(SonderColors.inkLight)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private func logPickerPhoto(log: Log, place: Place) -> some View {
-        if let urlString = log.photoURL, let url = URL(string: urlString) {
-            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 44, height: 44)) {
-                logPickerPlacePhoto(place: place)
-            }
-        } else {
-            logPickerPlacePhoto(place: place)
-        }
-    }
-
-    @ViewBuilder
-    private func logPickerPlacePhoto(place: Place) -> some View {
-        if let photoRef = place.photoReference,
-           let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 200) {
-            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 44, height: 44)) {
-                logPickerPhotoPlaceholder
-            }
-        } else {
-            logPickerPhotoPlaceholder
-        }
-    }
-
-    private var logPickerPhotoPlaceholder: some View {
-        Rectangle()
-            .fill(SonderColors.warmGrayDark)
-            .overlay {
-                Image(systemName: "photo")
-                    .font(.system(size: 12))
-                    .foregroundStyle(SonderColors.inkLight)
-            }
-    }
-
-    private func autoFillDatesIfNeeded() {
-        guard startDate == nil && endDate == nil else { return }
-
-        let selectedLogs = orphanedLogs.filter { selectedLogIDs.contains($0.id) }
-        guard !selectedLogs.isEmpty else { return }
-
-        let dates = selectedLogs.map { Calendar.current.startOfDay(for: $0.visitedAt) }
-        startDate = dates.min()
-        endDate = dates.max()
     }
 
     private func deleteTrip(keepLogs: Bool) {
