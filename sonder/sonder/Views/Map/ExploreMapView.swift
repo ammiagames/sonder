@@ -62,6 +62,7 @@ struct ExploreMapView: View {
     @State private var kenBurnsTask: Task<Void, Never>?
     @State private var newPinPlaceID: String?
     @State private var pinDropSettled = true
+    @State private var pinDropLanded = true
     @State private var showPulseRings = false
     @State private var pinDropToast: PinDropToastInfo?
     @State private var cardIsExpanded = false
@@ -98,7 +99,6 @@ struct ExploreMapView: View {
     @State private var wtgGeneration: UInt64 = 0
     @State private var pinDropCleanupTask: Task<Void, Never>?
     @State private var removalCleanupTasks: [Task<Void, Never>] = []
-    @State private var detailFetchTask: Task<Void, Never>?
     @State private var previousWTGPlaceIDs: Set<String> = []
 
     /// When set to true (by ProfileView), focuses the map on personal places only
@@ -247,6 +247,8 @@ struct ExploreMapView: View {
                     kenBurnsTask?.cancel()
                     recomputeTask?.cancel()
                     pinDropCleanupTask?.cancel()
+                    for task in removalCleanupTasks { task.cancel() }
+                    removalCleanupTasks.removeAll()
 
                     // Snapshot camera region so the Map restores to the same spot
                     if let region = visibleRegion {
@@ -289,7 +291,6 @@ struct ExploreMapView: View {
                 dissolveTask?.cancel()
                 for task in removalCleanupTasks { task.cancel() }
                 removalCleanupTasks.removeAll()
-                detailFetchTask?.cancel()
             }
     }
 
@@ -682,9 +683,12 @@ struct ExploreMapView: View {
         let tag = MapPinTag.unified(item.pin.id)
         let scale: CGFloat = isRemoving ? 0.01 : (isDropping ? 1.3 : (isSelected ? 1.25 : 1.0))
         let yOffset: CGFloat = isDropping ? -50 : 0
+        // Squash on landing: briefly compress, then snap back
+        let squashX: CGFloat = (isNewPin && pinDropSettled && !pinDropLanded) ? 1.1 : 1.0
+        let squashY: CGFloat = (isNewPin && pinDropSettled && !pinDropLanded) ? 0.85 : 1.0
         return Annotation(item.pin.placeName, coordinate: item.pin.coordinate, anchor: .bottom) {
             ZStack {
-                // Pulse rings behind the pin — only for newly dropped pins
+                // Water ripple rings behind the pin — only for newly dropped pins
                 if isNewPin && showPulseRings {
                     PinDropEffect(ratingColor: SonderColors.pinColor(for: item.pin.bestRating))
                         .offset(y: 20)
@@ -696,9 +700,10 @@ struct ExploreMapView: View {
                 )
                 .id(item.identity)
                 .offset(y: yOffset)
-                .scaleEffect(scale)
+                .scaleEffect(x: scale * squashX, y: scale * squashY)
                 .opacity(isRemoving ? 0 : 1)
-                .animation(.spring(response: 2.0, dampingFraction: 0.45), value: pinDropSettled)
+                .animation(.spring(response: 0.5, dampingFraction: 0.6), value: pinDropSettled)
+                .animation(.spring(response: 0.2, dampingFraction: 0.5), value: pinDropLanded)
                 .animation(.easeOut(duration: 0.15), value: isSelected)
                 .animation(.easeIn(duration: 0.3), value: isRemoving)
                 .simultaneousGesture(TapGesture().onEnded {
@@ -920,7 +925,7 @@ struct ExploreMapView: View {
 
     /// Removes ghost pins from cached arrays after the shrink-fade animation completes.
     private func scheduleRemovalCleanup(ids: Set<String>, isWTG: Bool) {
-        let task = Task {
+        let task = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
             if isWTG {
@@ -933,6 +938,8 @@ struct ExploreMapView: View {
             }
         }
         removalCleanupTasks.append(task)
+        // Prune completed tasks to prevent unbounded growth
+        removalCleanupTasks.removeAll { $0.isCancelled }
     }
 
     // MARK: - Data Loading
@@ -1108,8 +1115,9 @@ struct ExploreMapView: View {
             in: filteredPins
         )
 
-        // Set up the two-phase drop animation
+        // Set up the drop animation states
         pinDropSettled = false
+        pinDropLanded = false
         showPulseRings = false
         newPinPlaceID = match?.placeID
 
@@ -1131,24 +1139,34 @@ struct ExploreMapView: View {
             // Phase 1: settle the pin (50ms delay for spring to start from dropped position)
             try? await Task.sleep(for: .milliseconds(50))
             guard !Task.isCancelled else { return }
-            withAnimation(.spring(response: 2.0, dampingFraction: 0.45)) {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
                 pinDropSettled = true
             }
 
-            // Phase 2: pulse rings after pin lands
-            try? await Task.sleep(for: .milliseconds(1750))
+            // Phase 1b: squash-and-stretch on landing (~300ms after settle starts)
+            try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
+            SonderHaptics.impact(.medium)
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.5)) {
+                pinDropLanded = true
+            }
+
+            // Phase 2: water ripple rings after pin lands
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            SonderHaptics.impact(.light, intensity: 0.5)
             showPulseRings = true
 
             // Phase 3: dismiss toast
-            try? await Task.sleep(for: .milliseconds(1700))
+            try? await Task.sleep(for: .milliseconds(1500))
             guard !Task.isCancelled else { return }
             pinDropToast = nil
 
             // Phase 4: clean up animation state
-            try? await Task.sleep(for: .seconds(4.5))
+            try? await Task.sleep(for: .milliseconds(1500))
             guard !Task.isCancelled else { return }
             newPinPlaceID = nil
+            pinDropLanded = true
             showPulseRings = false
         }
     }
@@ -1259,12 +1277,9 @@ struct ExploreMapView: View {
     }
 
     private func fetchPlaceDetails(placeID: String) {
-        detailFetchTask?.cancel()
-        detailFetchTask = Task {
+        Task {
             isLoadingDetails = true
-            guard !Task.isCancelled else { isLoadingDetails = false; return }
             if let details = await placesService.getPlaceDetails(placeId: placeID) {
-                guard !Task.isCancelled else { isLoadingDetails = false; return }
                 selectedPlaceDetails = details
             }
             isLoadingDetails = false
@@ -1438,58 +1453,51 @@ struct PinDropToastView: View {
 
 // MARK: - Pin Drop Effect
 
-/// Confetti burst + shadow impact when a new pin lands on the map.
+/// Concentric water-ripple rings that expand outward when a new pin lands on the map.
 struct PinDropEffect: View {
     let ratingColor: Color
 
-    @State private var burstOut = false
-    @State private var shadowSettled = false
-
-    private struct Particle {
-        let angle: Double
-        let distance: CGFloat
-        let size: CGFloat
-    }
-
-    private let particles: [Particle] = [
-        Particle(angle: 25, distance: 50, size: 6),
-        Particle(angle: 80, distance: 42, size: 5),
-        Particle(angle: 145, distance: 48, size: 6),
-        Particle(angle: 200, distance: 44, size: 5),
-        Particle(angle: 265, distance: 52, size: 6),
-        Particle(angle: 325, distance: 40, size: 5),
-    ]
+    @State private var ring1Active = false
+    @State private var ring2Active = false
+    @State private var ring3Active = false
 
     var body: some View {
         ZStack {
-            // Impact shadow — starts wide/diffuse, settles to tight
-            Ellipse()
-                .fill(.black)
-                .frame(width: 36, height: 10)
-                .scaleEffect(shadowSettled ? 1.0 : 2.5)
-                .opacity(shadowSettled ? 0.08 : 0.22)
-                .blur(radius: shadowSettled ? 2 : 6)
+            // Ring 1 — first, thickest
+            Circle()
+                .stroke(ratingColor, lineWidth: 2.5)
+                .frame(width: 40, height: 40)
+                .scaleEffect(ring1Active ? 3.0 : 0.3)
+                .opacity(ring1Active ? 0 : 0.5)
 
-            // Confetti burst — dots scatter outward and fade
-            ForEach(Array(particles.enumerated()), id: \.offset) { _, p in
-                Circle()
-                    .fill(ratingColor)
-                    .frame(width: p.size, height: p.size)
-                    .offset(
-                        x: burstOut ? CGFloat(cos(p.angle * .pi / 180)) * p.distance : 0,
-                        y: burstOut ? CGFloat(sin(p.angle * .pi / 180)) * p.distance : 0
-                    )
-                    .opacity(burstOut ? 0 : 0.8)
-                    .scaleEffect(burstOut ? 0.3 : 1.0)
-            }
+            // Ring 2 — 150ms delay, medium stroke
+            Circle()
+                .stroke(ratingColor, lineWidth: 2.0)
+                .frame(width: 40, height: 40)
+                .scaleEffect(ring2Active ? 3.0 : 0.3)
+                .opacity(ring2Active ? 0 : 0.45)
+
+            // Ring 3 — 300ms delay, thinnest
+            Circle()
+                .stroke(ratingColor, lineWidth: 1.5)
+                .frame(width: 40, height: 40)
+                .scaleEffect(ring3Active ? 3.0 : 0.3)
+                .opacity(ring3Active ? 0 : 0.4)
         }
         .allowsHitTesting(false)
         .onAppear {
-            withAnimation(.easeOut(duration: 1.8)) {
-                shadowSettled = true
+            withAnimation(.easeOut(duration: 1.0)) {
+                ring1Active = true
             }
-            withAnimation(.easeOut(duration: 3.0)) {
-                burstOut = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                withAnimation(.easeOut(duration: 1.0)) {
+                    ring2Active = true
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                withAnimation(.easeOut(duration: 1.0)) {
+                    ring3Active = true
+                }
             }
         }
     }
