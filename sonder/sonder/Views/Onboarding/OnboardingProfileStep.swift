@@ -10,7 +10,8 @@ import os
 
 private let logger = Logger(subsystem: "com.sonder.app", category: "OnboardingProfileStep")
 
-/// Step 2: Profile setup — username (required), photo/name/bio (optional)
+/// Simplified onboarding profile: just username + avatar.
+/// Bio, first name, and phone can be edited later in profile settings.
 struct OnboardingProfileStep: View {
     let onContinue: () -> Void
 
@@ -19,9 +20,6 @@ struct OnboardingProfileStep: View {
     @Environment(PhotoService.self) private var photoService
 
     @State private var username = ""
-    @State private var firstName = ""
-    @State private var bio = ""
-    @State private var phoneNumber = ""
     @State private var selectedImage: UIImage?
     @State private var showImagePicker = false
     @State private var isUploading = false
@@ -31,8 +29,6 @@ struct OnboardingProfileStep: View {
     @State private var usernameStatus: UsernameStatus = .empty
     @State private var usernameCheckTask: Task<Void, Never>?
     @State private var saveTask: Task<Void, Never>?
-
-    private let maxBioLength = 150
 
     enum UsernameStatus: Equatable {
         case empty
@@ -48,49 +44,44 @@ struct OnboardingProfileStep: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: SonderSpacing.xl) {
-                // Header
-                VStack(spacing: SonderSpacing.xs) {
-                    Text("Make it yours")
-                        .font(SonderTypography.title)
-                        .foregroundStyle(SonderColors.inkDark)
-                }
-                .padding(.top, SonderSpacing.lg)
+        VStack(spacing: SonderSpacing.xl) {
+            Spacer()
 
-                // Avatar
-                avatarSection
+            // Header
+            VStack(spacing: SonderSpacing.xs) {
+                Text("Make it yours")
+                    .font(SonderTypography.title)
+                    .foregroundStyle(SonderColors.inkDark)
 
-                // Username (required)
-                usernameSection
-
-                // First name (optional)
-                firstNameSection
-
-                // Bio (optional)
-                bioSection
-
-                // Phone number (optional)
-                phoneNumberSection
-
-                // Save button
-                Button(action: saveAndContinue) {
-                    if isSaving {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Text("Continue")
-                    }
-                }
-                .buttonStyle(WarmButtonStyle(isPrimary: true))
-                .disabled(!isValid || isSaving)
-                .opacity(isValid && !isSaving ? 1 : 0.5)
-                .padding(.top, SonderSpacing.md)
+                Text("Pick a username and photo")
+                    .font(SonderTypography.body)
+                    .foregroundStyle(SonderColors.inkMuted)
             }
+
+            // Avatar
+            avatarSection
+
+            // Username (required)
+            usernameSection
+                .padding(.horizontal, SonderSpacing.lg)
+
+            Spacer()
+
+            // Save button
+            Button(action: saveAndContinue) {
+                if isSaving {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Text("Continue")
+                }
+            }
+            .buttonStyle(WarmButtonStyle(isPrimary: true))
+            .disabled(!isValid || isSaving)
+            .opacity(isValid && !isSaving ? 1 : 0.5)
             .padding(.horizontal, SonderSpacing.lg)
             .padding(.bottom, SonderSpacing.xxl)
         }
-        .scrollDismissesKeyboard(.interactively)
         .background(SonderColors.cream)
         .onAppear { loadCurrentValues() }
         .fullScreenCover(isPresented: $showImagePicker) {
@@ -233,96 +224,11 @@ struct OnboardingProfileStep: View {
         }
     }
 
-    // MARK: - First Name
-
-    private var firstNameSection: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-            Text("First Name")
-                .font(SonderTypography.caption)
-                .foregroundStyle(SonderColors.inkMuted)
-                .textCase(.uppercase)
-                .tracking(0.5)
-
-            TextField("Your first name", text: $firstName)
-                .font(SonderTypography.body)
-                .padding(SonderSpacing.md)
-                .background(SonderColors.warmGray)
-                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.words)
-
-            Text("Used in greetings around the app")
-                .font(SonderTypography.caption)
-                .foregroundStyle(SonderColors.inkLight)
-        }
-    }
-
-    // MARK: - Bio
-
-    private var bioSection: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-            HStack {
-                Text("Bio")
-                    .font(SonderTypography.caption)
-                    .foregroundStyle(SonderColors.inkMuted)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                Spacer()
-
-                Text("\(bio.count)/\(maxBioLength)")
-                    .font(SonderTypography.caption)
-                    .foregroundStyle(bio.count > maxBioLength ? .red : SonderColors.inkLight)
-            }
-
-            TextField("Coffee snob. Always hunting for the best ramen.", text: $bio, axis: .vertical)
-                .font(SonderTypography.body)
-                .lineLimit(3...5)
-                .padding(SonderSpacing.md)
-                .background(SonderColors.warmGray)
-                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                .onChange(of: bio) { _, newValue in
-                    if newValue.count > maxBioLength {
-                        bio = String(newValue.prefix(maxBioLength))
-                    }
-                }
-
-            Text("Tell others what you love to explore")
-                .font(SonderTypography.caption)
-                .foregroundStyle(SonderColors.inkLight)
-        }
-    }
-
-    // MARK: - Phone Number
-
-    private var phoneNumberSection: some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-            Text("Phone Number")
-                .font(SonderTypography.caption)
-                .foregroundStyle(SonderColors.inkMuted)
-                .textCase(.uppercase)
-                .tracking(0.5)
-
-            TextField("(555) 123-4567", text: $phoneNumber)
-                .font(SonderTypography.body)
-                .padding(SonderSpacing.md)
-                .background(SonderColors.warmGray)
-                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                .keyboardType(.phonePad)
-
-            Text("Used to help friends find you. Never shared publicly.")
-                .font(SonderTypography.caption)
-                .foregroundStyle(SonderColors.inkLight)
-        }
-    }
-
     // MARK: - Actions
 
     private func loadCurrentValues() {
         if let user = authService.currentUser {
             username = user.username
-            firstName = user.firstName ?? ""
-            phoneNumber = user.phoneNumber ?? ""
             // Trigger initial validation for the pre-filled username
             validateUsername(user.username)
         }
@@ -411,23 +317,9 @@ struct OnboardingProfileStep: View {
                 isUploading = false
             }
 
-            // Update user locally
-            let trimmedFirstName = firstName.trimmingCharacters(in: .whitespaces)
-            user.firstName = trimmedFirstName.isEmpty ? nil : trimmedFirstName
+            // Update user locally — only username + avatar
             user.username = trimmedUsername
-            user.bio = bio.isEmpty ? nil : bio
             user.avatarURL = newAvatarURL
-
-            // Normalize and hash phone number
-            let normalizedPhone = ContactsService.normalizePhoneNumber(phoneNumber)
-            if !normalizedPhone.isEmpty {
-                user.phoneNumber = normalizedPhone
-                user.phoneNumberHash = ContactsService.sha256Hash(normalizedPhone)
-            } else {
-                user.phoneNumber = nil
-                user.phoneNumberHash = nil
-            }
-
             user.updatedAt = Date()
 
             do {
@@ -445,5 +337,4 @@ struct OnboardingProfileStep: View {
             isSaving = false
         }
     }
-
 }

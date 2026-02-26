@@ -31,7 +31,7 @@ struct OnboardingView: View {
                     .transition(slideTransition)
 
                 case 1:
-                    OnboardingFriendsStep {
+                    InviteFriendsGateView {
                         finish()
                     }
                     .transition(slideTransition)

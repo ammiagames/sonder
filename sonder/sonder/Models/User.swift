@@ -20,6 +20,7 @@ final class User {
     var pinnedPlaceIDs: [String]
     var phoneNumber: String?
     var phoneNumberHash: String?
+    var inviteCount: Int
     var createdAt: Date
     var updatedAt: Date
 
@@ -34,6 +35,7 @@ final class User {
         pinnedPlaceIDs: [String] = [],
         phoneNumber: String? = nil,
         phoneNumberHash: String? = nil,
+        inviteCount: Int = 0,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -47,6 +49,7 @@ final class User {
         self.pinnedPlaceIDs = pinnedPlaceIDs
         self.phoneNumber = phoneNumber
         self.phoneNumberHash = phoneNumberHash
+        self.inviteCount = inviteCount
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -65,6 +68,7 @@ extension User: Codable {
         case pinnedPlaceIDs = "pinned_place_ids"
         case phoneNumber = "phone_number"
         case phoneNumberHash = "phone_number_hash"
+        case inviteCount = "invite_count"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -81,6 +85,7 @@ extension User: Codable {
         let pinnedPlaceIDs = try container.decodeIfPresent([String].self, forKey: .pinnedPlaceIDs) ?? []
         let phoneNumber = try container.decodeIfPresent(String.self, forKey: .phoneNumber)
         let phoneNumberHash = try container.decodeIfPresent(String.self, forKey: .phoneNumberHash)
+        let inviteCount = try container.decodeIfPresent(Int.self, forKey: .inviteCount) ?? 0
         let createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         let updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
         self.init(
@@ -94,6 +99,7 @@ extension User: Codable {
             pinnedPlaceIDs: pinnedPlaceIDs,
             phoneNumber: phoneNumber,
             phoneNumberHash: phoneNumberHash,
+            inviteCount: inviteCount,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
@@ -111,6 +117,7 @@ extension User: Codable {
         try container.encode(pinnedPlaceIDs, forKey: .pinnedPlaceIDs)
         try container.encodeIfPresent(phoneNumber, forKey: .phoneNumber)
         try container.encodeIfPresent(phoneNumberHash, forKey: .phoneNumberHash)
+        try container.encode(inviteCount, forKey: .inviteCount)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
     }

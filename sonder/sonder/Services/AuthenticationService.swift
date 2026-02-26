@@ -133,6 +133,7 @@ final class AuthenticationService {
             existing.pinnedPlaceIDs = user.pinnedPlaceIDs
             existing.phoneNumber = user.phoneNumber
             existing.phoneNumberHash = user.phoneNumberHash
+            existing.inviteCount = user.inviteCount
             existing.updatedAt = user.updatedAt
         } else {
             ctx.insert(user)
@@ -150,8 +151,62 @@ final class AuthenticationService {
         try? ctx.save()
     }
     
+    // MARK: - Phone OTP
+
+    /// Send a 6-digit OTP to the given phone number via Supabase (Twilio).
+    func sendPhoneOTP(phone: String) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            try await supabase.auth.signInWithOTP(phone: phone)
+            logger.info("OTP sent to \(phone.suffix(4))")
+        } catch {
+            self.error = error
+            throw error
+        }
+    }
+
+    /// Verify the OTP code for the given phone number.
+    /// Creates or loads the user on success.
+    func verifyPhoneOTP(phone: String, code: String) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let session = try await supabase.auth.verifyOTP(
+                phone: phone,
+                token: code,
+                type: .sms
+            )
+
+            let userID = session.user.id.uuidString.lowercased()
+            let normalizedPhone = ContactsService.normalizePhoneNumber(phone)
+            let phoneHash = normalizedPhone.isEmpty ? nil : ContactsService.sha256Hash(normalizedPhone)
+
+            // Generate a temporary username from phone digits
+            let last4 = String(phone.filter(\.isNumber).suffix(4))
+            let random3 = String(format: "%03d", Int.random(in: 0...999))
+            let tempUsername = "user\(last4)\(random3)"
+
+            try await createOrUpdateUser(
+                id: userID,
+                username: tempUsername,
+                firstName: nil,
+                email: nil,
+                phoneNumber: normalizedPhone.isEmpty ? nil : normalizedPhone,
+                phoneNumberHash: phoneHash
+            )
+
+            await loadUser(id: userID)
+        } catch {
+            self.error = error
+            throw error
+        }
+    }
+
     // MARK: - Sign in with Apple
-    
+
     func signInWithApple(credential: ASAuthorizationAppleIDCredential) async throws {
         isLoading = true
         defer { isLoading = false }
@@ -252,7 +307,14 @@ final class AuthenticationService {
     
     // MARK: - Helpers
     
-    private func createOrUpdateUser(id: String, username: String, firstName: String?, email: String) async throws {
+    private func createOrUpdateUser(
+        id: String,
+        username: String,
+        firstName: String?,
+        email: String?,
+        phoneNumber: String? = nil,
+        phoneNumberHash: String? = nil
+    ) async throws {
         // First check if user already exists
         let existingUsers: [User] = try await supabase
             .from("users")
@@ -270,6 +332,8 @@ final class AuthenticationService {
                 firstName: firstName,
                 email: email,
                 isPublic: false,
+                phoneNumber: phoneNumber,
+                phoneNumberHash: phoneNumberHash,
                 createdAt: Date(),
                 updatedAt: Date()
             )
@@ -279,16 +343,24 @@ final class AuthenticationService {
                 .insert(user)
                 .execute()
         } else {
-            // Existing user - update email and first_name if provided
+            // Existing user - update fields if provided
             struct UserUpdate: Codable {
                 let email: String?
                 let first_name: String?
+                let phone_number: String?
+                let phone_number_hash: String?
                 let updated_at: Date
             }
 
             try await supabase
                 .from("users")
-                .update(UserUpdate(email: email, first_name: firstName, updated_at: Date()))
+                .update(UserUpdate(
+                    email: email,
+                    first_name: firstName,
+                    phone_number: phoneNumber,
+                    phone_number_hash: phoneNumberHash,
+                    updated_at: Date()
+                ))
                 .eq("id", value: id)
                 .execute()
         }

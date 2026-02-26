@@ -32,6 +32,7 @@ struct SonderApp: App {
     @State private var photoSuggestionService = PhotoSuggestionService()
     @State private var photoIndexService: PhotoIndexService?
     @State private var placeImportService: PlaceImportService?
+    @State private var inviteService = InviteService()
 
     init() {
         // Configure Google Places SDK
@@ -136,7 +137,8 @@ struct SonderApp: App {
                             contactsService: contactsService,
                             photoSuggestionService: photoSuggestionService,
                             savedListsService: savedListsService,
-                            placeImportService: placeImportService
+                            placeImportService: placeImportService,
+                            inviteService: inviteService
                         )
                     } else {
                         SonderColors.cream.ignoresSafeArea()
@@ -288,6 +290,7 @@ struct RootView: View {
     let photoSuggestionService: PhotoSuggestionService
     let savedListsService: SavedListsService
     let placeImportService: PlaceImportService
+    let inviteService: InviteService
 
     @Environment(\.modelContext) private var modelContext
 
@@ -313,6 +316,7 @@ struct RootView: View {
             .environment(photoSuggestionService)
             .environment(savedListsService)
             .environment(placeImportService)
+            .environment(inviteService)
             .onChange(of: authService.currentUser?.id) { _, newID in
                 if let userID = newID {
                     bootstrapUser(userID)
@@ -346,7 +350,7 @@ struct RootView: View {
                 }
             }
         } else {
-            AuthenticationView()
+            PhoneEntryView()
         }
     }
 
@@ -377,19 +381,20 @@ struct RootView: View {
     // MARK: - Onboarding Gate
 
     /// Check if onboarding is completed for the current user.
-    /// Uses UserDefaults keyed by user ID, with a fallback heuristic:
-    /// if the user already has logs, they're not new.
+    /// Requires both profile setup AND 3 invites (or existing-user fallback).
     private var hasCompletedOnboarding: Bool {
         if onboardingComplete { return true }
 
         guard let userID = authService.currentUser?.id else { return false }
 
-        // Primary: UserDefaults flag
-        if UserDefaults.standard.bool(forKey: "onboarding_completed_\(userID)") {
+        // Primary: both onboarding flag AND invite requirement
+        let onboardingDone = UserDefaults.standard.bool(forKey: "onboarding_completed_\(userID)")
+        let invitesDone = UserDefaults.standard.integer(forKey: "invite_count_\(userID)") >= 3
+        if onboardingDone && invitesDone {
             return true
         }
 
-        // Fallback: existing users who have logs skip onboarding
+        // Fallback: existing users who have logs skip onboarding entirely
         if userHasExistingLogs(userID: userID) {
             // Set the flag so we don't re-check next time
             markOnboardingComplete()
