@@ -19,6 +19,8 @@ struct EditPhoto: Identifiable {
     var cropState: CropState?
     /// When a remote photo is cropped, preserves the original URL so we don't re-upload.
     var originalURL: String?
+    /// Locally rendered crop preview for remote photos (avoids re-upload for crop-only edits).
+    var croppedPreview: UIImage?
 
     enum Source {
         case remote(url: String)
@@ -239,6 +241,13 @@ struct LogViewScreen: View {
             .navigationBarBackButtonHidden(isEditing)
             .toolbar(.automatic, for: .navigationBar)
             .toolbar { toolbarContent }
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { isNoteFocused = false }
+                        .fontWeight(.medium)
+                }
+            }
             .preference(key: HideTabBarGradientKey.self, value: (isEditing && hasChanges) || showSavedToast)
             .preference(key: HideSonderTabBarKey.self, value: isNoteFocused)
             .overlay { loadingOverlay }
@@ -309,11 +318,6 @@ struct LogViewScreen: View {
                         .zIndex(1)
                 }
                 .animation(.easeInOut(duration: 0.35), value: isEditing)
-            }
-            .onTapGesture {
-                if isEditing && isNoteFocused {
-                    isNoteFocused = false
-                }
             }
             .scrollDismissesKeyboard(isEditing ? .interactively : .never)
             .background(SonderColors.cream)
@@ -426,35 +430,45 @@ struct LogViewScreen: View {
                 PhotoPlaceholderView(icon: placeholderIcon, prompt: placeholderPrompt)
             } else {
                 let index = min(max(0, highlightedPhotoIndex), editPhotos.count - 1)
-                switch editPhotos[index].source {
-                case .remote(let urlString):
-                    if urlString.hasPrefix("pending-upload:") {
-                        Rectangle()
-                            .fill(SonderColors.warmGray)
-                            .overlay {
-                                VStack(spacing: SonderSpacing.xs) {
-                                    ProgressView()
-                                        .tint(SonderColors.terracotta)
-                                    Text("Uploading...")
-                                        .font(SonderTypography.caption)
-                                        .foregroundStyle(SonderColors.inkMuted)
-                                }
-                            }
-                    } else if let url = URL(string: urlString) {
-                        Color.clear.overlay {
-                            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 300)) {
-                                PhotoPlaceholderView(icon: placeholderIcon, prompt: placeholderPrompt)
-                            }
-                        }
-                        .clipped()
-                    }
-                case .local(let display, _):
+                let photo = editPhotos[index]
+                if let preview = photo.croppedPreview {
                     Color.clear.overlay {
-                        Image(uiImage: display)
+                        Image(uiImage: preview)
                             .resizable()
                             .scaledToFill()
                     }
                     .clipped()
+                } else {
+                    switch photo.source {
+                    case .remote(let urlString):
+                        if urlString.hasPrefix("pending-upload:") {
+                            Rectangle()
+                                .fill(SonderColors.warmGray)
+                                .overlay {
+                                    VStack(spacing: SonderSpacing.xs) {
+                                        ProgressView()
+                                            .tint(SonderColors.terracotta)
+                                        Text("Uploading...")
+                                            .font(SonderTypography.caption)
+                                            .foregroundStyle(SonderColors.inkMuted)
+                                    }
+                                }
+                        } else if let url = URL(string: urlString) {
+                            Color.clear.overlay {
+                                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 400, height: 300)) {
+                                    PhotoPlaceholderView(icon: placeholderIcon, prompt: placeholderPrompt)
+                                }
+                            }
+                            .clipped()
+                        }
+                    case .local(let display, _):
+                        Color.clear.overlay {
+                            Image(uiImage: display)
+                                .resizable()
+                                .scaledToFill()
+                        }
+                        .clipped()
+                    }
                 }
             }
         }
@@ -613,25 +627,31 @@ struct LogViewScreen: View {
     private func photoThumbnail(at index: Int, photo: EditPhoto) -> some View {
         ZStack(alignment: .topTrailing) {
             Group {
-                switch photo.source {
-                case .remote(let urlString):
-                    if urlString.hasPrefix("pending-upload:") {
-                        Rectangle()
-                            .fill(SonderColors.warmGray)
-                            .overlay {
-                                ProgressView()
-                                    .tint(SonderColors.terracotta)
-                                    .scaleEffect(0.7)
-                            }
-                    } else if let url = URL(string: urlString) {
-                        DownsampledAsyncImage(url: url, targetSize: CGSize(width: 128, height: 128)) {
-                            Color(SonderColors.warmGray)
-                        }
-                    }
-                case .local(let display, _):
-                    Image(uiImage: display)
+                if let preview = photo.croppedPreview {
+                    Image(uiImage: preview)
                         .resizable()
                         .scaledToFill()
+                } else {
+                    switch photo.source {
+                    case .remote(let urlString):
+                        if urlString.hasPrefix("pending-upload:") {
+                            Rectangle()
+                                .fill(SonderColors.warmGray)
+                                .overlay {
+                                    ProgressView()
+                                        .tint(SonderColors.terracotta)
+                                        .scaleEffect(0.7)
+                                }
+                        } else if let url = URL(string: urlString) {
+                            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 128, height: 128)) {
+                                Color(SonderColors.warmGray)
+                            }
+                        }
+                    case .local(let display, _):
+                        Image(uiImage: display)
+                            .resizable()
+                            .scaledToFill()
+                    }
                 }
             }
             .frame(width: 64, height: 64)
@@ -776,9 +796,9 @@ struct LogViewScreen: View {
     private var editPanelContent: some View {
         editPlaceSection
         sectionDivider
-        editRatingSection
-        sectionDivider
         editPhotoStrip
+        sectionDivider
+        editRatingSection
         sectionDivider
         editNoteSection
         sectionDivider
@@ -1473,10 +1493,10 @@ struct LogViewScreen: View {
 
         switch editPhotos[index].source {
         case .remote(let urlString):
-            guard let original = cropSourceImage else { return }
-            // Preserve existing originalURL, or set to current URL (first-time crop)
+            // Non-destructive: keep remote URL, store crop preview locally.
+            // This avoids re-uploading when only the crop changed.
             editPhotos[index].originalURL = editPhotos[index].originalURL ?? urlString
-            editPhotos[index].source = .local(display: croppedImage, original: original)
+            editPhotos[index].croppedPreview = croppedImage
         case .local(_, let original):
             // Update display, keep original
             editPhotos[index].source = .local(display: croppedImage, original: original)
