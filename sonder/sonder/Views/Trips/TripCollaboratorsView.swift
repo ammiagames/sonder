@@ -27,6 +27,7 @@ struct TripCollaboratorsView: View {
     @State private var searchText = ""
     @State private var searchResults: [User] = []
     @State private var isSearching = false
+    @State private var searchDebounceTask: Task<Void, Never>?
 
     private var isOwner: Bool {
         trip.createdBy == authService.currentUser?.id
@@ -177,8 +178,10 @@ struct TripCollaboratorsView: View {
                 .padding()
                 .onChange(of: searchText) { _, newValue in
                     // Debounced search
-                    Task {
+                    searchDebounceTask?.cancel()
+                    searchDebounceTask = Task {
                         try? await Task.sleep(for: .milliseconds(300))
+                        guard !Task.isCancelled else { return }
                         if searchText == newValue && !newValue.isEmpty {
                             searchUsers()
                         }

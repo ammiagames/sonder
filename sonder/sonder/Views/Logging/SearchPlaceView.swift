@@ -36,6 +36,7 @@ struct SearchPlaceView: View {
     @State private var detailsError: String?
     @State private var removingPlaceIds: Set<String> = []
     @State private var autocompleteTask: Task<Void, Never>?
+    @State private var nearbyLoadTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -460,13 +461,16 @@ struct SearchPlaceView: View {
         }
 
         // Load nearby when location is available
-        Task {
+        nearbyLoadTask?.cancel()
+        nearbyLoadTask = Task {
             // Wait for location (max 5 seconds)
             for i in 0..<10 {
                 if locationService.currentLocation != nil { break }
+                guard !Task.isCancelled else { return }
                 logger.debug("[Nearby] Waiting for location... attempt \(i + 1)")
                 try? await Task.sleep(for: .milliseconds(500))
             }
+            guard !Task.isCancelled else { return }
 
             guard let location = locationService.currentLocation else {
                 logger.warning("[Nearby] Location never resolved — giving up")
@@ -484,6 +488,7 @@ struct SearchPlaceView: View {
                 return
             }
 
+            guard !Task.isCancelled else { return }
             nearbyPlaces = await placesService.nearbySearch(location: location)
             cacheService.cacheNearbyResults(nearbyPlaces, location: location)
             logger.debug("[Nearby] Got \(nearbyPlaces.count) nearby places")

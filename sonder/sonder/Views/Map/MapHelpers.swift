@@ -77,6 +77,7 @@ private struct DirectionsMenuModifier: ViewModifier {
     let address: String
 
     @State private var showCopiedToast = false
+    @State private var toastDismissTask: Task<Void, Never>?
 
     func body(content: Content) -> some View {
         content
@@ -88,8 +89,10 @@ private struct DirectionsMenuModifier: ViewModifier {
                     address: address,
                     onCopied: {
                         showCopiedToast = true
-                        Task {
+                        toastDismissTask?.cancel()
+                        toastDismissTask = Task {
                             try? await Task.sleep(nanoseconds: 2_000_000_000)
+                            guard !Task.isCancelled else { return }
                             showCopiedToast = false
                         }
                     }

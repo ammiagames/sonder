@@ -107,6 +107,7 @@ struct LogConfirmationView: View {
 
     // Journal Flip
     @State private var cardFlipped = false
+    @State private var autoDismissTask: Task<Void, Never>?
 
     private static let messages = [
         "Another one for the journal",
@@ -173,10 +174,14 @@ struct LogConfirmationView: View {
             }
 
             let dismissDelay: UInt64 = tripName != nil ? 3500 : 2500
-            Task { @MainActor in
+            autoDismissTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(dismissDelay))
+                guard !Task.isCancelled else { return }
                 onDismiss()
             }
+        }
+        .onDisappear {
+            autoDismissTask?.cancel()
         }
     }
 

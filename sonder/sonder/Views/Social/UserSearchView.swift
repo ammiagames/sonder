@@ -25,13 +25,12 @@ struct UserSearchView: View {
     @State private var selectedTab: SearchTab = .username
     @State private var searchText = ""
     @State private var searchResults: [User] = []
+    @State private var searchDebounceTask: Task<Void, Never>?
     @State private var isSearching = false
     @State private var selectedUserID: String?
     @State private var inviteContact: ContactsService.UnmatchedContact?
     @State private var contactsLoaded = false
     @State private var contactsSearchText = ""
-    @State private var searchDebounceTask: Task<Void, Never>?
-    @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -432,17 +431,14 @@ struct UserSearchView: View {
 
         isSearching = true
 
-        searchTask?.cancel()
-        searchTask = Task {
+        Task {
             do {
                 searchResults = try await socialService.searchUsers(query: searchText)
             } catch {
-                if !Task.isCancelled {
-                    logger.error("Search error: \(error.localizedDescription)")
-                    searchResults = []
-                }
+                logger.error("Search error: \(error.localizedDescription)")
+                searchResults = []
             }
-            if !Task.isCancelled { isSearching = false }
+            isSearching = false
         }
     }
 

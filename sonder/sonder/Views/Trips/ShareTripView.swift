@@ -112,6 +112,7 @@ struct ShareTripView: View {
     @State private var showShareSheet = false
     @State private var exportImage: UIImage?
     @State private var toastMessage: String?
+    @State private var toastDismissTask: Task<Void, Never>?
     @State private var renderTask: Task<Void, Never>?
     @State private var captionDebounceTask: Task<Void, Never>?
 
@@ -647,8 +648,10 @@ struct ShareTripView: View {
 
     private func showToast(_ message: String) {
         toastMessage = message
-        Task {
+        toastDismissTask?.cancel()
+        toastDismissTask = Task {
             try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 toastMessage = nil
             }
@@ -658,7 +661,7 @@ struct ShareTripView: View {
     // MARK: - Photo Loading
 
     private func loadPhotos() async {
-        let placesByID = Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let placesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
 
         let sortedLogs = tripLogs.sorted { a, b in
             let ratingOrder: [Rating: Int] = [.mustSee: 0, .great: 1, .okay: 2, .skip: 3]

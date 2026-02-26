@@ -25,6 +25,7 @@ struct OtherUserMapView: View {
     @State private var hasSetInitialCamera = false
     @State private var cardIsExpanded = false
     @State private var selectedFeedItem: FeedItem?
+    @State private var navigationDelayTask: Task<Void, Never>?
 
     /// All log coordinates for fit-all / recenter.
     private var allCoordinates: [CLLocationCoordinate2D] {
@@ -117,8 +118,10 @@ struct OtherUserMapView: View {
                         withAnimation(.smooth(duration: 0.2)) { sheetPin = nil }
                         selectedPlaceID = nil
                         cardIsExpanded = false
-                        Task { @MainActor in
+                        navigationDelayTask?.cancel()
+                        navigationDelayTask = Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(250))
+                            guard !Task.isCancelled else { return }
                             selectedFeedItem = feedItem
                         }
                     },

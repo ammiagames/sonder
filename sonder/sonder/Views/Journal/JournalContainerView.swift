@@ -40,12 +40,12 @@ struct JournalContainerView: View {
     @State private var searchText = ""
     @State private var debouncedSearchText = ""
     @State private var searchDebounceTask: Task<Void, Never>?
-    @State private var assignLogsDelayTask: Task<Void, Never>?
     @State private var showCreateTrip = false
     @State private var selectedLog: Log?
     @State private var selectedTrip: Trip?
     @State private var newlyCreatedTrip: Trip?
     @State private var showAssignLogs = false
+    @State private var assignLogsTask: Task<Void, Never>?
     @State private var displayStyle: JournalDisplayStyle = .polaroid
 
     // Cached derived data — rebuilt when source data changes
@@ -81,7 +81,7 @@ struct JournalContainerView: View {
     }
 
     private func rebuildJournalCaches() {
-        cachedPlacesByID = Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        cachedPlacesByID = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
         let tripIDs = Set(allUserTrips.map(\.id))
         cachedOrphanedLogs = allUserLogs.filter { $0.tripID.map { !tripIDs.contains($0) } ?? true }
     }
@@ -184,16 +184,25 @@ struct JournalContainerView: View {
                 })
             }
             .navigationDestination(item: $selectedLog) { log in
-                if let place = placesByID[log.placeID] {
-                    LogViewScreen(log: log, place: place, onDelete: {
+                if let freshLog = allUserLogs.first(where: { $0.id == log.id }),
+                   let place = placesByID[freshLog.placeID] {
+                    LogViewScreen(log: freshLog, place: place, onDelete: {
                         selectedLog = nil
                     })
+                } else {
+                    // Data became stale (deleted/synced) — dismiss gracefully
+                    Color.clear.onAppear { selectedLog = nil }
                 }
             }
             .navigationDestination(item: $selectedTrip) { trip in
-                TripDetailView(trip: trip, onDelete: {
-                    selectedTrip = nil
-                })
+                if allUserTrips.contains(where: { $0.id == trip.id }) {
+                    TripDetailView(trip: trip, onDelete: {
+                        selectedTrip = nil
+                    })
+                } else {
+                    // Data became stale (deleted/synced) — dismiss gracefully
+                    Color.clear.onAppear { selectedTrip = nil }
+                }
             }
             .onChange(of: searchText) { _, newValue in
                 searchDebounceTask?.cancel()
@@ -213,8 +222,8 @@ struct JournalContainerView: View {
             }
             .onChange(of: showCreateTrip) { _, isShowing in
                 if !isShowing, newlyCreatedTrip != nil, !orphanedLogs.isEmpty {
-                    assignLogsDelayTask?.cancel()
-                    assignLogsDelayTask = Task { @MainActor in
+                    assignLogsTask?.cancel()
+                    assignLogsTask = Task { @MainActor in
                         try? await Task.sleep(for: .milliseconds(300))
                         guard !Task.isCancelled else { return }
                         showAssignLogs = true

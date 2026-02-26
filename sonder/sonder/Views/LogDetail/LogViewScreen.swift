@@ -93,6 +93,7 @@ struct LogViewScreen: View {
     @State private var showDiscardAlert = false
     @State private var hasChanges = false
     @State private var showSavedToast = false
+    @State private var savedToastTask: Task<Void, Never>?
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var highlightedPhotoIndex = 0
     @FocusState private var isNoteFocused: Bool
@@ -1452,8 +1453,10 @@ struct LogViewScreen: View {
                     isEditing = false
                     showSavedToast = true
                 }
-                Task {
+                savedToastTask?.cancel()
+                savedToastTask = Task {
                     try? await Task.sleep(for: .seconds(1.5))
+                    guard !Task.isCancelled else { return }
                     withAnimation { showSavedToast = false }
                 }
 
