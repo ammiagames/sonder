@@ -474,4 +474,155 @@ struct BulkPhotoImportServiceTests {
         #expect(service.clusters[0].rating == nil)
         #expect(service.clusters[0].date != nil) // Date() is set
     }
+
+    // MARK: - excludePhoto
+
+    @Test func excludePhoto_movesToExcludedPool() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        let p1 = PhotoMetadata(id: "p1", coordinate: nil, creationDate: nil)
+        let p2 = PhotoMetadata(id: "p2", coordinate: nil, creationDate: nil)
+        let cluster = PhotoCluster(photoMetadata: [p1, p2])
+        service.clusters = [cluster]
+
+        service.excludePhoto("p1", fromClusterID: cluster.id)
+
+        #expect(service.clusters[0].photoMetadata.count == 1)
+        #expect(service.clusters[0].photoMetadata[0].id == "p2")
+        #expect(service.excludedPhotos.count == 1)
+        #expect(service.excludedPhotos[0].id == "p1")
+    }
+
+    @Test func excludePhoto_removesEmptyCluster() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        let p1 = PhotoMetadata(id: "p1", coordinate: nil, creationDate: nil)
+        let cluster = PhotoCluster(photoMetadata: [p1])
+        service.clusters = [cluster]
+
+        service.excludePhoto("p1", fromClusterID: cluster.id)
+
+        #expect(service.clusters.isEmpty)
+        #expect(service.excludedPhotos.count == 1)
+    }
+
+    @Test func restorePhoto_movesBackToCluster() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        let p1 = PhotoMetadata(id: "p1", coordinate: nil, creationDate: nil)
+        let cluster = PhotoCluster(photoMetadata: [])
+        service.clusters = [cluster]
+        service.excludedPhotos = [p1]
+
+        service.restorePhoto("p1", toClusterID: cluster.id)
+
+        #expect(service.excludedPhotos.isEmpty)
+        #expect(service.clusters[0].photoMetadata.count == 1)
+        #expect(service.clusters[0].photoMetadata[0].id == "p1")
+    }
+
+    // MARK: - reorderPhoto
+
+    @Test func reorderPhoto_swapsPositions() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        let p1 = PhotoMetadata(id: "p1", coordinate: nil, creationDate: nil)
+        let p2 = PhotoMetadata(id: "p2", coordinate: nil, creationDate: nil)
+        let p3 = PhotoMetadata(id: "p3", coordinate: nil, creationDate: nil)
+        let cluster = PhotoCluster(photoMetadata: [p1, p2, p3])
+        service.clusters = [cluster]
+
+        // Move first photo to last position
+        service.reorderPhoto(in: cluster.id, fromIndex: 0, toIndex: 2)
+
+        #expect(service.clusters[0].photoMetadata.map(\.id) == ["p2", "p3", "p1"])
+    }
+
+    @Test func reorderPhoto_noOpForSameIndex() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        let p1 = PhotoMetadata(id: "p1", coordinate: nil, creationDate: nil)
+        let p2 = PhotoMetadata(id: "p2", coordinate: nil, creationDate: nil)
+        let cluster = PhotoCluster(photoMetadata: [p1, p2])
+        service.clusters = [cluster]
+
+        service.reorderPhoto(in: cluster.id, fromIndex: 0, toIndex: 0)
+
+        #expect(service.clusters[0].photoMetadata.map(\.id) == ["p1", "p2"])
+    }
+
+    @Test func excludeUnlocatedPhoto_movesToExcludedPool() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+
+        let service = BulkPhotoImportService(
+            googlePlacesService: GooglePlacesService(),
+            placesCacheService: PlacesCacheService(modelContext: context),
+            photoService: PhotoService(),
+            photoSuggestionService: PhotoSuggestionService(),
+            syncEngine: SyncEngine(modelContext: context),
+            modelContext: context
+        )
+
+        let u1 = PhotoMetadata(id: "u1", coordinate: nil, creationDate: nil)
+        let u2 = PhotoMetadata(id: "u2", coordinate: nil, creationDate: nil)
+        service.unlocatedPhotos = [u1, u2]
+
+        service.excludeUnlocatedPhoto("u1")
+
+        #expect(service.unlocatedPhotos.count == 1)
+        #expect(service.unlocatedPhotos[0].id == "u2")
+        #expect(service.excludedPhotos.count == 1)
+        #expect(service.excludedPhotos[0].id == "u1")
+    }
 }

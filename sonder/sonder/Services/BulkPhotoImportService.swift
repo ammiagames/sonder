@@ -25,6 +25,7 @@ final class BulkPhotoImportService {
     internal(set) var state: BulkImportState = .selecting
     internal(set) var clusters: [PhotoCluster] = []
     internal(set) var unlocatedPhotos: [PhotoMetadata] = []
+    internal(set) var excludedPhotos: [PhotoMetadata] = []
     internal(set) var createdLogCount: Int = 0
 
     // MARK: - Dependencies (injected)
@@ -239,6 +240,54 @@ final class BulkPhotoImportService {
         return cluster.id
     }
 
+    /// Exclude a photo from a cluster. Moves it to the excluded pool.
+    /// Removes the source cluster if it becomes empty.
+    func excludePhoto(_ photoID: String, fromClusterID: UUID) {
+        guard let clusterIndex = clusters.firstIndex(where: { $0.id == fromClusterID }),
+              let photoIndex = clusters[clusterIndex].photoMetadata.firstIndex(where: { $0.id == photoID })
+        else { return }
+
+        let photo = clusters[clusterIndex].photoMetadata.remove(at: photoIndex)
+        excludedPhotos.append(photo)
+
+        if clusters[clusterIndex].photoMetadata.isEmpty {
+            clusters.remove(at: clusterIndex)
+        } else {
+            recalculateCentroid(at: clusterIndex)
+        }
+    }
+
+    /// Exclude a photo from the unlocated pool.
+    func excludeUnlocatedPhoto(_ photoID: String) {
+        guard let index = unlocatedPhotos.firstIndex(where: { $0.id == photoID }) else { return }
+        let photo = unlocatedPhotos.remove(at: index)
+        excludedPhotos.append(photo)
+    }
+
+    /// Restore an excluded photo into a cluster.
+    func restorePhoto(_ photoID: String, toClusterID: UUID) {
+        guard let targetIndex = clusters.firstIndex(where: { $0.id == toClusterID }),
+              let excludedIndex = excludedPhotos.firstIndex(where: { $0.id == photoID })
+        else { return }
+
+        let photo = excludedPhotos.remove(at: excludedIndex)
+        clusters[targetIndex].photoMetadata.append(photo)
+        recalculateCentroid(at: targetIndex)
+    }
+
+    /// Reorder a photo within a cluster.
+    func reorderPhoto(in clusterID: UUID, fromIndex: Int, toIndex: Int) {
+        guard let clusterIndex = clusters.firstIndex(where: { $0.id == clusterID }) else { return }
+        let photos = clusters[clusterIndex].photoMetadata
+        guard fromIndex >= 0, fromIndex < photos.count,
+              toIndex >= 0, toIndex < photos.count,
+              fromIndex != toIndex
+        else { return }
+
+        let photo = clusters[clusterIndex].photoMetadata.remove(at: fromIndex)
+        clusters[clusterIndex].photoMetadata.insert(photo, at: toIndex)
+    }
+
     // MARK: - Centroid
 
     /// Recalculate a cluster's centroid from its photos' coordinates.
@@ -281,7 +330,7 @@ final class BulkPhotoImportService {
 
     // MARK: - Bulk Save
 
-    /// Creates logs for all valid clusters. Mirrors the pattern from AddDetailsView.save().
+    /// Creates logs for all valid clusters. Mirrors the pattern from RatePlaceView.save().
     func saveAllLogs(userID: String, tripID: String?) async {
         let validClusters = clusters.filter { $0.rating != nil }
         guard !validClusters.isEmpty else { return }

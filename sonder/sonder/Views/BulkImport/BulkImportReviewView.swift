@@ -30,16 +30,17 @@ struct BulkImportReviewView: View {
     // Drag-and-drop state
     @State private var dropTargetClusterID: UUID?
 
+    // Collapsible cards
+    @State private var collapsedClusterIDs: Set<UUID> = []
+
     @State private var savingTask: Task<Void, Never>?
 
     var body: some View {
         ZStack(alignment: .bottom) {
             ScrollView {
                 LazyVStack(spacing: SonderSpacing.md) {
-                    // Trip badge
-                    if let tripName {
-                        tripBadge(tripName)
-                    }
+                    // Sticky progress counter + trip badge
+                    progressHeader
 
                     // Cluster cards with inline search results
                     ForEach(importService.clusters) { cluster in
@@ -60,6 +61,11 @@ struct BulkImportReviewView: View {
                     if !importService.unlocatedPhotos.isEmpty {
                         unlocatedSection
                     }
+
+                    // Excluded photos section
+                    if !importService.excludedPhotos.isEmpty {
+                        excludedSection
+                    }
                 }
                 .padding(.horizontal, SonderSpacing.md)
                 .padding(.top, SonderSpacing.md)
@@ -72,7 +78,42 @@ struct BulkImportReviewView: View {
         }
     }
 
-    // MARK: - Trip Badge
+    // MARK: - Progress Header
+
+    private var progressHeader: some View {
+        VStack(spacing: SonderSpacing.sm) {
+            if let tripName {
+                tripBadge(tripName)
+            }
+
+            HStack(spacing: SonderSpacing.xs) {
+                let ready = importService.readyCount
+                let total = importService.clusters.count
+
+                Circle()
+                    .fill(ready == total && total > 0 ? SonderColors.terracotta : SonderColors.inkLight)
+                    .frame(width: 6, height: 6)
+
+                Text("\(ready) of \(total) ready")
+                    .font(SonderTypography.caption)
+                    .foregroundStyle(SonderColors.inkMuted)
+
+                if total > 0 && collapsedClusterIDs.count < readyClusterIDs.count {
+                    Spacer()
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            collapsedClusterIDs.formUnion(readyClusterIDs)
+                        }
+                    } label: {
+                        Text("Collapse completed")
+                            .font(SonderTypography.caption)
+                            .foregroundStyle(SonderColors.terracotta)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
 
     private func tripBadge(_ name: String) -> some View {
         HStack(spacing: SonderSpacing.xs) {
@@ -89,6 +130,14 @@ struct BulkImportReviewView: View {
         .clipShape(Capsule())
     }
 
+    /// IDs of clusters that have both a place and a rating.
+    private var readyClusterIDs: Set<UUID> {
+        Set(importService.clusters.filter { cluster in
+            (cluster.confirmedPlace != nil || !cluster.suggestedPlaces.isEmpty)
+            && cluster.rating != nil
+        }.map(\.id))
+    }
+
     // MARK: - Add Log Button
 
     private var addLogButton: some View {
@@ -96,6 +145,7 @@ struct BulkImportReviewView: View {
             SonderHaptics.impact(.light)
             let newID = importService.addEmptyCluster()
             withAnimation {
+                collapsedClusterIDs.remove(newID)
                 inlineSearchClusterID = newID
                 inlineSearchText = ""
                 inlineSearchPredictions = []
@@ -122,11 +172,89 @@ struct BulkImportReviewView: View {
     // MARK: - Cluster Card
 
     private func clusterCard(_ cluster: PhotoCluster) -> some View {
-        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+        let isCollapsed = collapsedClusterIDs.contains(cluster.id)
+        let isReady = readyClusterIDs.contains(cluster.id)
+
+        return Group {
+            if isCollapsed {
+                collapsedCard(cluster, isReady: isReady)
+            } else {
+                expandedCard(cluster, isReady: isReady)
+            }
+        }
+    }
+
+    // MARK: Collapsed Card
+
+    private func collapsedCard(_ cluster: PhotoCluster, isReady: Bool) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                _ = collapsedClusterIDs.remove(cluster.id)
+            }
+        } label: {
+            HStack(spacing: SonderSpacing.sm) {
+                // Lead thumbnail
+                if let firstPhoto = cluster.photoMetadata.first {
+                    PhotoThumbnailView(assetID: firstPhoto.id, photoSuggestionService: photoSuggestionService)
+                        .frame(width: 40, height: 40)
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                }
+
+                // Place name
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(cluster.confirmedPlace?.name ?? cluster.suggestedPlaces.first?.name ?? "No place")
+                        .font(SonderTypography.headline)
+                        .foregroundStyle(SonderColors.inkDark)
+                        .lineLimit(1)
+
+                    if cluster.photoMetadata.count > 0 {
+                        Text("\(cluster.photoMetadata.count) photos")
+                            .font(SonderTypography.caption)
+                            .foregroundStyle(SonderColors.inkMuted)
+                    }
+                }
+
+                Spacer()
+
+                // Rating emoji
+                if let rating = cluster.rating {
+                    Text(rating.emoji)
+                        .font(.system(size: 20))
+                }
+
+                // Ready indicator
+                if isReady {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(SonderColors.terracotta)
+                }
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(SonderColors.inkLight)
+            }
+            .padding(SonderSpacing.sm)
+            .background(SonderColors.warmGray.opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+        }
+        .buttonStyle(.plain)
+        .dropDestination(for: String.self) { droppedIDs, _ in
+            handleDrop(droppedIDs: droppedIDs, onCluster: cluster)
+        } isTargeted: { targeted in
+            dropTargetClusterID = targeted ? cluster.id : nil
+        }
+    }
+
+    // MARK: Expanded Card
+
+    private func expandedCard(_ cluster: PhotoCluster, isReady: Bool) -> some View {
+        let cardBackground: Color = SonderColors.warmGray.opacity(0.5)
+
+        return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             // Photo thumbnail strip
             photoStrip(for: cluster)
 
-            // Place name + change button (or inline search)
+            // Place name (tappable to search) + inline search
             placeRow(for: cluster)
 
             // Compact rating picker
@@ -145,52 +273,80 @@ struct BulkImportReviewView: View {
             }
         }
         .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray.opacity(0.5))
+        .background(cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
         .overlay(
             RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
                 .strokeBorder(
-                    dropTargetClusterID == cluster.id ? SonderColors.terracotta : Color.clear,
+                    dropTargetClusterID == cluster.id ? SonderColors.terracotta : Color(white: 0, opacity: 0),
                     style: StrokeStyle(lineWidth: 2, dash: [6, 4])
                 )
         )
         .overlay(alignment: .topTrailing) {
-            Button {
-                withAnimation {
-                    if inlineSearchClusterID == cluster.id {
-                        collapseInlineSearch()
+            HStack(spacing: SonderSpacing.xxs) {
+                // Collapse button (only if card is ready)
+                if isReady {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            collapsedClusterIDs.insert(cluster.id)
+                            return ()
+                        }
+                    } label: {
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(SonderColors.inkLight)
+                            .frame(width: 24, height: 24)
                     }
-                    importService.removeCluster(cluster.id)
                 }
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(SonderColors.inkLight)
+
+                // Delete button
+                Button {
+                    withAnimation {
+                        if inlineSearchClusterID == cluster.id {
+                            collapseInlineSearch()
+                        }
+                        collapsedClusterIDs.remove(cluster.id)
+                        importService.removeCluster(cluster.id)
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(SonderColors.inkLight)
+                }
             }
             .padding(SonderSpacing.xs)
         }
         .dropDestination(for: String.self) { droppedIDs, _ in
-            let existingIDs = Set(cluster.photoMetadata.map(\.id))
-            let newIDs = Set(droppedIDs).subtracting(existingIDs)
-            guard !newIDs.isEmpty else { return false }
-
-            let unlocatedIDs = Set(importService.unlocatedPhotos.map(\.id))
-            let fromUnlocated = newIDs.intersection(unlocatedIDs)
-            let fromClusters = newIDs.subtracting(fromUnlocated)
-
-            withAnimation {
-                if !fromClusters.isEmpty {
-                    importService.movePhotos(photoIDs: fromClusters, toClusterID: cluster.id)
-                }
-                if !fromUnlocated.isEmpty {
-                    importService.moveUnlocatedPhotos(photoIDs: fromUnlocated, toClusterID: cluster.id)
-                }
-            }
-            SonderHaptics.notification(.success)
-            return true
+            handleDrop(droppedIDs: droppedIDs, onCluster: cluster)
         } isTargeted: { targeted in
             dropTargetClusterID = targeted ? cluster.id : nil
         }
+    }
+
+    private func handleDrop(droppedIDs: [String], onCluster cluster: PhotoCluster) -> Bool {
+        let existingIDs = Set(cluster.photoMetadata.map(\.id))
+        let newIDs = Set(droppedIDs).subtracting(existingIDs)
+        guard !newIDs.isEmpty else { return false }
+
+        let unlocatedIDs = Set(importService.unlocatedPhotos.map(\.id))
+        let excludedIDs = Set(importService.excludedPhotos.map(\.id))
+        let fromUnlocated = newIDs.intersection(unlocatedIDs)
+        let fromExcluded = newIDs.intersection(excludedIDs)
+        let fromClusters = newIDs.subtracting(fromUnlocated).subtracting(fromExcluded)
+
+        withAnimation {
+            if !fromClusters.isEmpty {
+                importService.movePhotos(photoIDs: fromClusters, toClusterID: cluster.id)
+            }
+            if !fromUnlocated.isEmpty {
+                importService.moveUnlocatedPhotos(photoIDs: fromUnlocated, toClusterID: cluster.id)
+            }
+            for id in fromExcluded {
+                importService.restorePhoto(id, toClusterID: cluster.id)
+            }
+        }
+        SonderHaptics.notification(.success)
+        return true
     }
 
     // MARK: - Photo Strip
@@ -219,11 +375,44 @@ struct BulkImportReviewView: View {
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: SonderSpacing.xs) {
-                        ForEach(cluster.photoMetadata) { photo in
+                        ForEach(Array(cluster.photoMetadata.enumerated()), id: \.element.id) { index, photo in
                             PhotoThumbnailView(assetID: photo.id, photoSuggestionService: photoSuggestionService)
                                 .frame(width: 64, height: 64)
                                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                                .overlay(alignment: .bottom) {
+                                    if index == 0 && cluster.photoMetadata.count > 1 {
+                                        Text("Cover")
+                                            .font(.system(size: 8, weight: .semibold))
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(Color(SonderColors.terracotta).opacity(0.8))
+                                            .clipShape(Capsule())
+                                            .padding(3)
+                                    }
+                                }
                                 .draggable(photo.id)
+                                .contextMenu {
+                                    if index != 0 {
+                                        Button {
+                                            withAnimation {
+                                                importService.reorderPhoto(in: cluster.id, fromIndex: index, toIndex: 0)
+                                            }
+                                            SonderHaptics.impact(.light)
+                                        } label: {
+                                            Label("Make Cover Photo", systemImage: "star")
+                                        }
+                                    }
+
+                                    Button(role: .destructive) {
+                                        withAnimation {
+                                            importService.excludePhoto(photo.id, fromClusterID: cluster.id)
+                                        }
+                                        SonderHaptics.impact(.light)
+                                    } label: {
+                                        Label("Remove from Log", systemImage: "minus.circle")
+                                    }
+                                }
                         }
                     }
                 }
@@ -241,38 +430,42 @@ struct BulkImportReviewView: View {
             if inlineSearchClusterID == cluster.id {
                 inlineSearchField(for: cluster)
             } else {
-                // Place name + address
+                // Tappable place name — tap to open inline search
                 if let place = cluster.confirmedPlace {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(place.name)
-                            .font(SonderTypography.headline)
-                            .foregroundStyle(SonderColors.inkDark)
-                        Text(place.address)
-                            .font(SonderTypography.caption)
-                            .foregroundStyle(SonderColors.inkMuted)
-                            .lineLimit(1)
-                    }
+                    tappablePlaceLabel(
+                        name: place.name,
+                        address: place.address,
+                        cluster: cluster
+                    )
                 } else if let first = cluster.suggestedPlaces.first {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(first.name)
-                            .font(SonderTypography.headline)
-                            .foregroundStyle(SonderColors.inkDark)
-                        Text(first.address)
-                            .font(SonderTypography.caption)
-                            .foregroundStyle(SonderColors.inkMuted)
-                            .lineLimit(1)
-                    }
+                    tappablePlaceLabel(
+                        name: first.name,
+                        address: first.address,
+                        cluster: cluster
+                    )
                 } else {
-                    HStack {
-                        Text("No place found")
-                            .font(SonderTypography.headline)
-                            .foregroundStyle(SonderColors.inkLight)
-                        Spacer()
-                        searchButton(for: cluster)
+                    // No place at all — show search field inline immediately
+                    Button {
+                        openInlineSearch(for: cluster)
+                    } label: {
+                        HStack(spacing: SonderSpacing.xs) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 14))
+                                .foregroundStyle(SonderColors.inkMuted)
+                            Text("Search for a place")
+                                .font(SonderTypography.headline)
+                                .foregroundStyle(SonderColors.inkLight)
+                            Spacer()
+                        }
+                        .padding(.horizontal, SonderSpacing.sm)
+                        .padding(.vertical, SonderSpacing.xs)
+                        .background(SonderColors.warmGray)
+                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
                     }
+                    .buttonStyle(.plain)
                 }
 
-                // Inline place chips (up to 5 suggestions + search button)
+                // Inline place chips (up to 5 suggestions + search icon)
                 if !cluster.suggestedPlaces.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: SonderSpacing.xs) {
@@ -283,8 +476,6 @@ struct BulkImportReviewView: View {
                                     clusterID: cluster.id
                                 )
                             }
-
-                            searchButton(for: cluster)
                         }
                     }
                 }
@@ -292,7 +483,42 @@ struct BulkImportReviewView: View {
         }
     }
 
+    /// A tappable place name + address label that opens inline search when tapped.
+    private func tappablePlaceLabel(name: String, address: String, cluster: PhotoCluster) -> some View {
+        Button {
+            openInlineSearch(for: cluster, prefill: name)
+        } label: {
+            HStack(spacing: SonderSpacing.xs) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name)
+                        .font(SonderTypography.headline)
+                        .foregroundStyle(SonderColors.inkDark)
+                    Text(address)
+                        .font(SonderTypography.caption)
+                        .foregroundStyle(SonderColors.inkMuted)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
+                    .foregroundStyle(SonderColors.inkMuted)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Inline Search
+
+    private func openInlineSearch(for cluster: PhotoCluster, prefill: String = "") {
+        withAnimation {
+            inlineSearchClusterID = cluster.id
+            inlineSearchText = prefill
+            inlineSearchPredictions = []
+            inlineSearchFocused = true
+        }
+    }
 
     private func inlineSearchField(for cluster: PhotoCluster) -> some View {
         HStack(spacing: SonderSpacing.xs) {
@@ -419,26 +645,6 @@ struct BulkImportReviewView: View {
         .buttonStyle(.plain)
     }
 
-    private func searchButton(for cluster: PhotoCluster) -> some View {
-        Button {
-            withAnimation {
-                inlineSearchClusterID = cluster.id
-                inlineSearchText = ""
-                inlineSearchPredictions = []
-                inlineSearchFocused = true
-            }
-        } label: {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 12))
-                .foregroundStyle(SonderColors.inkMuted)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(SonderColors.warmGray)
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: - Compact Rating Picker
 
     private func compactRatingPicker(for cluster: PhotoCluster) -> some View {
@@ -494,6 +700,15 @@ struct BulkImportReviewView: View {
                                     .strokeBorder(SonderColors.inkLight, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
                             )
                             .draggable(photo.id)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    withAnimation {
+                                        importService.excludeUnlocatedPhoto(photo.id)
+                                    }
+                                } label: {
+                                    Label("Exclude Photo", systemImage: "minus.circle")
+                                }
+                            }
                     }
                 }
             }
@@ -505,6 +720,40 @@ struct BulkImportReviewView: View {
         .padding(SonderSpacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(SonderColors.warmGray.opacity(0.3))
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+    }
+
+    // MARK: - Excluded Section
+
+    private var excludedSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            HStack {
+                Image(systemName: "eye.slash")
+                    .foregroundStyle(SonderColors.inkMuted)
+                Text("\(importService.excludedPhotos.count) excluded")
+                    .font(SonderTypography.subheadline)
+                    .foregroundStyle(SonderColors.inkMuted)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: SonderSpacing.xs) {
+                    ForEach(importService.excludedPhotos) { photo in
+                        PhotoThumbnailView(assetID: photo.id, photoSuggestionService: photoSuggestionService)
+                            .frame(width: 52, height: 52)
+                            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                            .opacity(0.5)
+                            .draggable(photo.id)
+                    }
+                }
+            }
+
+            Text("Drag back onto a log to restore.")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkLight)
+        }
+        .padding(SonderSpacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SonderColors.warmGray.opacity(0.2))
         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
     }
 
