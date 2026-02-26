@@ -33,6 +33,10 @@ struct BulkImportReviewView: View {
     // Collapsible cards
     @State private var collapsedClusterIDs: Set<UUID> = []
 
+    // Photo selection state
+    @State private var selectedPhotoID: String? = nil
+    @State private var selectedPhotoClusterID: UUID? = nil
+
     @State private var savingTask: Task<Void, Never>?
 
     var body: some View {
@@ -283,38 +287,42 @@ struct BulkImportReviewView: View {
                 )
         )
         .overlay(alignment: .topTrailing) {
-            HStack(spacing: SonderSpacing.xxs) {
-                // Collapse button (only if card is ready)
-                if isReady {
+            if inlineSearchClusterID != cluster.id {
+                HStack(spacing: SonderSpacing.xxs) {
+                    // Collapse button (only if card is ready)
+                    if isReady {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                collapsedClusterIDs.insert(cluster.id)
+                                clearPhotoSelection()
+                                return ()
+                            }
+                        } label: {
+                            Image(systemName: "chevron.up")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(SonderColors.inkLight)
+                                .frame(width: 24, height: 24)
+                        }
+                    }
+
+                    // Delete button
                     Button {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            collapsedClusterIDs.insert(cluster.id)
-                            return ()
+                        withAnimation {
+                            if selectedPhotoClusterID == cluster.id {
+                                clearPhotoSelection()
+                            }
+                            collapsedClusterIDs.remove(cluster.id)
+                            importService.removeCluster(cluster.id)
                         }
                     } label: {
-                        Image(systemName: "chevron.up")
-                            .font(.system(size: 12, weight: .medium))
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 20))
                             .foregroundStyle(SonderColors.inkLight)
-                            .frame(width: 24, height: 24)
                     }
                 }
-
-                // Delete button
-                Button {
-                    withAnimation {
-                        if inlineSearchClusterID == cluster.id {
-                            collapseInlineSearch()
-                        }
-                        collapsedClusterIDs.remove(cluster.id)
-                        importService.removeCluster(cluster.id)
-                    }
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(SonderColors.inkLight)
-                }
+                .padding(SonderSpacing.xs)
+                .transition(.opacity)
             }
-            .padding(SonderSpacing.xs)
         }
         .dropDestination(for: String.self) { droppedIDs, _ in
             handleDrop(droppedIDs: droppedIDs, onCluster: cluster)
@@ -352,7 +360,7 @@ struct BulkImportReviewView: View {
     // MARK: - Photo Strip
 
     private func photoStrip(for cluster: PhotoCluster) -> some View {
-        Group {
+        VStack(spacing: SonderSpacing.xs) {
             if cluster.photoMetadata.isEmpty {
                 // Empty cluster placeholder
                 HStack {
@@ -376,6 +384,8 @@ struct BulkImportReviewView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: SonderSpacing.xs) {
                         ForEach(Array(cluster.photoMetadata.enumerated()), id: \.element.id) { index, photo in
+                            let isSelected = selectedPhotoID == photo.id && selectedPhotoClusterID == cluster.id
+
                             PhotoThumbnailView(assetID: photo.id, photoSuggestionService: photoSuggestionService)
                                 .frame(width: 64, height: 64)
                                 .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
@@ -391,46 +401,112 @@ struct BulkImportReviewView: View {
                                             .padding(3)
                                     }
                                 }
-                                .overlay(alignment: .topTrailing) {
-                                    Button {
-                                        withAnimation {
-                                            importService.excludePhoto(photo.id, fromClusterID: cluster.id)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
+                                        .strokeBorder(
+                                            isSelected ? SonderColors.terracotta : .clear,
+                                            lineWidth: 2.5
+                                        )
+                                )
+                                .onTapGesture {
+                                    withAnimation(.easeInOut(duration: 0.15)) {
+                                        if isSelected {
+                                            clearPhotoSelection()
+                                        } else {
+                                            selectedPhotoID = photo.id
+                                            selectedPhotoClusterID = cluster.id
                                         }
-                                        SonderHaptics.impact(.light)
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .font(.system(size: 16))
-                                            .foregroundStyle(.white)
-                                            .background(Circle().fill(.black.opacity(0.5)))
                                     }
-                                    .buttonStyle(.plain)
+                                    SonderHaptics.impact(.light)
                                 }
                                 .draggable(photo.id)
-                                .contextMenu {
-                                    if index != 0 {
-                                        Button {
-                                            withAnimation {
-                                                importService.reorderPhoto(in: cluster.id, fromIndex: index, toIndex: 0)
-                                            }
-                                            SonderHaptics.impact(.light)
-                                        } label: {
-                                            Label("Make Cover Photo", systemImage: "star")
-                                        }
-                                    }
-
-                                    Button(role: .destructive) {
-                                        withAnimation {
-                                            importService.excludePhoto(photo.id, fromClusterID: cluster.id)
-                                        }
-                                        SonderHaptics.impact(.light)
-                                    } label: {
-                                        Label("Remove from Log", systemImage: "minus.circle")
-                                    }
-                                }
                         }
                     }
                 }
+
+                // Action bar when a photo in this cluster is selected
+                if selectedPhotoClusterID == cluster.id, let photoID = selectedPhotoID {
+                    photoActionBar(for: cluster, photoID: photoID)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
+        }
+    }
+
+    /// Action bar for reordering / removing a selected photo.
+    private func photoActionBar(for cluster: PhotoCluster, photoID: String) -> some View {
+        let photos = cluster.photoMetadata
+        let index = photos.firstIndex(where: { $0.id == photoID })
+
+        return HStack(spacing: SonderSpacing.sm) {
+            // Left / Right arrows
+            HStack(spacing: SonderSpacing.xxs) {
+                Button {
+                    guard let i = index, i > 0 else { return }
+                    withAnimation {
+                        importService.reorderPhoto(in: cluster.id, fromIndex: i, toIndex: i - 1)
+                    }
+                    SonderHaptics.impact(.light)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 32, height: 28)
+                }
+                .disabled(index == nil || index == 0)
+
+                Button {
+                    guard let i = index, i < photos.count - 1 else { return }
+                    withAnimation {
+                        importService.reorderPhoto(in: cluster.id, fromIndex: i, toIndex: i + 1)
+                    }
+                    SonderHaptics.impact(.light)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 32, height: 28)
+                }
+                .disabled(index == nil || index == photos.count - 1)
+            }
+            .foregroundStyle(SonderColors.inkDark)
+
+            Spacer()
+
+            // Make Cover pill (hidden if already first)
+            if let i = index, i != 0 {
+                Button {
+                    withAnimation {
+                        importService.reorderPhoto(in: cluster.id, fromIndex: i, toIndex: 0)
+                    }
+                    SonderHaptics.impact(.light)
+                } label: {
+                    Label("Cover", systemImage: "star")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(SonderColors.terracotta)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(SonderColors.terracotta.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Remove pill
+            Button {
+                withAnimation {
+                    importService.excludePhoto(photoID, fromClusterID: cluster.id)
+                    clearPhotoSelection()
+                }
+                SonderHaptics.impact(.light)
+            } label: {
+                Label("Remove", systemImage: "xmark")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.red.opacity(0.8))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.red.opacity(0.08))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -500,7 +576,7 @@ struct BulkImportReviewView: View {
     /// A tappable place name + address label that opens inline search when tapped.
     private func tappablePlaceLabel(name: String, address: String, cluster: PhotoCluster) -> some View {
         Button {
-            openInlineSearch(for: cluster, prefill: name)
+            openInlineSearch(for: cluster)
         } label: {
             HStack(spacing: SonderSpacing.xs) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -527,6 +603,7 @@ struct BulkImportReviewView: View {
 
     private func openInlineSearch(for cluster: PhotoCluster, prefill: String = "") {
         withAnimation {
+            clearPhotoSelection()
             inlineSearchClusterID = cluster.id
             inlineSearchText = prefill
             inlineSearchPredictions = []
@@ -553,7 +630,12 @@ struct BulkImportReviewView: View {
 
             Button {
                 withAnimation {
-                    collapseInlineSearch()
+                    if inlineSearchText.isEmpty {
+                        collapseInlineSearch()
+                    } else {
+                        inlineSearchText = ""
+                        inlineSearchPredictions = []
+                    }
                 }
             } label: {
                 Image(systemName: "xmark.circle.fill")
@@ -636,6 +718,11 @@ struct BulkImportReviewView: View {
         inlineSearchPredictions = []
         inlineSearchLoading = false
         inlineSearchFocused = false
+    }
+
+    private func clearPhotoSelection() {
+        selectedPhotoID = nil
+        selectedPhotoClusterID = nil
     }
 
     private func placeChip(nearbyPlace: NearbyPlace, isSelected: Bool, clusterID: UUID) -> some View {
@@ -721,9 +808,9 @@ struct BulkImportReviewView: View {
                                     SonderHaptics.impact(.light)
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 14))
-                                        .foregroundStyle(.white)
-                                        .background(Circle().fill(.black.opacity(0.5)))
+                                        .font(.system(size: 16))
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(.white, .black.opacity(0.6))
                                 }
                                 .buttonStyle(.plain)
                             }
