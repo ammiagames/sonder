@@ -89,6 +89,16 @@ final class Log {
         photoURLs.filter { !$0.contains("googleapis.com") && !$0.hasPrefix("pending-upload:") }
     }
 
+    /// All user photos including those still uploading (excludes only Google Places API URLs).
+    var allUserPhotoURLs: [String] {
+        photoURLs.filter { !$0.contains("googleapis.com") }
+    }
+
+    /// Whether any photos are still being uploaded.
+    var hasPendingUploads: Bool {
+        photoURLs.contains { $0.hasPrefix("pending-upload:") }
+    }
+
     init(
         id: String = UUID().uuidString.lowercased(),
         userID: String,

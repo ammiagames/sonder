@@ -117,7 +117,7 @@ struct LogViewScreen: View {
 
     // MARK: - Computed properties
 
-    private var hasPhotos: Bool { !log.userPhotoURLs.isEmpty }
+    private var hasPhotos: Bool { !log.allUserPhotoURLs.isEmpty }
 
     private var trip: Trip? {
         guard let tripID = log.tripID else { return nil }
@@ -364,15 +364,48 @@ struct LogViewScreen: View {
 
     @ViewBuilder
     private var viewHeroSection: some View {
-        if hasPhotos {
-            FeedItemCardShared.photoCarousel(
-                photoURLs: log.userPhotoURLs,
-                pageIndex: $photoPageIndex,
-                height: 520
-            )
-            .onTapGesture {
-                fullscreenPhotoIndex = photoPageIndex
-                showFullscreenPhoto = true
+        let uploadedURLs = log.userPhotoURLs
+        if hasPhotos && uploadedURLs.isEmpty {
+            // All photos still uploading — show progress state
+            Rectangle()
+                .fill(SonderColors.warmGray)
+                .overlay {
+                    VStack(spacing: SonderSpacing.xs) {
+                        ProgressView()
+                            .tint(SonderColors.terracotta)
+                        Text("Uploading photos...")
+                            .font(SonderTypography.caption)
+                            .foregroundStyle(SonderColors.inkMuted)
+                    }
+                }
+        } else if !uploadedURLs.isEmpty {
+            ZStack(alignment: .topTrailing) {
+                FeedItemCardShared.photoCarousel(
+                    photoURLs: uploadedURLs,
+                    pageIndex: $photoPageIndex,
+                    height: 520
+                )
+                .onTapGesture {
+                    fullscreenPhotoIndex = photoPageIndex
+                    showFullscreenPhoto = true
+                }
+
+                if log.hasPendingUploads {
+                    HStack(spacing: 4) {
+                        ProgressView()
+                            .tint(.white)
+                            .scaleEffect(0.7)
+                        Text("Uploading...")
+                            .font(SonderTypography.caption)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, SonderSpacing.sm)
+                    .padding(.vertical, SonderSpacing.xxs)
+                    .background(.black.opacity(0.5))
+                    .clipShape(Capsule())
+                    .padding(SonderSpacing.sm)
+                }
             }
         } else if let photoRef = place.photoReference,
                   let url = GooglePlacesService.photoURL(for: photoRef, maxWidth: 600) {
@@ -582,7 +615,15 @@ struct LogViewScreen: View {
             Group {
                 switch photo.source {
                 case .remote(let urlString):
-                    if let url = URL(string: urlString) {
+                    if urlString.hasPrefix("pending-upload:") {
+                        Rectangle()
+                            .fill(SonderColors.warmGray)
+                            .overlay {
+                                ProgressView()
+                                    .tint(SonderColors.terracotta)
+                                    .scaleEffect(0.7)
+                            }
+                    } else if let url = URL(string: urlString) {
                         DownsampledAsyncImage(url: url, targetSize: CGSize(width: 128, height: 128)) {
                             Color(SonderColors.warmGray)
                         }
@@ -1223,7 +1264,7 @@ struct LogViewScreen: View {
         editSelectedTripID = log.tripID
         editVisitedAt = log.visitedAt
         let savedStates = loadCropStates()
-        editPhotos = log.userPhotoURLs.enumerated().map { index, url in
+        editPhotos = log.allUserPhotoURLs.enumerated().map { index, url in
             var photo = EditPhoto(source: .remote(url: url))
             if let saved = savedStates {
                 photo.cropState = saved.byURL[url] ?? (index < saved.ordered.count ? saved.ordered[index] : nil)
