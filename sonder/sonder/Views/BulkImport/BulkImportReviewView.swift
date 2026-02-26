@@ -36,6 +36,7 @@ struct BulkImportReviewView: View {
     // Photo selection state
     @State private var selectedPhotoID: String? = nil
     @State private var selectedPhotoClusterID: UUID? = nil
+    @State private var dropTargetPhotoID: String? = nil
 
     @State private var savingTask: Task<Void, Never>?
 
@@ -420,6 +421,23 @@ struct BulkImportReviewView: View {
                                     SonderHaptics.impact(.light)
                                 }
                                 .draggable(photo.id)
+                                .dropDestination(for: String.self) { droppedIDs, _ in
+                                    guard let droppedID = droppedIDs.first,
+                                          droppedID != photo.id,
+                                          let fromIndex = cluster.photoMetadata.firstIndex(where: { $0.id == droppedID })
+                                    else { return false }
+                                    withAnimation {
+                                        importService.reorderPhoto(in: cluster.id, fromIndex: fromIndex, toIndex: index)
+                                    }
+                                    SonderHaptics.notification(.success)
+                                    return true
+                                } isTargeted: { targeted in
+                                    if targeted {
+                                        dropTargetPhotoID = photo.id
+                                    } else if dropTargetPhotoID == photo.id {
+                                        dropTargetPhotoID = nil
+                                    }
+                                }
                         }
                     }
                 }
@@ -433,44 +451,11 @@ struct BulkImportReviewView: View {
         }
     }
 
-    /// Action bar for reordering / removing a selected photo.
+    /// Action bar for cover / remove on a selected photo.
     private func photoActionBar(for cluster: PhotoCluster, photoID: String) -> some View {
-        let photos = cluster.photoMetadata
-        let index = photos.firstIndex(where: { $0.id == photoID })
+        let index = cluster.photoMetadata.firstIndex(where: { $0.id == photoID })
 
         return HStack(spacing: SonderSpacing.sm) {
-            // Left / Right arrows
-            HStack(spacing: SonderSpacing.xxs) {
-                Button {
-                    guard let i = index, i > 0 else { return }
-                    withAnimation {
-                        importService.reorderPhoto(in: cluster.id, fromIndex: i, toIndex: i - 1)
-                    }
-                    SonderHaptics.impact(.light)
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 32, height: 28)
-                }
-                .disabled(index == nil || index == 0)
-
-                Button {
-                    guard let i = index, i < photos.count - 1 else { return }
-                    withAnimation {
-                        importService.reorderPhoto(in: cluster.id, fromIndex: i, toIndex: i + 1)
-                    }
-                    SonderHaptics.impact(.light)
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 32, height: 28)
-                }
-                .disabled(index == nil || index == photos.count - 1)
-            }
-            .foregroundStyle(SonderColors.inkDark)
-
-            Spacer()
-
             // Make Cover pill (hidden if already first)
             if let i = index, i != 0 {
                 Button {
@@ -489,6 +474,8 @@ struct BulkImportReviewView: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            Spacer()
 
             // Remove pill
             Button {

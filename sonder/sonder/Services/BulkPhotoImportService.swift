@@ -241,7 +241,7 @@ final class BulkPhotoImportService {
     }
 
     /// Exclude a photo from a cluster. Moves it to the excluded pool.
-    /// Removes the source cluster if it becomes empty.
+    /// Keeps the cluster even if empty (user may still want place/rating data).
     func excludePhoto(_ photoID: String, fromClusterID: UUID) {
         guard let clusterIndex = clusters.firstIndex(where: { $0.id == fromClusterID }),
               let photoIndex = clusters[clusterIndex].photoMetadata.firstIndex(where: { $0.id == photoID })
@@ -250,9 +250,7 @@ final class BulkPhotoImportService {
         let photo = clusters[clusterIndex].photoMetadata.remove(at: photoIndex)
         excludedPhotos.append(photo)
 
-        if clusters[clusterIndex].photoMetadata.isEmpty {
-            clusters.remove(at: clusterIndex)
-        } else {
+        if !clusters[clusterIndex].photoMetadata.isEmpty {
             recalculateCentroid(at: clusterIndex)
         }
     }
