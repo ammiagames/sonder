@@ -41,7 +41,6 @@ Replaced `windowScene.windows.first` with `windowScene.keyWindow` in 2 files.
 | `Views/Share/LogShareCardStyles.swift` | 38 |
 | `Views/Trips/TripDetailView.swift` | 37 |
 | `Views/Map/UnifiedBottomCard.swift` | 29 |
-| `Views/Logging/AddDetailsView.swift` | 26 |
 
 **Fix:** Global find-and-replace `.foregroundColor(` with `.foregroundStyle(`. Both take the same `Color` argument. Test after replacing since `.foregroundStyle` also accepts `ShapeStyle` which can cause type inference ambiguity in some cases.
 
@@ -109,7 +108,6 @@ These are `calendar.date(byAdding:)!` calls which are effectively guaranteed to 
 |------|-------|-----------|
 | `Services/SyncEngine.swift` | multiple (10) | ModelContext saves, Supabase operations |
 | `Views/LogDetail/LogDetailView.swift` | multiple (5) | Log saves |
-| `Views/Logging/AddDetailsView.swift` | multiple (7) | Photo/log saves |
 | `Views/Logging/RatePlaceView.swift` | multiple (4) | Log creation |
 | `Services/PlacesCacheService.swift` | multiple (18) | Cache operations (best-effort, low priority) |
 
@@ -166,7 +164,6 @@ None remaining in Swift source files. Previously had 2 TODOs about Apple Sign-In
 | `Views/Map/ExploreMapView.swift` | 1,072 | Extract filter sheet, bottom card, pin views |
 | `Services/SyncEngine.swift` | 976 | Extract push/pull logic into separate helpers |
 | `Views/Trips/ShareTripView.swift` | 911 | Extract export styles, preview, configuration |
-| `Views/Logging/AddDetailsView.swift` | 907 | Extract photo picker, tag input sections |
 | `Views/Journal/JournalPolaroidView.swift` | 907 | Extract polaroid card, vintage effects |
 | `Views/LogDetail/LogDetailView.swift` | 868 | Extract edit form, photo section |
 | `Views/Share/LogShareCardStyles.swift` | 842 | Split into one file per share style |

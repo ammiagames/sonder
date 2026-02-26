@@ -27,8 +27,6 @@ struct SearchPlaceView: View {
     @State private var searchText = ""
     @State private var predictions: [PlacePrediction] = []
     @State private var nearbyPlaces: [NearbyPlace] = []
-    @State private var selectedDetails: PlaceDetails?
-    @State private var showPreview = false
     @State private var placeToLog: Place?
     @State private var showCustomPlace = false
     @State private var isLoadingNearby = false
@@ -93,19 +91,6 @@ struct SearchPlaceView: View {
                     }
                 }
             }
-            .navigationDestination(isPresented: $showPreview) {
-                if let details = selectedDetails {
-                    PlacePreviewView(details: details) {
-                        // Place is already cached from selectPlace(byID:)
-                        if let place = cacheService.getPlace(by: details.placeId) {
-                            placeToLog = place
-                        } else {
-                            // Fallback: cache now (shouldn't normally happen)
-                            placeToLog = cacheService.cachePlace(from: details)
-                        }
-                    }
-                }
-            }
         }
         .task {
             // Fetch logged place IDs with a targeted query instead of
@@ -144,10 +129,7 @@ struct SearchPlaceView: View {
         .fullScreenCover(item: $placeToLog) { place in
             NavigationStack {
                 RatePlaceView(place: place) { coord in
-                    // Pop the preview first (hidden under the cover)
-                    showPreview = false
                     searchText = ""
-                    // Dismiss the cover on next frame so preview is already gone
                     Task { @MainActor in
                         placeToLog = nil
                     }
@@ -238,7 +220,7 @@ struct SearchPlaceView: View {
                 sectionHeader("Cached Places")
                 ForEach(cachedResults, id: \.id) { place in
                     Button {
-                        selectPlace(byID: place.id)
+                        logPlaceDirectly(byID: place.id)
                     } label: {
                         PlaceSearchRow(
                             name: place.name,
@@ -255,7 +237,7 @@ struct SearchPlaceView: View {
         } else {
             ForEach(predictions) { prediction in
                 Button {
-                    selectPlace(byID: prediction.placeId)
+                    logPlaceDirectly(byID: prediction.placeId)
                 } label: {
                     PlaceSearchRow(
                         name: prediction.mainText,
@@ -295,7 +277,7 @@ struct SearchPlaceView: View {
             sectionHeader("Nearby")
             ForEach(filteredNearby) { place in
                 Button {
-                    selectPlace(byID: place.placeId)
+                    logPlaceDirectly(byID: place.placeId)
                 } label: {
                     PlaceSearchRow(
                         name: place.name,
@@ -373,7 +355,7 @@ struct SearchPlaceView: View {
 
                 VStack(spacing: 0) {
                     Button {
-                        selectPlace(byID: search.placeId)
+                        logPlaceDirectly(byID: search.placeId)
                     } label: {
                         RecentSearchRow(
                             name: search.name,
@@ -516,59 +498,6 @@ struct SearchPlaceView: View {
                 return
             }
 
-            isLoadingDetails = false
-            detailsError = placesService.error?.localizedDescription ?? "Failed to load place details"
-        }
-    }
-
-    /// Fetches full place details by ID and navigates to the preview screen.
-    /// Uses cached data when offline so recent searches still work without network.
-    private func selectPlace(byID placeId: String) {
-        guard !isLoadingDetails else { return }
-        Task {
-            isLoadingDetails = true
-            detailsError = nil
-
-            // Try network first
-            if let details = await placesService.getPlaceDetails(placeId: placeId) {
-                // Cache place locally (enables instant map pin if bookmarked)
-                // and add to recent searches immediately on tap
-                let place = cacheService.cachePlace(from: details)
-                cacheService.addRecentSearch(
-                    placeId: place.id,
-                    name: place.name,
-                    address: place.address
-                )
-
-                isLoadingDetails = false
-                selectedDetails = details
-                showPreview = true
-                return
-            }
-
-            // Offline fallback: use cached Place from SwiftData
-            if let cachedPlace = cacheService.getPlace(by: placeId) {
-                let offlineDetails = PlaceDetails(
-                    placeId: cachedPlace.id,
-                    name: cachedPlace.name,
-                    formattedAddress: cachedPlace.address,
-                    latitude: cachedPlace.latitude,
-                    longitude: cachedPlace.longitude,
-                    types: cachedPlace.types,
-                    photoReference: cachedPlace.photoReference,
-                    rating: nil,
-                    userRatingCount: nil,
-                    priceLevel: nil,
-                    editorialSummary: nil
-                )
-
-                isLoadingDetails = false
-                selectedDetails = offlineDetails
-                showPreview = true
-                return
-            }
-
-            // Neither network nor cache available
             isLoadingDetails = false
             detailsError = placesService.error?.localizedDescription ?? "Failed to load place details"
         }

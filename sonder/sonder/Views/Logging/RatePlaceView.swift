@@ -7,12 +7,13 @@
 
 import SwiftUI
 import SwiftData
+import PhotosUI
 import CoreLocation
 import os
 
 private let logger = Logger(subsystem: "com.sonder.app", category: "RatePlaceView")
 
-/// Screen 2: Rate the selected place
+/// Complete log creation screen: rate, add photos, note, tags, trip, date.
 struct RatePlaceView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -20,29 +21,47 @@ struct RatePlaceView: View {
     @Environment(PhotoService.self) private var photoService
     @Environment(SyncEngine.self) private var syncEngine
     @Environment(WantToGoService.self) private var wantToGoService
+    @Environment(PhotoSuggestionService.self) private var photoSuggestionService
 
     let place: Place
     let onLogComplete: (CLLocationCoordinate2D) -> Void
 
+    // Core fields
     @State private var selectedRating: Rating?
     @State private var selectedTrip: Trip?
-    @State private var showAddDetails = false
+    @State private var visitedAt = Date()
+    @State private var note = ""
+    @State private var tags: [String] = []
+
+    // Photos
+    @State private var photos: [EditPhoto] = []
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var suggestionsLoaded = false
+
+    // UI state
     @State private var showConfirmation = false
-    @State private var newLogForDetails: Log?
     @State private var showNewTripSheet = false
     @State private var newTripName = ""
     @State private var newTripCoverImage: UIImage?
-    @State private var visitedAt = Date()
     @State private var isSaving = false
     @State private var coverNudgeTrip: Trip?
     @State private var showCoverImagePicker = false
     @State private var tripSaveError: String?
+    @State private var showPlaceDetails = false
+    @FocusState private var isNoteFocused: Bool
 
+    // Data
     @State private var userTrips: [Trip] = []
     @State private var userLogs: [Log] = []
+    @State private var allPlaces: [Place] = []
     @State private var cachedAvailableTrips: [Trip] = []
+    @State private var cachedRecentTags: [String] = []
+
+    private let maxPhotos = 5
+    private let maxNoteLength = 280
 
     private var availableTrips: [Trip] { cachedAvailableTrips }
+    private var recentTagSuggestions: [String] { cachedRecentTags }
 
     private func refreshData() {
         guard let userID = authService.currentUser?.id else { return }
@@ -58,6 +77,9 @@ struct RatePlaceView: View {
         let allTrips = (try? modelContext.fetch(tripDescriptor)) ?? []
         userTrips = allTrips.filter { $0.isAccessible(by: userID) }
 
+        let placeDescriptor = FetchDescriptor<Place>()
+        allPlaces = (try? modelContext.fetch(placeDescriptor)) ?? []
+
         // Cache sorted available trips
         let latestLogByTrip: [String: Date] = userLogs.reduce(into: [:]) { map, log in
             guard let tripID = log.tripID else { return }
@@ -72,6 +94,9 @@ struct RatePlaceView: View {
             let bDate = latestLogByTrip[b.id] ?? b.createdAt
             return aDate > bDate
         }
+
+        // Cache recent tag suggestions
+        cachedRecentTags = recentTagsByUsage(logs: userLogs, userID: userID)
     }
 
     var body: some View {
@@ -99,56 +124,71 @@ struct RatePlaceView: View {
                     .padding(.horizontal, SonderSpacing.md)
                 }
 
+                sectionDivider
+                    .padding(.top, SonderSpacing.lg)
+
+                // Photos section
+                photoSection
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.top, SonderSpacing.lg)
+
+                sectionDivider
+                    .padding(.top, SonderSpacing.lg)
+
+                // Note section
+                noteSection
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.top, SonderSpacing.lg)
+
+                sectionDivider
+                    .padding(.top, SonderSpacing.lg)
+
+                // Tags section
+                tagSection
+                    .padding(.horizontal, SonderSpacing.md)
+                    .padding(.top, SonderSpacing.lg)
+
+                sectionDivider
+                    .padding(.top, SonderSpacing.lg)
+
                 // Trip section
                 tripSection
-                    .padding(.top, SonderSpacing.xl)
+                    .padding(.top, SonderSpacing.lg)
 
                 // When
                 dateSection
                     .padding(.horizontal, SonderSpacing.md)
                     .padding(.top, SonderSpacing.lg)
+                    .padding(.bottom, SonderSpacing.lg)
             }
+            .padding(.bottom, 80)
         }
+        .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
         .safeAreaInset(edge: .bottom) {
-            // Action buttons
-            VStack(spacing: SonderSpacing.sm) {
-                // Quick save button
-                Button(action: quickSave) {
-                    HStack {
-                        if isSaving {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
-                            Text("Save")
-                                .font(SonderTypography.headline)
-                        }
+            // Save button
+            Button(action: save) {
+                HStack {
+                    if isSaving {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Text("Save")
+                            .font(SonderTypography.headline)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(SonderSpacing.md)
-                    .background(selectedRating != nil ? SonderColors.terracotta : SonderColors.inkLight)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
                 }
-                .disabled(selectedRating == nil || isSaving)
-
-                // Add details button
-                Button(action: { showAddDetails = true }) {
-                    Text("Add Details")
-                        .font(SonderTypography.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(SonderSpacing.md)
-                        .background(SonderColors.warmGray)
-                        .foregroundStyle(SonderColors.inkDark)
-                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                }
-                .disabled(selectedRating == nil)
+                .frame(maxWidth: .infinity)
+                .padding(SonderSpacing.md)
+                .background(selectedRating != nil ? SonderColors.terracotta : SonderColors.inkLight)
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
             }
+            .disabled(selectedRating == nil || isSaving)
             .padding(SonderSpacing.md)
             .background(SonderColors.cream)
         }
         .background(SonderColors.cream)
-        .navigationTitle("Rate Place")
+        .navigationTitle("Log Place")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(showConfirmation ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
@@ -159,24 +199,40 @@ struct RatePlaceView: View {
                 .foregroundStyle(SonderColors.inkMuted)
             }
         }
-        .navigationDestination(isPresented: $showAddDetails) {
-            if let log = newLogForDetails {
-                LogViewScreen(
-                    log: log,
-                    place: place,
-                    isNewLog: true,
-                    onLogComplete: onLogComplete
-                )
+        .task { refreshData() }
+        .task {
+            // Eagerly load photo suggestions
+            await photoSuggestionService.requestAuthorizationIfNeeded()
+            if photoSuggestionService.authorizationLevel == .full ||
+               photoSuggestionService.authorizationLevel == .limited {
+                photoSuggestionService.onLibraryChange = { [weak photoSuggestionService] in
+                    guard let service = photoSuggestionService else { return }
+                    await service.fetchSuggestions(near: place.coordinate)
+                }
+                photoSuggestionService.startObservingLibrary()
+                await fetchPhotoSuggestions()
             }
         }
-        .task { refreshData() }
-        .onChange(of: showAddDetails) { _, isShowing in
-            if isShowing && newLogForDetails == nil {
-                newLogForDetails = createNewLog()
+        .onChange(of: selectedTrip?.id) { _, _ in
+            Task { await fetchPhotoSuggestions() }
+        }
+        .onChange(of: selectedPhotoItems) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            Task {
+                for item in newItems {
+                    guard photos.count < maxPhotos else { break }
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        photos.append(EditPhoto(source: .local(display: image, original: image)))
+                    }
+                }
+                selectedPhotoItems = []
             }
-            if !isShowing {
-                newLogForDetails = nil
-            }
+        }
+        .onDisappear {
+            photoSuggestionService.stopObservingLibrary()
+            photoSuggestionService.onLibraryChange = nil
+            photoSuggestionService.clearSuggestions()
         }
         .overlay {
             if showConfirmation {
@@ -220,6 +276,21 @@ struct RatePlaceView: View {
             }
             .ignoresSafeArea()
         }
+        .sheet(isPresented: $showPlaceDetails) {
+            NavigationStack {
+                if let cachedDetails = buildPlaceDetails() {
+                    PlacePreviewView(details: cachedDetails) {
+                        showPlaceDetails = false
+                    }
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showPlaceDetails = false }
+                                .foregroundStyle(SonderColors.inkMuted)
+                        }
+                    }
+                }
+            }
+        }
         .alert("Couldn't Save Trip", isPresented: Binding(
             get: { tripSaveError != nil },
             set: { if !$0 { tripSaveError = nil } }
@@ -257,6 +328,14 @@ struct RatePlaceView: View {
             }
 
             Spacer()
+
+            Button {
+                showPlaceDetails = true
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(SonderColors.inkMuted)
+            }
         }
     }
 
@@ -292,6 +371,179 @@ struct RatePlaceView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Photo Section
+
+    private var photoSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            HStack {
+                Text("PHOTOS")
+                    .font(SonderTypography.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(SonderColors.inkMuted)
+                    .tracking(0.5)
+
+                Spacer()
+
+                Text("\(photos.count)/\(maxPhotos)")
+                    .font(SonderTypography.caption)
+                    .foregroundStyle(SonderColors.inkLight)
+            }
+
+            // Photo suggestions (eagerly loaded)
+            PhotoSuggestionsRow(
+                thumbnailSize: 80,
+                canAddMore: photos.count < maxPhotos,
+                showEmptyState: suggestionsLoaded
+            ) { image in
+                withAnimation(.spring(duration: 0.35, bounce: 0.2)) {
+                    photos.append(EditPhoto(source: .local(display: image, original: image)))
+                }
+            }
+
+            if photos.isEmpty {
+                // Empty state: dashed-border add button
+                PhotosPicker(
+                    selection: $selectedPhotoItems,
+                    maxSelectionCount: maxPhotos,
+                    matching: .images
+                ) {
+                    HStack(spacing: SonderSpacing.xs) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 18))
+                        Text("Add Photos")
+                            .font(SonderTypography.body)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundStyle(SonderColors.terracotta)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 80)
+                    .background(SonderColors.warmGray)
+                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
+                            .strokeBorder(SonderColors.terracotta.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [6]))
+                    )
+                }
+            } else {
+                // Thumbnail strip with X buttons
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: SonderSpacing.xs) {
+                        ForEach(photos) { photo in
+                            ZStack(alignment: .topTrailing) {
+                                Group {
+                                    switch photo.source {
+                                    case .remote(let urlString):
+                                        if let url = URL(string: urlString) {
+                                            DownsampledAsyncImage(url: url, targetSize: CGSize(width: 160, height: 160)) {
+                                                Color(SonderColors.warmGray)
+                                            }
+                                        }
+                                    case .local(let display, _):
+                                        Image(uiImage: display)
+                                            .resizable()
+                                            .scaledToFill()
+                                    }
+                                }
+                                .frame(width: 80, height: 80)
+                                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+
+                                Button {
+                                    withAnimation(.spring(duration: 0.3, bounce: 0.15)) {
+                                        photos.removeAll { $0.id == photo.id }
+                                    }
+                                    SonderHaptics.impact(.light)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundStyle(.white)
+                                        .shadow(radius: 2)
+                                }
+                                .padding(2)
+                            }
+                            .transition(.asymmetric(
+                                insertion: .scale(scale: 0.5).combined(with: .opacity),
+                                removal: .scale(scale: 0.3).combined(with: .opacity)
+                            ))
+                        }
+
+                        if photos.count < maxPhotos {
+                            PhotosPicker(
+                                selection: $selectedPhotoItems,
+                                maxSelectionCount: maxPhotos - photos.count,
+                                matching: .images
+                            ) {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 20, weight: .medium))
+                                        .foregroundStyle(SonderColors.inkMuted)
+                                }
+                                .frame(width: 80, height: 80)
+                                .background(SonderColors.warmGray)
+                                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
+                                        .strokeBorder(SonderColors.inkLight.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4]))
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Note Section
+
+    private var noteSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            HStack {
+                Text("NOTE")
+                    .font(SonderTypography.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(SonderColors.inkMuted)
+                    .tracking(0.5)
+
+                Spacer()
+
+                Text("\(note.count)/\(maxNoteLength)")
+                    .font(SonderTypography.caption)
+                    .foregroundStyle(note.count > maxNoteLength ? .red : SonderColors.inkLight)
+                    .opacity(isNoteFocused ? 1 : 0)
+            }
+
+            TextField("What caught your eye?", text: $note, axis: .vertical)
+                .font(SonderTypography.body)
+                .foregroundStyle(SonderColors.inkDark)
+                .lineLimit(3...6)
+                .padding(SonderSpacing.sm)
+                .background(SonderColors.warmGray)
+                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                .focused($isNoteFocused)
+                .onChange(of: note) { _, newValue in
+                    if newValue.count > maxNoteLength {
+                        note = String(newValue.prefix(maxNoteLength))
+                    }
+                }
+        }
+    }
+
+    // MARK: - Tag Section
+
+    private var tagSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.xs) {
+            Text("TAGS")
+                .font(SonderTypography.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(SonderColors.inkMuted)
+                .tracking(0.5)
+
+            TagInputView(
+                selectedTags: $tags,
+                recentTags: recentTagSuggestions
+            )
+        }
     }
 
     // MARK: - Date Section
@@ -451,34 +703,88 @@ struct RatePlaceView: View {
         }
     }
 
-    // MARK: - Actions
+    // MARK: - Photo Suggestions
 
-    private func createNewLog() -> Log? {
-        guard let rating = selectedRating,
-              let userId = authService.currentUser?.id else { return nil }
-        let log = Log(
-            userID: userId,
-            placeID: place.id,
-            rating: rating,
-            tripID: selectedTrip?.id,
-            visitedAt: visitedAt,
-            syncStatus: .pending
+    private func fetchPhotoSuggestions() async {
+        var tripContext: PhotoSuggestionService.TripContext?
+        if let trip = selectedTrip {
+            let tripID = trip.id
+            let tripLogs = userLogs.filter { $0.tripID == tripID }
+            let logPlaceIDs = tripLogs.map(\.placeID)
+            let logCoords: [CLLocationCoordinate2D] = allPlaces
+                .filter { logPlaceIDs.contains($0.id) }
+                .map(\.coordinate)
+            tripContext = .init(logCoordinates: logCoords)
+        }
+        await photoSuggestionService.fetchSuggestions(
+            near: place.coordinate,
+            tripContext: tripContext
         )
-        modelContext.insert(log)
-        try? modelContext.save()
-        return log
+        suggestionsLoaded = true
     }
 
-    private func quickSave() {
+    // MARK: - Place Details Helper
+
+    private func buildPlaceDetails() -> PlaceDetails? {
+        PlaceDetails(
+            placeId: place.id,
+            name: place.name,
+            formattedAddress: place.address,
+            latitude: place.latitude,
+            longitude: place.longitude,
+            types: place.types,
+            photoReference: place.photoReference,
+            rating: nil,
+            userRatingCount: nil,
+            priceLevel: nil,
+            editorialSummary: nil
+        )
+    }
+
+    // MARK: - Save
+
+    private func save() {
         guard let rating = selectedRating,
               let userId = authService.currentUser?.id else { return }
 
         isSaving = true
 
+        let logID = UUID().uuidString.lowercased()
+
+        // Queue photos for background upload, get placeholder URLs immediately
+        var photoURLs: [String] = []
+        let localImages = photos.compactMap { photo -> UIImage? in
+            switch photo.source {
+            case .local(_, let original): return original
+            case .remote: return nil
+            }
+        }
+        if !localImages.isEmpty {
+            let engine = syncEngine
+            photoURLs = photoService.queueBatchUpload(
+                images: localImages,
+                for: userId,
+                logID: logID
+            ) { results in
+                engine.replacePendingPhotoURLs(logID: logID, uploadResults: results)
+            }
+        }
+
+        // Strip whitespace before persisting
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTags = tags.compactMap { tag -> String? in
+            let t = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+
         let log = Log(
+            id: logID,
             userID: userId,
             placeID: place.id,
             rating: rating,
+            photoURLs: photoURLs,
+            note: trimmedNote.isEmpty ? nil : trimmedNote,
+            tags: trimmedTags,
             tripID: selectedTrip?.id,
             visitedAt: visitedAt,
             syncStatus: .pending
@@ -494,7 +800,17 @@ struct RatePlaceView: View {
             Task {
                 // Remove from Want to Go if bookmarked
                 await wantToGoService.removeBookmarkIfLoggedPlace(placeID: place.id, userID: userId)
-                await syncEngine.syncNow()
+                if localImages.isEmpty {
+                    await syncEngine.syncNow()
+                }
+            }
+
+            // Show cover nudge if trip has no cover and user didn't add photos
+            if let trip = selectedTrip, photos.isEmpty {
+                let tripHasNoCover = trip.coverPhotoURL == nil
+                if tripHasNoCover {
+                    coverNudgeTrip = trip
+                }
             }
 
             showConfirmation = true

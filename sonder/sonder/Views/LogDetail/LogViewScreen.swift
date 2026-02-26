@@ -13,7 +13,7 @@ import os
 private let logger = Logger(subsystem: "com.sonder.app", category: "LogViewScreen")
 
 /// A photo in the edit strip — either a remote URL or a local image with its original.
-private struct EditPhoto: Identifiable {
+struct EditPhoto: Identifiable {
     let id = UUID()
     var source: Source
     var cropState: CropState?
@@ -49,8 +49,6 @@ struct LogViewScreen: View {
     let log: Log
     let place: Place
     var onDelete: (() -> Void)?
-    var isNewLog: Bool = false
-    var onLogComplete: ((CLLocationCoordinate2D) -> Void)? = nil
     /// Reports edit-mode state to the parent so it can block pop-to-root while editing.
     var externalIsEditing: Binding<Bool>? = nil
 
@@ -113,12 +111,6 @@ struct LogViewScreen: View {
     @State private var showNewTripAlert = false
     @State private var newTripName = ""
     @State private var showAllTrips = false
-
-    // New-log mode
-    @State private var newLogSaved = false
-    @State private var showNewLogConfirmation = false
-    @State private var coverNudgeTrip: Trip?
-    @State private var showCoverImagePicker = false
 
     private let maxPhotos = 5
     private let maxNoteLength = 280
@@ -238,9 +230,6 @@ struct LogViewScreen: View {
         mainContentBody
             .task { refreshQueryData() }
             .onAppear {
-                if isNewLog && !isEditing {
-                    enterEditMode()
-                }
                 withAnimation(.easeOut(duration: 0.6).delay(0.2)) {
                     contentAppeared = true
                 }
@@ -248,9 +237,9 @@ struct LogViewScreen: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(isEditing)
-            .toolbar(showNewLogConfirmation ? .hidden : .automatic, for: .navigationBar)
+            .toolbar(.automatic, for: .navigationBar)
             .toolbar { toolbarContent }
-            .preference(key: HideTabBarGradientKey.self, value: (isEditing && (hasChanges || isNewLog)) || showSavedToast)
+            .preference(key: HideTabBarGradientKey.self, value: (isEditing && hasChanges) || showSavedToast)
             .preference(key: HideSonderTabBarKey.self, value: isNoteFocused)
             .overlay { loadingOverlay }
             .modifier(ViewModeSheets(
@@ -286,58 +275,6 @@ struct LogViewScreen: View {
                     cropSourceState = nil
                 }
             ))
-            .overlay {
-                if showNewLogConfirmation {
-                    LogConfirmationView(
-                        onDismiss: {
-                            showNewLogConfirmation = false
-                            onLogComplete?(place.coordinate)
-                        },
-                        tripName: coverNudgeTrip?.name,
-                        onAddCover: {
-                            showNewLogConfirmation = false
-                            showCoverImagePicker = true
-                        },
-                        placeName: place.name,
-                        ratingEmoji: log.rating.emoji
-                    )
-                    .ignoresSafeArea()
-                }
-            }
-            .sheet(isPresented: $showCoverImagePicker) {
-                EditableImagePicker { image in
-                    showCoverImagePicker = false
-                    if let trip = coverNudgeTrip, let userId = authService.currentUser?.id {
-                        let tripID = trip.id
-                        let engine = syncEngine
-                        Task {
-                            if let url = await photoService.uploadPhoto(image, for: userId) {
-                                engine.updateTripCoverPhoto(tripID: tripID, url: url)
-                            }
-                        }
-                    }
-                    coverNudgeTrip = nil
-                    onLogComplete?(place.coordinate)
-                } onCancel: {
-                    showCoverImagePicker = false
-                    coverNudgeTrip = nil
-                    onLogComplete?(place.coordinate)
-                }
-                .ignoresSafeArea()
-            }
-            .onDisappear {
-                if isNewLog && !newLogSaved {
-                    // Fetch fresh by ID to avoid stale-object crash if sync already modified/deleted it
-                    let logID = log.id
-                    let descriptor = FetchDescriptor<Log>(
-                        predicate: #Predicate { $0.id == logID }
-                    )
-                    if let freshLog = try? modelContext.fetch(descriptor).first {
-                        modelContext.delete(freshLog)
-                        try? modelContext.save()
-                    }
-                }
-            }
             .onChange(of: editableFieldsSnapshot) { _, _ in
                 if isEditing && editModeInitialized {
                     hasChanges = true
@@ -382,7 +319,7 @@ struct LogViewScreen: View {
             .background(SonderColors.cream)
             .scrollContentBackground(.hidden)
 
-            if isEditing || showSavedToast || (isNewLog && !showNewLogConfirmation) {
+            if isEditing || showSavedToast {
                 saveToastOverlay
             }
         }
@@ -391,7 +328,7 @@ struct LogViewScreen: View {
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
                     // Swipe to the left (negative width) to dismiss edit mode if no changes
-                    if isEditing && !hasChanges && !isNewLog {
+                    if isEditing && !hasChanges {
                         if value.translation.width < -100 && abs(value.translation.height) < 50 {
                             SonderHaptics.impact(.light)
                             exitEditMode()
@@ -498,26 +435,23 @@ struct LogViewScreen: View {
     private var editPhotoStrip: some View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
             HStack {
-                Text("Photos")
-                    .font(SonderTypography.headline)
-                    .foregroundStyle(SonderColors.inkDark)
+                Text("PHOTOS")
+                    .font(SonderTypography.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(SonderColors.inkMuted)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
 
-                if editTotalPhotoCount < maxPhotos {
+                if editTotalPhotoCount < maxPhotos && showSuggestions {
                     Button {
                         withAnimation(.easeInOut(duration: 0.25)) {
-                            showSuggestions.toggle()
-                        }
-                        if showSuggestions && !suggestionsLoaded {
-                            Task { await fetchEditPhotoSuggestions() }
+                            showSuggestions = false
                         }
                     } label: {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(showSuggestions ? .white : SonderColors.terracotta)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(showSuggestions ? SonderColors.terracotta : SonderColors.terracotta.opacity(0.1))
-                            .clipShape(Capsule())
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(SonderColors.inkMuted)
+                            .padding(4)
                     }
                 }
 
@@ -799,11 +733,11 @@ struct LogViewScreen: View {
 
     @ViewBuilder
     private var editPanelContent: some View {
-        editPhotoStrip
-        sectionDivider
         editPlaceSection
         sectionDivider
         editRatingSection
+        sectionDivider
+        editPhotoStrip
         sectionDivider
         editNoteSection
         sectionDivider
@@ -812,9 +746,7 @@ struct LogViewScreen: View {
         editTripSection
         sectionDivider
         editMetaSection
-        if !isNewLog {
-            editDeleteSection
-        }
+        editDeleteSection
     }
 
     // MARK: - View-mode Sections
@@ -938,47 +870,62 @@ struct LogViewScreen: View {
 
     private var editRatingSection: some View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            Text("Rating")
-                .font(SonderTypography.headline)
-                .foregroundStyle(SonderColors.inkDark)
+            Text("RATING")
+                .font(SonderTypography.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
 
-            HStack(spacing: SonderSpacing.sm) {
+            HStack(spacing: SonderSpacing.md) {
                 ForEach(Rating.allCases, id: \.self) { ratingOption in
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            editRating = ratingOption
-                        }
-                    } label: {
-                        VStack(spacing: SonderSpacing.xxs) {
-                            Text(ratingOption.emoji)
-                                .font(.system(size: 32))
-
-                            Text(ratingOption.displayName)
-                                .font(SonderTypography.caption)
-                                .fontWeight(.medium)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, SonderSpacing.sm)
-                        .background(editRating == ratingOption ? SonderColors.terracotta.opacity(0.15) : SonderColors.warmGray)
-                        .foregroundStyle(editRating == ratingOption ? SonderColors.terracotta : SonderColors.inkDark)
-                        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
-                                .stroke(editRating == ratingOption ? SonderColors.terracotta : Color.clear, lineWidth: 2)
-                        )
-                    }
-                    .buttonStyle(.plain)
+                    editRatingCircle(ratingOption)
                 }
             }
         }
     }
 
+    private func editRatingCircle(_ rating: Rating) -> some View {
+        let isSelected = editRating == rating
+        let color = SonderColors.pinColor(for: rating)
+
+        return Button {
+            SonderHaptics.impact(.medium)
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                editRating = rating
+            }
+        } label: {
+            VStack(spacing: SonderSpacing.xs) {
+                Text(rating.emoji)
+                    .font(.system(size: 32))
+                    .frame(width: 54, height: 54)
+                    .background(isSelected ? color.opacity(0.2) : SonderColors.warmGray)
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(isSelected ? color : .clear, lineWidth: 2)
+                    )
+                    .scaleEffect(isSelected ? 1.1 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: editRating)
+
+                Text(rating.displayName)
+                    .font(SonderTypography.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(SonderColors.inkDark)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
     private var editNoteSection: some View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
             HStack {
-                Text("Note")
-                    .font(SonderTypography.headline)
-                    .foregroundStyle(SonderColors.inkDark)
+                Text("NOTE")
+                    .font(SonderTypography.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(SonderColors.inkMuted)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
 
                 Spacer()
 
@@ -1006,9 +953,12 @@ struct LogViewScreen: View {
 
     private var editTagsSection: some View {
         VStack(alignment: .leading, spacing: SonderSpacing.xs) {
-            Text("Tags")
-                .font(SonderTypography.headline)
-                .foregroundStyle(SonderColors.inkDark)
+            Text("TAGS")
+                .font(SonderTypography.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
 
             TagInputView(
                 selectedTags: $editTags,
@@ -1019,9 +969,12 @@ struct LogViewScreen: View {
 
     private var editTripSection: some View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            Text("Trip")
-                .font(SonderTypography.headline)
-                .foregroundStyle(SonderColors.inkDark)
+            Text("TRIP")
+                .font(SonderTypography.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: SonderSpacing.xs) {
@@ -1174,7 +1127,7 @@ struct LogViewScreen: View {
                 .background(SonderColors.warmGray)
                 .clipShape(Capsule())
                 .shadow(color: .black.opacity(SonderShadows.softOpacity), radius: SonderShadows.softRadius, y: SonderShadows.softY)
-            } else if hasChanges || isNewLog {
+            } else if hasChanges {
                 Button {
                     save()
                 } label: {
@@ -1205,25 +1158,17 @@ struct LogViewScreen: View {
         if isEditing {
             ToolbarItem(placement: .navigation) {
                 Button {
-                    if isNewLog {
-                        if hasChanges {
-                            showDiscardAlert = true
-                        } else {
-                            cancelNewLog()
-                        }
+                    if hasChanges {
+                        showDiscardAlert = true
                     } else {
-                        if hasChanges {
-                            showDiscardAlert = true
-                        } else {
-                            exitEditMode()
-                        }
+                        exitEditMode()
                     }
                 } label: {
                     Text("Cancel")
                         .foregroundStyle(SonderColors.inkMuted)
                 }
             }
-            if !isNewLog && !hasChanges {
+            if !hasChanges {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         exitEditMode()
@@ -1294,7 +1239,7 @@ struct LogViewScreen: View {
         hasChanges = false
         showSavedToast = false
         editModeInitialized = false
-        showSuggestions = false
+        showSuggestions = true
         suggestionsLoaded = false
 
         withAnimation(.easeInOut(duration: 0.35)) {
@@ -1306,6 +1251,8 @@ struct LogViewScreen: View {
             try? await Task.sleep(for: .milliseconds(100))
             editModeInitialized = true
         }
+        // Eagerly fetch photo suggestions
+        Task { await fetchEditPhotoSuggestions() }
     }
 
     private func exitEditMode() {
@@ -1316,19 +1263,9 @@ struct LogViewScreen: View {
         suggestionsLoaded = false
         editPhotos = []
         externalIsEditing?.wrappedValue = false
-        if isNewLog {
-            // For new logs, exiting edit mode means discarding — dismiss to trigger onDisappear cleanup
-            dismiss()
-        } else {
-            withAnimation(.easeInOut(duration: 0.35)) {
-                isEditing = false
-            }
+        withAnimation(.easeInOut(duration: 0.35)) {
+            isEditing = false
         }
-    }
-
-    private func cancelNewLog() {
-        editPhotos = []
-        dismiss()
     }
 
     // MARK: - Actions
@@ -1423,46 +1360,28 @@ struct LogViewScreen: View {
             // Persist crop states for next edit session
             persistCropStates(finalURLs: finalPhotoURLs)
 
-            if isNewLog {
-                newLogSaved = true
+            editPhotos = []
+            hasChanges = false
 
-                editPhotos = []
-                hasChanges = false
+            SonderHaptics.notification(.success)
 
-                SonderHaptics.notification(.success)
+            // Exit edit mode and show toast simultaneously
+            isNoteFocused = false
+            editModeInitialized = false
+            externalIsEditing?.wrappedValue = false
+            withAnimation(.easeInOut(duration: 0.35)) {
+                isEditing = false
+                showSavedToast = true
+            }
+            savedToastTask?.cancel()
+            savedToastTask = Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                withAnimation { showSavedToast = false }
+            }
 
-                // Remove WantToGo bookmark
-                Task { await wantToGoService.removeBookmarkIfLoggedPlace(placeID: place.id, userID: userId) }
-
-                if imagesToUpload.isEmpty {
-                    Task { await syncEngine.syncNow() }
-                }
-
-                showNewLogConfirmation = true
-            } else {
-                editPhotos = []
-                hasChanges = false
-
-                SonderHaptics.notification(.success)
-
-                // Exit edit mode and show toast simultaneously
-                isNoteFocused = false
-                editModeInitialized = false
-                externalIsEditing?.wrappedValue = false
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    isEditing = false
-                    showSavedToast = true
-                }
-                savedToastTask?.cancel()
-                savedToastTask = Task {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    guard !Task.isCancelled else { return }
-                    withAnimation { showSavedToast = false }
-                }
-
-                if imagesToUpload.isEmpty {
-                    Task { await syncEngine.syncNow() }
-                }
+            if imagesToUpload.isEmpty {
+                Task { await syncEngine.syncNow() }
             }
         } catch {
             logger.error("Failed to save log: \(error.localizedDescription)")
@@ -1728,5 +1647,67 @@ private struct EditModeSheets: ViewModifier {
             } message: {
                 Text("Enter a name for your trip")
             }
+    }
+}
+
+// MARK: - All Trips Picker Sheet
+
+struct AllTripsPickerSheet: View {
+    let trips: [Trip]
+    @Binding var selectedTrip: Trip?
+    @Binding var isPresented: Bool
+    @State private var searchText = ""
+
+    private var filteredTrips: [Trip] {
+        if searchText.isEmpty { return trips }
+        return trips.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Button {
+                    selectedTrip = nil
+                    isPresented = false
+                } label: {
+                    HStack {
+                        Text("None")
+                            .foregroundStyle(SonderColors.inkDark)
+                        Spacer()
+                        if selectedTrip == nil {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(SonderColors.terracotta)
+                        }
+                    }
+                }
+
+                ForEach(filteredTrips, id: \.id) { trip in
+                    Button {
+                        selectedTrip = trip
+                        isPresented = false
+                    } label: {
+                        HStack {
+                            Text(trip.name)
+                                .foregroundStyle(SonderColors.inkDark)
+                            Spacer()
+                            if selectedTrip?.id == trip.id {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(SonderColors.terracotta)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("All Trips")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "Search trips")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        isPresented = false
+                    }
+                }
+            }
+        }
     }
 }

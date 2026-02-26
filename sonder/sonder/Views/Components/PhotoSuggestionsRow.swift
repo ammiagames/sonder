@@ -2,7 +2,7 @@
 //  PhotoSuggestionsRow.swift
 //  sonder
 //
-//  Shared photo suggestion strip used by both AddDetailsView and LogViewScreen.
+//  Shared photo suggestion strip used by RatePlaceView and LogViewScreen.
 //
 
 import SwiftUI
