@@ -38,7 +38,8 @@ struct ProfileView: View {
     @State private var showSettings = false
     @State private var showEditProfile = false
     @State private var showShareProfile = false
-@State private var profileStats: ProfileStats?
+    @State private var profileStats: ProfileStats?
+    @State private var cardStyle: ProfileCardStyle = .classic
     @State private var activeDestination: ProfileDestination?
 
     @Binding var selectedTab: Int
@@ -145,6 +146,9 @@ struct ProfileView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: SonderSpacing.lg) {
+                    // Card style picker (exploration)
+                    ProfileCardStylePicker(style: $cardStyle)
+
                     // Profile header (avatar + username + bio + archetype badge)
                     profileHeader
 
@@ -187,6 +191,7 @@ struct ProfileView: View {
                 .padding(SonderSpacing.md)
                 .padding(.bottom, 80)
             }
+            .environment(\.profileCardStyle, cardStyle)
             .background(SonderColors.cream)
             .scrollContentBackground(.hidden)
             .navigationTitle("Your Journal")
@@ -502,9 +507,7 @@ struct ProfileView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(SonderColors.inkLight)
             }
-            .padding(SonderSpacing.md)
-            .background(SonderColors.warmGray)
-            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+            .profileSectionCard(tint: SonderColors.dustyRose)
         }
         .buttonStyle(.plain)
     }
@@ -708,9 +711,7 @@ struct ProfileView: View {
                 .italic()
                 .padding(.top, SonderSpacing.xxs)
         }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+        .profileSectionCard(tint: SonderColors.ochre)
     }
 
     private func ratingLegendItem(emoji: String, label: String, count: Int, color: Color) -> some View {
@@ -748,9 +749,7 @@ struct ProfileView: View {
                 }
             }
         }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+        .profileSectionCard(tint: SonderColors.sage)
     }
 
     private func tagChip(tag: String, count: Int, isTop: Bool, maxCount: Int) -> some View {
@@ -872,9 +871,7 @@ struct ProfileView: View {
                 }
             }
         }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+        .profileSectionCard(tint: SonderColors.warmBlue, isFullBleed: true)
     }
 
     private func cityPhotoFallback(index: Int) -> some View {

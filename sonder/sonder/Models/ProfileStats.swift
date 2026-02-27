@@ -101,6 +101,24 @@ struct CategoryStat: Identifiable {
     let color: Color
 }
 
+// MARK: - Taste Match Result
+
+struct TasteMatchResult {
+    let overallScore: Double    // 0...1
+    let displayPercentage: Int  // 0...100
+    let label: String           // "Taste Twin", "Kindred Spirit", etc.
+
+    static func label(for percentage: Int) -> String {
+        switch percentage {
+        case 80...100: return "Taste Twin"
+        case 60...79:  return "Kindred Spirit"
+        case 40...59:  return "Complementary"
+        case 20...39:  return "Different Vibes"
+        default:       return "Opposite Palates"
+        }
+    }
+}
+
 // MARK: - Rating Distribution
 
 struct RatingDistribution {
