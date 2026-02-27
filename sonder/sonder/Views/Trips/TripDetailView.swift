@@ -197,36 +197,6 @@ struct TripDetailView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if isOwner {
-                    Button {
-                        showBulkImport = true
-                    } label: {
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .foregroundStyle(SonderColors.terracotta)
-                            .toolbarIcon()
-                    }
-                    .accessibilityLabel("Import from Photos")
-
-                    Button {
-                        showReorder = true
-                    } label: {
-                        Image(systemName: "arrow.up.arrow.down")
-                            .foregroundStyle(tripLogs.count >= 2 ? SonderColors.terracotta : SonderColors.inkLight)
-                            .toolbarIcon()
-                    }
-                    .disabled(tripLogs.isEmpty)
-                    .accessibilityLabel("Manage stops")
-
-                    Button {
-                        showEditTrip = true
-                    } label: {
-                        Image(systemName: "pencil")
-                            .foregroundStyle(SonderColors.terracotta)
-                            .toolbarIcon()
-                    }
-                    .accessibilityLabel("Edit trip")
-                }
-
                 Button {
                     showShareTrip = true
                 } label: {
@@ -235,6 +205,34 @@ struct TripDetailView: View {
                         .toolbarIcon()
                 }
                 .accessibilityLabel("Share trip")
+
+                if isOwner {
+                    Menu {
+                        Button {
+                            showEditTrip = true
+                        } label: {
+                            Label("Edit Trip", systemImage: "pencil")
+                        }
+
+                        Button {
+                            showBulkImport = true
+                        } label: {
+                            Label("Import Photos", systemImage: "photo.on.rectangle.angled")
+                        }
+
+                        Button {
+                            showReorder = true
+                        } label: {
+                            Label("Reorder Stops", systemImage: "arrow.up.arrow.down")
+                        }
+                        .disabled(tripLogs.count < 2)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundStyle(SonderColors.terracotta)
+                            .toolbarIcon()
+                    }
+                    .accessibilityLabel("More options")
+                }
             }
         }
         .sheet(isPresented: $showEditTrip) {
