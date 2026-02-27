@@ -27,7 +27,7 @@ struct BulkImportReviewView: View {
     @State private var inlineSearchLoading: Bool = false
     @FocusState private var inlineSearchFocused: Bool
 
-    // Drag-and-drop state
+    // Drag-and-drop state (system drag for unlocated/excluded → cluster)
     @State private var dropTargetClusterID: UUID?
 
     // Collapsible cards
@@ -36,7 +36,10 @@ struct BulkImportReviewView: View {
     // Photo selection state
     @State private var selectedPhotoID: String? = nil
     @State private var selectedPhotoClusterID: UUID? = nil
-    @State private var dropTargetPhotoID: String? = nil
+
+    // Custom photo drag state (long-press drag with fun physics)
+    @State private var activeDrag: PhotoDrag? = nil
+    @State private var clusterFrames: [UUID: CGRect] = [:]
 
     @State private var savingTask: Task<Void, Never>?
 
@@ -77,9 +80,15 @@ struct BulkImportReviewView: View {
                 .padding(.bottom, 100) // Room for floating button
             }
             .background(SonderColors.cream)
+            .onPreferenceChange(ClusterFramePreference.self) { clusterFrames = $0 }
 
             // Floating save button
             saveButton
+
+            // Floating drag overlay — follows finger with spring physics
+            if let drag = activeDrag {
+                dragOverlay(for: drag)
+            }
         }
     }
 
@@ -166,10 +175,7 @@ struct BulkImportReviewView: View {
             .foregroundStyle(SonderColors.terracotta)
             .frame(maxWidth: .infinity)
             .padding(.vertical, SonderSpacing.md)
-            .background(
-                RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
-                    .strokeBorder(SonderColors.terracotta, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-            )
+            .dashedBorder(color: SonderColors.terracotta, lineWidth: 1.5, dash: [6, 4])
         }
         .buttonStyle(.plain)
     }
@@ -280,10 +286,19 @@ struct BulkImportReviewView: View {
         .padding(SonderSpacing.md)
         .background(cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: ClusterFramePreference.self,
+                    value: [cluster.id: geo.frame(in: .global)]
+                )
+            }
+        )
         .overlay(
             RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
                 .strokeBorder(
-                    dropTargetClusterID == cluster.id ? SonderColors.terracotta : Color(white: 0, opacity: 0),
+                    (dropTargetClusterID == cluster.id || dragTargetClusterID == cluster.id)
+                        ? SonderColors.terracotta : Color(white: 0, opacity: 0),
                     style: StrokeStyle(lineWidth: 2, dash: [6, 4])
                 )
         )
@@ -377,15 +392,13 @@ struct BulkImportReviewView: View {
                     Spacer()
                 }
                 .frame(height: 64)
-                .background(
-                    RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
-                        .strokeBorder(SonderColors.inkLight, style: StrokeStyle(lineWidth: 1, dash: [5, 3]))
-                )
+                .dashedBorder(color: SonderColors.inkLight, cornerRadius: SonderSpacing.radiusSm, dash: [5, 3])
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: SonderSpacing.xs) {
                         ForEach(Array(cluster.photoMetadata.enumerated()), id: \.element.id) { index, photo in
                             let isSelected = selectedPhotoID == photo.id && selectedPhotoClusterID == cluster.id
+                            let isBeingDragged = activeDrag?.photoID == photo.id
 
                             PhotoThumbnailView(assetID: photo.id, photoSuggestionService: photoSuggestionService)
                                 .frame(width: 64, height: 64)
@@ -409,6 +422,8 @@ struct BulkImportReviewView: View {
                                             lineWidth: 2.5
                                         )
                                 )
+                                .opacity(isBeingDragged ? 0.3 : 1.0)
+                                .scaleEffect(isBeingDragged ? 0.9 : 1.0)
                                 .onTapGesture {
                                     withAnimation(.easeInOut(duration: 0.15)) {
                                         if isSelected {
@@ -420,24 +435,33 @@ struct BulkImportReviewView: View {
                                     }
                                     SonderHaptics.impact(.light)
                                 }
-                                .draggable(photo.id)
-                                .dropDestination(for: String.self) { droppedIDs, _ in
-                                    guard let droppedID = droppedIDs.first,
-                                          droppedID != photo.id,
-                                          let fromIndex = cluster.photoMetadata.firstIndex(where: { $0.id == droppedID })
-                                    else { return false }
-                                    withAnimation {
-                                        importService.reorderPhoto(in: cluster.id, fromIndex: fromIndex, toIndex: index)
-                                    }
-                                    SonderHaptics.notification(.success)
-                                    return true
-                                } isTargeted: { targeted in
-                                    if targeted {
-                                        dropTargetPhotoID = photo.id
-                                    } else if dropTargetPhotoID == photo.id {
-                                        dropTargetPhotoID = nil
-                                    }
-                                }
+                                .gesture(
+                                    LongPressGesture(minimumDuration: 0.25)
+                                        .sequenced(before: DragGesture(coordinateSpace: .global))
+                                        .onChanged { value in
+                                            switch value {
+                                            case .second(true, let drag):
+                                                guard let drag else { return }
+                                                if activeDrag == nil {
+                                                    clearPhotoSelection()
+                                                    activeDrag = PhotoDrag(
+                                                        photoID: photo.id,
+                                                        sourceClusterID: cluster.id,
+                                                        position: drag.location,
+                                                        startPosition: drag.startLocation
+                                                    )
+                                                    SonderHaptics.impact(.medium)
+                                                }
+                                                withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.6)) {
+                                                    activeDrag?.position = drag.location
+                                                }
+                                            default: break
+                                            }
+                                        }
+                                        .onEnded { _ in
+                                            handlePhotoDragEnd()
+                                        }
+                                )
                         }
                     }
                 }
@@ -712,6 +736,57 @@ struct BulkImportReviewView: View {
         selectedPhotoClusterID = nil
     }
 
+    // MARK: - Custom Photo Drag
+
+    /// The cluster ID the drag is currently hovering over (not the source).
+    private var dragTargetClusterID: UUID? {
+        guard let drag = activeDrag else { return nil }
+        return clusterFrames.first(where: { $0.value.contains(drag.position) })?.key
+    }
+
+    /// Floating overlay that follows the finger with spring physics.
+    @ViewBuilder
+    private func dragOverlay(for drag: PhotoDrag) -> some View {
+        let rotation = {
+            let dx = drag.position.x - drag.startPosition.x
+            return max(-10, min(10, dx / 15))
+        }()
+
+        PhotoThumbnailView(assetID: drag.photoID, photoSuggestionService: photoSuggestionService)
+            .frame(width: 72, height: 72)
+            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
+            .overlay(
+                RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
+                    .strokeBorder(.white.opacity(0.7), lineWidth: 2)
+            )
+            .rotationEffect(.degrees(rotation))
+            .scaleEffect(1.12)
+            .shadow(color: .black.opacity(0.25), radius: 12, y: 5)
+            .position(drag.position)
+            .allowsHitTesting(false)
+            .ignoresSafeArea()
+    }
+
+    /// Resolve where a dragged photo was dropped and perform the action.
+    private func handlePhotoDragEnd() {
+        guard let drag = activeDrag else { return }
+
+        if let targetClusterID = clusterFrames.first(where: { $0.value.contains(drag.position) })?.key,
+           targetClusterID != drag.sourceClusterID {
+            // Move to a different cluster
+            withAnimation {
+                importService.movePhotos(photoIDs: Set([drag.photoID]), toClusterID: targetClusterID)
+            }
+            SonderHaptics.notification(.success)
+        }
+        // Same cluster or outside any cluster — cancel (no reorder needed,
+        // intra-cluster reorder uses tap-select + Cover action bar)
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            activeDrag = nil
+        }
+    }
+
     private func placeChip(nearbyPlace: NearbyPlace, isSelected: Bool, clusterID: UUID) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -783,10 +858,7 @@ struct BulkImportReviewView: View {
                         PhotoThumbnailView(assetID: photo.id, photoSuggestionService: photoSuggestionService)
                             .frame(width: 52, height: 52)
                             .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
-                                    .strokeBorder(SonderColors.inkLight, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
-                            )
+                            .dashedBorder(color: SonderColors.inkLight, cornerRadius: SonderSpacing.radiusSm, dash: [3, 2])
                             .overlay(alignment: .topTrailing) {
                                 Button {
                                     withAnimation {
@@ -919,6 +991,24 @@ struct BulkImportReviewView: View {
     private var isSaving: Bool {
         if case .saving = importService.state { return true }
         return false
+    }
+}
+
+// MARK: - Custom Photo Drag Types
+
+/// Tracks an in-progress photo drag gesture.
+private struct PhotoDrag {
+    let photoID: String
+    let sourceClusterID: UUID
+    var position: CGPoint
+    let startPosition: CGPoint
+}
+
+/// Preference key for collecting cluster card frames (for drop-target detection).
+private struct ClusterFramePreference: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
     }
 }
 
