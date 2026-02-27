@@ -476,6 +476,7 @@ private struct OnboardingUserRow: View {
 
     @State private var isFollowing = false
     @State private var isLoading = false
+    @State private var followTask: Task<Void, Never>?
 
     var body: some View {
         HStack(spacing: SonderSpacing.sm) {
@@ -566,23 +567,28 @@ private struct OnboardingUserRow: View {
 
     private func toggleFollow() {
         guard let currentUserID = authService.currentUser?.id else { return }
+        guard !isLoading else { return } // Prevent double-tap
         isLoading = true
 
-        Task {
+        followTask?.cancel()
+        followTask = Task {
             do {
                 if isFollowing {
                     try await socialService.unfollowUser(userID: user.id, currentUserID: currentUserID)
                 } else {
                     try await socialService.followUser(userID: user.id, currentUserID: currentUserID)
                 }
+                guard !Task.isCancelled else { return }
                 isFollowing.toggle()
                 onFollowChanged(isFollowing)
 
                 SonderHaptics.impact(.light)
             } catch {
-                logger.error("Follow error: \(error.localizedDescription)")
+                if !Task.isCancelled {
+                    logger.error("Follow error: \(error.localizedDescription)")
+                }
             }
-            isLoading = false
+            if !Task.isCancelled { isLoading = false }
         }
     }
 }

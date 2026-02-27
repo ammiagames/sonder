@@ -99,6 +99,7 @@ struct ExploreMapView: View {
     @State private var wtgGeneration: UInt64 = 0
     @State private var pinDropCleanupTask: Task<Void, Never>?
     @State private var removalCleanupTasks: [Task<Void, Never>] = []
+    @State private var fetchDetailsTask: Task<Void, Never>?
     @State private var previousWTGPlaceIDs: Set<String> = []
 
     /// When set to true (by ProfileView), focuses the map on personal places only
@@ -1277,12 +1278,14 @@ struct ExploreMapView: View {
     }
 
     private func fetchPlaceDetails(placeID: String) {
-        Task {
+        fetchDetailsTask?.cancel()
+        fetchDetailsTask = Task {
             isLoadingDetails = true
             if let details = await placesService.getPlaceDetails(placeId: placeID) {
+                guard !Task.isCancelled else { return }
                 selectedPlaceDetails = details
             }
-            isLoadingDetails = false
+            if !Task.isCancelled { isLoadingDetails = false }
         }
     }
 

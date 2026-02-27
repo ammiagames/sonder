@@ -46,6 +46,10 @@ struct WantToGoListView: View {
     @State private var cachedCityGroups: [String: [WantToGoWithPlace]] = [:]
     @State private var cachedSortedCities: [String] = []
 
+    // Task tracking for cancellation
+    @State private var selectPlaceTask: Task<Void, Never>?
+    @State private var loadItemsTask: Task<Void, Never>?
+
     // MARK: - List management state (moved from SavedListsView)
 
     @State private var showCreateSheet = false
@@ -123,7 +127,8 @@ struct WantToGoListView: View {
             rebuildCityGroupCache()
         }
         .onChange(of: selectedListID) { _, _ in
-            Task { await loadItems() }
+            loadItemsTask?.cancel()
+            loadItemsTask = Task { await loadItems() }
         }
         .onChange(of: wantToGoService.items.count) { _, _ in
             refreshItemsFromLocal()
@@ -437,14 +442,16 @@ struct WantToGoListView: View {
     // MARK: - Actions
 
     private func selectPlace(_ item: WantToGoWithPlace) {
-        Task {
+        selectPlaceTask?.cancel()
+        selectPlaceTask = Task {
             isLoadingDetails = true
 
             if let details = await placesService.getPlaceDetails(placeId: item.place.id) {
+                guard !Task.isCancelled else { return }
                 selectedDetails = details
             }
 
-            isLoadingDetails = false
+            if !Task.isCancelled { isLoadingDetails = false }
         }
     }
 

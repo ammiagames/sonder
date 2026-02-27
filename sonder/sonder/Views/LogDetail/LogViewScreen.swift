@@ -94,6 +94,7 @@ struct LogViewScreen: View {
     @State private var hasChanges = false
     @State private var showSavedToast = false
     @State private var savedToastTask: Task<Void, Never>?
+    @State private var fetchDetailsTask: Task<Void, Never>?
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var highlightedPhotoIndex = 0
     @FocusState private var isNoteFocused: Bool
@@ -1592,12 +1593,14 @@ struct LogViewScreen: View {
     // MARK: - Fetch Place Details
 
     private func fetchPlaceDetails() {
-        Task {
+        fetchDetailsTask?.cancel()
+        fetchDetailsTask = Task {
             isLoadingDetails = true
             if let details = await placesService.getPlaceDetails(placeId: place.id) {
+                guard !Task.isCancelled else { return }
                 selectedPlaceDetails = details
             }
-            isLoadingDetails = false
+            if !Task.isCancelled { isLoadingDetails = false }
         }
     }
 }

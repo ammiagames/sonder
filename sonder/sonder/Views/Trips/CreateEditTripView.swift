@@ -43,6 +43,8 @@ struct CreateEditTripView: View {
     @State private var showDateRangePicker = false
     @State private var showDeleteAlert = false
     @State private var showBulkImport = false
+    @State private var uploadTask: Task<Void, Never>?
+    @State private var saveTask: Task<Void, Never>?
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
@@ -216,7 +218,8 @@ struct CreateEditTripView: View {
                 EditableImagePicker { image in
                     selectedImage = image
                     showImagePicker = false
-                    Task { await uploadSelectedImage(image) }
+                    uploadTask?.cancel()
+                    uploadTask = Task { await uploadSelectedImage(image) }
                 } onCancel: {
                     showImagePicker = false
                 }
@@ -235,6 +238,10 @@ struct CreateEditTripView: View {
             }
             .onChange(of: showBulkImport) { _, isShowing in
                 if !isShowing { refreshData() }
+            }
+            .onDisappear {
+                uploadTask?.cancel()
+                saveTask?.cancel()
             }
         }
     }
@@ -357,7 +364,8 @@ struct CreateEditTripView: View {
 
         isSaving = true
 
-        Task {
+        saveTask?.cancel()
+        saveTask = Task {
             do {
                 let trimmedDescription = tripDescription.trimmingCharacters(in: .whitespaces)
 
@@ -386,6 +394,8 @@ struct CreateEditTripView: View {
                     savedTrip = newTrip
                 }
 
+                guard !Task.isCancelled else { return }
+
                 // Haptic feedback
                 SonderHaptics.notification(.success)
 
@@ -399,17 +409,20 @@ struct CreateEditTripView: View {
                     dismiss()
                 }
             } catch {
-                logger.error("Error saving trip: \(error.localizedDescription)")
+                if !Task.isCancelled {
+                    logger.error("Error saving trip: \(error.localizedDescription)")
+                }
             }
 
-            isSaving = false
+            if !Task.isCancelled { isSaving = false }
         }
     }
 
     private func deleteTrip(keepLogs: Bool) {
         guard let trip = existingTrip else { return }
 
-        Task {
+        saveTask?.cancel()
+        saveTask = Task {
             do {
                 if keepLogs {
                     try await tripService.deleteTrip(trip)
@@ -417,12 +430,15 @@ struct CreateEditTripView: View {
                     try await tripService.deleteTripAndLogs(trip, syncEngine: syncEngine)
                 }
 
+                guard !Task.isCancelled else { return }
                 SonderHaptics.notification(.success)
 
                 dismiss()
                 onDelete?()
             } catch {
-                logger.error("Error deleting trip: \(error.localizedDescription)")
+                if !Task.isCancelled {
+                    logger.error("Error deleting trip: \(error.localizedDescription)")
+                }
             }
         }
     }

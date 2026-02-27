@@ -26,6 +26,7 @@ struct UserSearchView: View {
     @State private var searchText = ""
     @State private var searchResults: [User] = []
     @State private var searchDebounceTask: Task<Void, Never>?
+    @State private var searchTask: Task<Void, Never>?
     @State private var isSearching = false
     @State private var selectedUserID: String?
     @State private var inviteContact: ContactsService.UnmatchedContact?
@@ -431,14 +432,17 @@ struct UserSearchView: View {
 
         isSearching = true
 
-        Task {
+        searchTask?.cancel()
+        searchTask = Task {
             do {
                 searchResults = try await socialService.searchUsers(query: searchText)
             } catch {
-                logger.error("Search error: \(error.localizedDescription)")
-                searchResults = []
+                if !Task.isCancelled {
+                    logger.error("Search error: \(error.localizedDescription)")
+                    searchResults = []
+                }
             }
-            isSearching = false
+            if !Task.isCancelled { isSearching = false }
         }
     }
 
@@ -464,6 +468,7 @@ struct UserSearchRow: View {
 
     @State private var isFollowing = false
     @State private var isLoading = false
+    @State private var followTask: Task<Void, Never>?
 
     var body: some View {
         Button(action: onTap) {
@@ -565,24 +570,28 @@ struct UserSearchRow: View {
 
     private func toggleFollow() {
         guard let currentUserID = authService.currentUser?.id else { return }
+        guard !isLoading else { return }
 
         isLoading = true
 
-        Task {
+        followTask?.cancel()
+        followTask = Task {
             do {
                 if isFollowing {
                     try await socialService.unfollowUser(userID: user.id, currentUserID: currentUserID)
                 } else {
                     try await socialService.followUser(userID: user.id, currentUserID: currentUserID)
                 }
+                guard !Task.isCancelled else { return }
                 isFollowing.toggle()
 
-                // Haptic feedback
                 SonderHaptics.impact(.light)
             } catch {
-                logger.error("Follow error: \(error.localizedDescription)")
+                if !Task.isCancelled {
+                    logger.error("Follow error: \(error.localizedDescription)")
+                }
             }
-            isLoading = false
+            if !Task.isCancelled { isLoading = false }
         }
     }
 }

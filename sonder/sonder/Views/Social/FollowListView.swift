@@ -246,6 +246,7 @@ private struct FollowListUserCard: View {
 
     @State private var isFollowing = false
     @State private var isLoading = false
+    @State private var followTask: Task<Void, Never>?
 
     var body: some View {
         Button(action: onTap) {
@@ -348,23 +349,28 @@ private struct FollowListUserCard: View {
 
     private func toggleFollow() {
         guard let currentUserID = authService.currentUser?.id else { return }
+        guard !isLoading else { return }
 
         isLoading = true
 
-        Task {
+        followTask?.cancel()
+        followTask = Task {
             do {
                 if isFollowing {
                     try await socialService.unfollowUser(userID: user.id, currentUserID: currentUserID)
                 } else {
                     try await socialService.followUser(userID: user.id, currentUserID: currentUserID)
                 }
+                guard !Task.isCancelled else { return }
                 isFollowing.toggle()
 
                 SonderHaptics.impact(.light)
             } catch {
-                logger.error("Follow error: \(error.localizedDescription)")
+                if !Task.isCancelled {
+                    logger.error("Follow error: \(error.localizedDescription)")
+                }
             }
-            isLoading = false
+            if !Task.isCancelled { isLoading = false }
         }
     }
 }
