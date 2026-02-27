@@ -73,8 +73,22 @@ struct NearbyPlace: Identifiable {
 
     /// True if this place is a utilitarian/errand destination unlikely to be worth logging.
     var isUtilitarianPlace: Bool {
-        types.contains(where: Self.utilitarianTypes.contains)
+        if types.contains(where: Self.utilitarianTypes.contains) { return true }
+        // Also exclude if the place is a generic "store" AND its name matches tourist-trap / souvenir keywords.
+        // Restaurants, cafes, bars, museums, etc. are never filtered by name.
+        let isOnlyStore = types.contains("store") && !types.contains(where: Self.interestingTypes.contains)
+        if isOnlyStore && Self.hasUtilitarianName(name) { return true }
+        return false
     }
+
+    /// Types that indicate an inherently interesting venue — never name-filtered.
+    private static let interestingTypes: Set<String> = [
+        "restaurant", "cafe", "bar", "night_club",
+        "tourist_attraction", "museum", "art_gallery",
+        "park", "amusement_park", "zoo", "aquarium",
+        "book_store", "library", "movie_theater", "performing_arts_theater",
+        "spa", "gym", "stadium", "bowling_alley",
+    ]
 
     private static let utilitarianTypes: Set<String> = [
         // Shipping & logistics
@@ -98,6 +112,27 @@ struct NearbyPlace: Identifiable {
         "post_office", "local_government_office", "courthouse",
         // Parking
         "parking",
+        // Souvenir & gift shops
+        "gift_shop",
+    ]
+
+    /// Name-based keyword check for tourist-trap and generic chain stores.
+    private static func hasUtilitarianName(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return utilitarianNameKeywords.contains(where: { lower.contains($0) })
+    }
+
+    private static let utilitarianNameKeywords: [String] = [
+        // Tourist-trap / souvenir
+        "i love ny", "i ❤️ ny", "i ♥ ny", "souvenir", "gift shop", "gifts & luggage",
+        "gifts luggage", "luggage store",
+        // Chain services
+        "fedex", "ups store", "usps", "dhl",
+        "walgreens", "cvs", "rite aid", "duane reade",
+        "7-eleven", "7 eleven",
+        // Chain big box / general merchandise
+        "dollar tree", "dollar general", "family dollar",
+        "five below",
     ]
 }
 

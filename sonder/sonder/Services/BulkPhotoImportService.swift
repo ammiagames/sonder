@@ -250,9 +250,7 @@ final class BulkPhotoImportService {
         let photo = clusters[clusterIndex].photoMetadata.remove(at: photoIndex)
         excludedPhotos.append(photo)
 
-        if clusters[clusterIndex].photoMetadata.isEmpty {
-            clusters.remove(at: clusterIndex)
-        } else {
+        if !clusters[clusterIndex].photoMetadata.isEmpty {
             recalculateCentroid(at: clusterIndex)
         }
     }
