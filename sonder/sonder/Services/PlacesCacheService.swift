@@ -257,28 +257,11 @@ final class PlacesCacheService {
         let missing = Array(allPlaces.filter { $0.photoReference == nil }.prefix(limit))
         guard !missing.isEmpty else { return }
 
-        // Capture IDs as value types before entering task group —
-        // SwiftData model objects are not safe to access from child tasks.
-        let missingIDs = missing.map { $0.id }
-
-        // Fetch place details concurrently
-        let results = await withTaskGroup(of: (String, String?).self) { group in
-            for placeID in missingIDs {
-                group.addTask {
-                    let details = await placesService.getPlaceDetails(placeId: placeID)
-                    return (placeID, details?.photoReference)
-                }
-            }
-            var map: [String: String] = [:]
-            for await (placeID, photoRef) in group {
-                if let photoRef { map[placeID] = photoRef }
-            }
-            return map
-        }
-
-        // Apply results back on main thread (SwiftData models)
+        // Fetch place details sequentially — GooglePlacesService is @MainActor-isolated,
+        // so concurrent child tasks cause EXC_BAD_ACCESS.
         for place in missing {
-            if let photoRef = results[place.id] {
+            let details = await placesService.getPlaceDetails(placeId: place.id)
+            if let photoRef = details?.photoReference {
                 place.photoReference = photoRef
             }
         }
