@@ -140,3 +140,17 @@ A change is “done” when:
 - It is covered by tests or clear verification steps
 - It matches repository conventions
 - It is understandable and maintainable by someone else
+
+---
+
+## Multi-Agent Workflow
+
+Multiple AI agents may work on this repo simultaneously. Follow these rules to avoid conflicts:
+
+- **Always work in a git worktree.** Use `git worktree add` or Claude Code's built-in worktree support. Never work directly on `main` with uncommitted changes.
+- **Own your branch.** Each agent/session should work on its own feature branch. Name it descriptively (e.g., `feature/bulk-import`, `fix/edit-mode-ux`).
+- **Commit frequently.** Never leave work uncommitted at the end of a session. Uncommitted changes are vulnerable to other agents' git operations.
+- **NEVER run `git reset`, `git stash`, or `git checkout .` on shared branches** — these affect shared state and can destroy other agents' uncommitted work.
+- **NEVER use `git add .` or `git add -A`** — stage specific files by name to avoid accidentally committing other agents' in-progress work.
+- **Avoid overlapping files.** Coordinate so agents work on different files/features. If overlap is unavoidable, merge conflicts are resolved at merge time — much better than silent overwrites.
+- **Merge back to main** when your feature branch is complete and tested.
