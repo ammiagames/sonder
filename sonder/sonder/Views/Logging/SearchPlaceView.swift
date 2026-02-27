@@ -35,6 +35,7 @@ struct SearchPlaceView: View {
     @State private var removingPlaceIds: Set<String> = []
     @State private var autocompleteTask: Task<Void, Never>?
     @State private var nearbyLoadTask: Task<Void, Never>?
+    @State private var logDirectlyTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -154,10 +155,12 @@ struct SearchPlaceView: View {
             .onChange(of: searchText) { _, newValue in
                 autocompleteTask?.cancel()
                 autocompleteTask = Task {
-                    predictions = await placesService.autocomplete(
+                    let results = await placesService.autocomplete(
                         query: newValue,
                         location: locationService.currentLocation
                     )
+                    guard !Task.isCancelled else { return }
+                    predictions = results
                 }
             }
 
@@ -471,26 +474,32 @@ struct SearchPlaceView: View {
             }
 
             guard !Task.isCancelled else { return }
-            nearbyPlaces = await placesService.nearbySearch(location: location)
-            cacheService.cacheNearbyResults(nearbyPlaces, location: location)
-            logger.debug("[Nearby] Got \(nearbyPlaces.count) nearby places")
+            let results = await placesService.nearbySearch(location: location)
+            guard !Task.isCancelled else { return }
+            nearbyPlaces = results
+            cacheService.cacheNearbyResults(results, location: location)
+            logger.debug("[Nearby] Got \(results.count) nearby places")
             isLoadingNearby = false
         }
     }
 
     /// Fetches place details and jumps straight to the rating screen, skipping the preview.
     private func logPlaceDirectly(byID placeId: String) {
-        Task {
+        logDirectlyTask?.cancel()
+        logDirectlyTask = Task {
             isLoadingDetails = true
             detailsError = nil
 
             if let details = await placesService.getPlaceDetails(placeId: placeId) {
+                guard !Task.isCancelled else { return }
                 let place = cacheService.cachePlace(from: details)
                 cacheService.addRecentSearch(placeId: place.id, name: place.name, address: place.address)
                 isLoadingDetails = false
                 placeToLog = place
                 return
             }
+
+            guard !Task.isCancelled else { return }
 
             if let cachedPlace = cacheService.getPlace(by: placeId) {
                 isLoadingDetails = false
