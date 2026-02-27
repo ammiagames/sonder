@@ -7,26 +7,11 @@
 
 import SwiftUI
 
-// MARK: - Note Display Style
-
-/// Temporary enum for A/B testing note presentation in feed cards.
-enum NoteDisplayStyle: String, CaseIterable, Identifiable {
-    case original = "Original"
-    case pullQuote = "A: Pull-quote"
-    case reordered = "B: Meta first"
-    case tintedCard = "C: Tinted card"
-    case iconLabel = "D: Icon + label"
-    case combined = "E: Reorder + accent"
-
-    var id: String { rawValue }
-}
-
 /// Cinematic feed card — full-bleed photo with moody gradient and text overlay.
 struct FeedItemCard: View {
     let feedItem: FeedItem
     let onUserTap: () -> Void
     let onPlaceTap: () -> Void
-    var noteStyle: NoteDisplayStyle = .original
 
     @State private var photoPageIndex = 0
 
@@ -48,7 +33,6 @@ struct FeedItemCard: View {
                 mediaSection
             }
 
-            // Content below photo varies by note style
             noteAndMetaContent
         }
         .background(SonderColors.warmGray)
@@ -64,150 +48,31 @@ struct FeedItemCard: View {
         .shadow(color: .black.opacity(0.12), radius: 16, y: 8)
     }
 
-    // MARK: - Note + Meta Layout (style-dependent)
+    // MARK: - Note + Meta Layout
 
-    @ViewBuilder
     private var noteAndMetaContent: some View {
-        switch noteStyle {
-        case .original:
-            // Original: note then meta
-            VStack(alignment: .leading, spacing: SonderSpacing.md) {
-                if let note = feedItem.log.note, !note.isEmpty {
+        VStack(alignment: .leading, spacing: SonderSpacing.md) {
+            if let note = feedItem.log.note, !note.isEmpty {
+                HStack(spacing: SonderSpacing.sm) {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(SonderColors.terracotta.opacity(0.6))
+                        .frame(width: 3)
+
                     Text(note)
                         .font(.system(size: 17, weight: .regular, design: .serif))
+                        .italic()
                         .foregroundStyle(SonderColors.inkDark)
                         .lineSpacing(4)
                         .lineLimit(3)
                         .multilineTextAlignment(.leading)
                 }
-                metaSection
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, SonderSpacing.lg)
-            .padding(.top, hasNote ? SonderSpacing.md : SonderSpacing.lg)
-            .padding(.bottom, SonderSpacing.lg)
-
-        case .pullQuote:
-            // A: Left accent border on note
-            VStack(alignment: .leading, spacing: SonderSpacing.md) {
-                if let note = feedItem.log.note, !note.isEmpty {
-                    HStack(spacing: SonderSpacing.sm) {
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(SonderColors.terracotta.opacity(0.6))
-                            .frame(width: 3)
-
-                        Text(note)
-                            .font(.system(size: 17, weight: .regular, design: .serif))
-                            .italic()
-                            .foregroundStyle(SonderColors.inkDark)
-                            .lineSpacing(4)
-                            .lineLimit(3)
-                            .multilineTextAlignment(.leading)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                metaSection
-            }
-            .padding(.horizontal, SonderSpacing.lg)
-            .padding(.top, hasNote ? SonderSpacing.md : SonderSpacing.lg)
-            .padding(.bottom, SonderSpacing.lg)
-
-        case .reordered:
-            // B: Meta first, then note below
-            VStack(alignment: .leading, spacing: SonderSpacing.md) {
-                metaSection
-
-                if let note = feedItem.log.note, !note.isEmpty {
-                    Text(note)
-                        .font(.system(size: 15, weight: .regular, design: .serif))
-                        .foregroundStyle(SonderColors.inkMuted)
-                        .lineSpacing(4)
-                        .lineLimit(3)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-            .padding(.horizontal, SonderSpacing.lg)
-            .padding(.top, SonderSpacing.lg)
-            .padding(.bottom, SonderSpacing.lg)
-
-        case .tintedCard:
-            // C: Note in a tinted background card
-            VStack(alignment: .leading, spacing: SonderSpacing.md) {
-                if let note = feedItem.log.note, !note.isEmpty {
-                    Text(note)
-                        .font(.system(size: 17, weight: .regular, design: .serif))
-                        .foregroundStyle(SonderColors.inkDark)
-                        .lineSpacing(4)
-                        .lineLimit(3)
-                        .multilineTextAlignment(.leading)
-                        .padding(.horizontal, SonderSpacing.md)
-                        .padding(.vertical, SonderSpacing.sm)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
-                                .fill(SonderColors.ochre.opacity(0.08))
-                        )
-                }
-                metaSection
-            }
-            .padding(.horizontal, SonderSpacing.lg)
-            .padding(.top, hasNote ? SonderSpacing.md : SonderSpacing.lg)
-            .padding(.bottom, SonderSpacing.lg)
-
-        case .iconLabel:
-            // D: Pen icon + "Note" label prefix
-            VStack(alignment: .leading, spacing: SonderSpacing.md) {
-                if let note = feedItem.log.note, !note.isEmpty {
-                    VStack(alignment: .leading, spacing: SonderSpacing.xxs) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "pencil.line")
-                                .font(.system(size: 10, weight: .semibold))
-                            Text("Note")
-                                .font(.system(size: 11, weight: .semibold))
-                                .textCase(.uppercase)
-                                .tracking(0.5)
-                        }
-                        .foregroundStyle(SonderColors.terracotta.opacity(0.7))
-
-                        Text(note)
-                            .font(.system(size: 17, weight: .regular, design: .serif))
-                            .foregroundStyle(SonderColors.inkDark)
-                            .lineSpacing(4)
-                            .lineLimit(3)
-                            .multilineTextAlignment(.leading)
-                    }
-                }
-                metaSection
-            }
-            .padding(.horizontal, SonderSpacing.lg)
-            .padding(.top, hasNote ? SonderSpacing.md : SonderSpacing.lg)
-            .padding(.bottom, SonderSpacing.lg)
-
-        case .combined:
-            // E: Meta first + accent bar on note
-            VStack(alignment: .leading, spacing: SonderSpacing.md) {
-                metaSection
-
-                if let note = feedItem.log.note, !note.isEmpty {
-                    HStack(spacing: SonderSpacing.sm) {
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(SonderColors.terracotta.opacity(0.6))
-                            .frame(width: 3)
-
-                        Text(note)
-                            .font(.system(size: 15, weight: .regular, design: .serif))
-                            .italic()
-                            .foregroundStyle(SonderColors.inkMuted)
-                            .lineSpacing(4)
-                            .lineLimit(3)
-                            .multilineTextAlignment(.leading)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(.horizontal, SonderSpacing.lg)
-            .padding(.top, SonderSpacing.lg)
-            .padding(.bottom, SonderSpacing.lg)
+            metaSection
         }
+        .padding(.horizontal, SonderSpacing.lg)
+        .padding(.top, hasNote ? SonderSpacing.md : SonderSpacing.lg)
+        .padding(.bottom, SonderSpacing.lg)
     }
 
     // MARK: - Header
@@ -436,49 +301,24 @@ private let previewCompactItem = FeedItem(
     )
 )
 
-#Preview("Note Style Comparison") {
-    NoteStylePreview()
-}
+#Preview("Feed Item Card") {
+    ScrollView {
+        VStack(spacing: SonderSpacing.md) {
+            // Card with photo + note
+            FeedItemCard(
+                feedItem: previewPhotoItem,
+                onUserTap: {},
+                onPlaceTap: {}
+            )
 
-/// Interactive preview to compare all note display styles side by side.
-private struct NoteStylePreview: View {
-    @State private var selectedStyle: NoteDisplayStyle = .original
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: SonderSpacing.md) {
-                // Style picker
-                Picker("Note Style", selection: $selectedStyle) {
-                    ForEach(NoteDisplayStyle.allCases) { style in
-                        Text(style.rawValue).tag(style)
-                    }
-                }
-                .pickerStyle(.menu)
-                .padding(.horizontal)
-
-                Text(selectedStyle.rawValue)
-                    .font(SonderTypography.title)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-
-                // Card with photo + note
-                FeedItemCard(
-                    feedItem: previewPhotoItem,
-                    onUserTap: {},
-                    onPlaceTap: {},
-                    noteStyle: selectedStyle
-                )
-
-                // Card without photo (note only)
-                FeedItemCard(
-                    feedItem: previewCompactItem,
-                    onUserTap: {},
-                    onPlaceTap: {},
-                    noteStyle: selectedStyle
-                )
-            }
-            .padding()
+            // Card without photo (note only)
+            FeedItemCard(
+                feedItem: previewCompactItem,
+                onUserTap: {},
+                onPlaceTap: {}
+            )
         }
-        .background(SonderColors.cream)
+        .padding()
     }
+    .background(SonderColors.cream)
 }

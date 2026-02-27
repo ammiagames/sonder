@@ -27,8 +27,6 @@ struct FeedView: View {
     @State private var selectedTripID: String?
     @State private var scrollToTopTrigger: UUID?
     @State private var emptyIconScale: CGFloat = 1.0
-    /// Temporary: toggle note display style for A/B comparison
-    @State private var noteStyle: NoteDisplayStyle = .original
 
     var body: some View {
         NavigationStack {
@@ -69,36 +67,6 @@ struct FeedView: View {
                     if feedService.hasLoadedOnce && (syncEngine.isSyncing || feedService.isLoading) {
                         ProgressView()
                             .tint(SonderColors.terracotta)
-                    }
-                }
-
-                // Temporary: note style picker for A/B comparison
-                ToolbarItem(placement: .principal) {
-                    Menu {
-                        ForEach(NoteDisplayStyle.allCases) { style in
-                            Button {
-                                noteStyle = style
-                            } label: {
-                                HStack {
-                                    Text(style.rawValue)
-                                    if noteStyle == style {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(noteStyle.rawValue)
-                                .font(.system(size: 13, weight: .medium))
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 10, weight: .semibold))
-                        }
-                        .foregroundStyle(SonderColors.terracotta)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(SonderColors.terracotta.opacity(0.1))
-                        .clipShape(Capsule())
                     }
                 }
 
@@ -358,8 +326,7 @@ struct FeedView: View {
                             },
                             onPlaceTap: {
                                 selectedFeedItem = feedItem
-                            },
-                            noteStyle: noteStyle
+                            }
                         )
                         .feedCardEntrance(index: index)
                     case .tripCreated(let item):
