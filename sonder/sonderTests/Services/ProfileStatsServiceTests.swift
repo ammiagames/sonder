@@ -352,4 +352,162 @@ struct ProfileStatsServiceTests {
         #expect(stats.ratingDistribution.mustSeeCount == 1)
         #expect(stats.ratingDistribution.okayCount == 1)
     }
+
+    // MARK: - computeFromFeedItems
+
+    @Test("computeFromFeedItems returns correct stats")
+    func computeFromFeedItems_basic() {
+        let items = [
+            TestData.feedItem(
+                id: "f1",
+                log: TestData.feedLog(id: "l1", rating: "must_see", note: "Amazing", tags: ["sushi"]),
+                place: TestData.feedPlace(id: "p1", name: "Sushi Place", types: ["restaurant"])
+            ),
+            TestData.feedItem(
+                id: "f2",
+                log: TestData.feedLog(id: "l2", rating: "okay", note: nil, tags: []),
+                place: TestData.feedPlace(id: "p2", name: "Coffee Shop", types: ["cafe"])
+            ),
+            TestData.feedItem(
+                id: "f3",
+                log: TestData.feedLog(id: "l3", rating: "great", note: "Nice vibes", tags: ["coffee"]),
+                place: TestData.feedPlace(id: "p3", name: "Latte Bar", types: ["cafe"])
+            ),
+        ]
+
+        let stats = ProfileStatsService.computeFromFeedItems(items)
+
+        #expect(stats.totalLogs == 3)
+        #expect(!stats.tasteDNA.isEmpty)
+        #expect(stats.tasteDNA.food > 0)
+        #expect(stats.tasteDNA.coffee > 0)
+        #expect(stats.ratingDistribution.mustSeeCount == 1)
+        #expect(stats.ratingDistribution.okayCount == 1)
+        #expect(stats.ratingDistribution.greatCount == 1)
+        #expect(stats.ratingDistribution.total == 3)
+    }
+
+    @Test("computeFromFeedItems with empty items returns zero stats")
+    func computeFromFeedItems_empty() {
+        let stats = ProfileStatsService.computeFromFeedItems([])
+
+        #expect(stats.totalLogs == 0)
+        #expect(stats.tasteDNA.isEmpty)
+        #expect(stats.ratingDistribution.total == 0)
+        #expect(stats.archetype == .explorer)
+    }
+
+    // MARK: - Cosine Similarity
+
+    @Test("Identical vectors → cosine similarity 1.0")
+    func cosineSimilarity_identical() {
+        let a = [0.5, 0.3, 0.8, 0.2, 0.1, 0.9]
+        let result = ProfileStatsService.cosineSimilarity(a, a)
+        #expect(abs(result - 1.0) < 0.001)
+    }
+
+    @Test("Orthogonal vectors → cosine similarity 0.0")
+    func cosineSimilarity_orthogonal() {
+        let a = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        let b = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+        let result = ProfileStatsService.cosineSimilarity(a, b)
+        #expect(abs(result) < 0.001)
+    }
+
+    @Test("Zero vector → cosine similarity 0.0")
+    func cosineSimilarity_zero() {
+        let a = [0.5, 0.3, 0.8, 0.2, 0.1, 0.9]
+        let b = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        let result = ProfileStatsService.cosineSimilarity(a, b)
+        #expect(result == 0.0)
+    }
+
+    // MARK: - Jaccard Similarity
+
+    @Test("Identical sets → Jaccard 1.0")
+    func jaccardSimilarity_identical() {
+        let a: Set<String> = ["food", "coffee", "scenic"]
+        let result = ProfileStatsService.jaccardSimilarity(a, a)
+        #expect(abs(result - 1.0) < 0.001)
+    }
+
+    @Test("Disjoint sets → Jaccard 0.0")
+    func jaccardSimilarity_disjoint() {
+        let a: Set<String> = ["food", "coffee"]
+        let b: Set<String> = ["nightlife", "outdoors"]
+        let result = ProfileStatsService.jaccardSimilarity(a, b)
+        #expect(result == 0.0)
+    }
+
+    @Test("Empty sets → Jaccard 0.0")
+    func jaccardSimilarity_empty() {
+        let result = ProfileStatsService.jaccardSimilarity(Set(), Set())
+        #expect(result == 0.0)
+    }
+
+    // MARK: - Taste Match
+
+    @Test("Identical users → high taste match")
+    func tasteMatch_identical() {
+        let dna = TasteDNA(food: 0.8, coffee: 0.5, nightlife: 0.2, outdoors: 0.1, shopping: 0.0, attractions: 0.3)
+        let tags: Set<String> = ["food", "coffee", "scenic"]
+        let dist = RatingDistribution(skipCount: 1, okayCount: 2, greatCount: 3, mustSeeCount: 4, philosophy: "")
+
+        let result = ProfileStatsService.computeTasteMatch(
+            myDNA: dna, theirDNA: dna,
+            myTags: tags, theirTags: tags,
+            myRatingDist: dist, theirRatingDist: dist
+        )
+
+        #expect(result.displayPercentage >= 80)
+        #expect(result.label == "Taste Twin")
+    }
+
+    @Test("Opposite users → low taste match")
+    func tasteMatch_opposite() {
+        let myDNA = TasteDNA(food: 1.0, coffee: 0.0, nightlife: 0.0, outdoors: 0.0, shopping: 0.0, attractions: 0.0)
+        let theirDNA = TasteDNA(food: 0.0, coffee: 0.0, nightlife: 0.0, outdoors: 0.0, shopping: 0.0, attractions: 1.0)
+        let myTags: Set<String> = ["sushi", "ramen"]
+        let theirTags: Set<String> = ["museum", "gallery"]
+        let myDist = RatingDistribution(skipCount: 5, okayCount: 0, greatCount: 0, mustSeeCount: 0, philosophy: "")
+        let theirDist = RatingDistribution(skipCount: 0, okayCount: 0, greatCount: 0, mustSeeCount: 5, philosophy: "")
+
+        let result = ProfileStatsService.computeTasteMatch(
+            myDNA: myDNA, theirDNA: theirDNA,
+            myTags: myTags, theirTags: theirTags,
+            myRatingDist: myDist, theirRatingDist: theirDist
+        )
+
+        #expect(result.displayPercentage < 40)
+    }
+
+    // MARK: - Rating Distribution Similarity
+
+    @Test("Identical distributions → similarity 1.0")
+    func ratingDistSimilarity_identical() {
+        let dist = RatingDistribution(skipCount: 2, okayCount: 3, greatCount: 4, mustSeeCount: 1, philosophy: "")
+        let result = ProfileStatsService.ratingDistributionSimilarity(dist, dist)
+        #expect(abs(result - 1.0) < 0.001)
+    }
+
+    @Test("Empty distribution → similarity 0.0")
+    func ratingDistSimilarity_empty() {
+        let empty = RatingDistribution(skipCount: 0, okayCount: 0, greatCount: 0, mustSeeCount: 0, philosophy: "")
+        let nonEmpty = RatingDistribution(skipCount: 1, okayCount: 1, greatCount: 1, mustSeeCount: 1, philosophy: "")
+        let result = ProfileStatsService.ratingDistributionSimilarity(empty, nonEmpty)
+        #expect(result == 0.0)
+    }
+
+    // MARK: - TasteMatchResult Labels
+
+    @Test("Label thresholds are correct")
+    func tasteMatchLabels() {
+        #expect(TasteMatchResult.label(for: 90) == "Taste Twin")
+        #expect(TasteMatchResult.label(for: 80) == "Taste Twin")
+        #expect(TasteMatchResult.label(for: 70) == "Kindred Spirit")
+        #expect(TasteMatchResult.label(for: 60) == "Kindred Spirit")
+        #expect(TasteMatchResult.label(for: 50) == "Complementary")
+        #expect(TasteMatchResult.label(for: 30) == "Different Vibes")
+        #expect(TasteMatchResult.label(for: 10) == "Opposite Palates")
+    }
 }

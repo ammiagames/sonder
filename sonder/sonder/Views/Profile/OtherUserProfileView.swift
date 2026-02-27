@@ -40,7 +40,14 @@ struct OtherUserProfileView: View {
     @State private var cachedTopTagsWithCounts: [(tag: String, count: Int)] = []
     @State private var cachedInCommonPlaces: [InCommonPlace] = []
     @State private var cachedInCommonCities: [String] = []
-    @State private var cachedRatingCounts: (skip: Int, okay: Int, great: Int, mustSee: Int) = (0, 0, 0, 0)
+
+    // Card style exploration
+    @State private var cardStyle: ProfileCardStyle = .classic
+
+    // Profile stats (computed from FeedItems)
+    @State private var theirProfileStats: ProfileStats?
+    @State private var myProfileStats: ProfileStats?
+    @State private var tasteMatch: TasteMatchResult?
 
     var body: some View {
         ScrollView {
@@ -55,60 +62,84 @@ struct OtherUserProfileView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 120)
             } else if let user = user {
-                VStack(spacing: SonderSpacing.lg) {
-                    // Profile header card
-                    profileHeader(user)
+                VStack(spacing: 0) {
+                    // Hero cover image + Profile header
+                    heroCoverSection(user)
 
-                    // Stats bar
-                    statsSection
+                    VStack(spacing: SonderSpacing.lg) {
+                        // Card style picker (exploration)
+                        ProfileCardStylePicker(style: $cardStyle)
 
-                    // Follow button
-                    if user.id != authService.currentUser?.id {
-                        followButton
-                            .padding(.horizontal, SonderSpacing.xs)
+                        // Stats bar
+                        statsSection
+
+                        // Follow button
+                        if user.id != authService.currentUser?.id {
+                            followButton
+                                .padding(.horizontal, SonderSpacing.xs)
+                        }
+
+                        // Taste match score
+                        if let match = tasteMatch {
+                            tasteMatchSection(match)
+                        }
+
+                        // In common
+                        if !inCommonPlaces.isEmpty || !inCommonCities.isEmpty {
+                            inCommonSection
+                        }
+
+                        // View their map banner
+                        if !userLogs.isEmpty {
+                            viewTheirMapBanner
+                        }
+
+                        // Photo highlights
+                        if !photoHighlights.isEmpty {
+                            photoHighlightsSection
+                        }
+
+                        // Enhanced rating section
+                        if let stats = theirProfileStats, stats.totalLogs > 0 {
+                            enhancedRatingSection(stats: stats)
+                        }
+
+                        // Taste DNA radar chart
+                        if let theirStats = theirProfileStats, theirStats.totalLogs >= 3, !theirStats.tasteDNA.isEmpty {
+                            if let myStats = myProfileStats, myStats.totalLogs >= 3, !myStats.tasteDNA.isEmpty {
+                                ComparisonTasteDNARadarChart(theirDNA: theirStats.tasteDNA, myDNA: myStats.tasteDNA)
+                            } else {
+                                TasteDNARadarChart(tasteDNA: theirStats.tasteDNA)
+                            }
+                        }
+
+                        // Recent trips film strip
+                        if !recentTrips.isEmpty {
+                            recentTripsSection
+                        }
+
+                        // They love (tags)
+                        if !topTagsWithCounts.isEmpty {
+                            theyLoveSection
+                        }
+
+                        // Recent activity
+                        if !userLogs.isEmpty {
+                            recentActivitySection
+                        }
+
+                        // Top cities photo mosaic
+                        if !uniqueCities.isEmpty {
+                            topCitiesPhotoMosaic
+                        }
+
+                        // See all places button
+                        if !userLogs.isEmpty {
+                            seeAllPlacesButton
+                        }
                     }
-
-                    // View their map banner
-                    if !userLogs.isEmpty {
-                        viewTheirMapBanner
-                    }
-
-                    // In common
-                    if !inCommonPlaces.isEmpty || !inCommonCities.isEmpty {
-                        inCommonSection
-                    }
-
-                    // Rating breakdown
-                    if !userLogs.isEmpty {
-                        ratingBreakdownSection
-                    }
-
-                    // Recent trips film strip
-                    if !recentTrips.isEmpty {
-                        recentTripsSection
-                    }
-
-                    // They love (tags)
-                    if !topTagsWithCounts.isEmpty {
-                        theyLoveSection
-                    }
-
-                    // Recent activity
-                    if !userLogs.isEmpty {
-                        recentActivitySection
-                    }
-
-                    // Top cities photo mosaic
-                    if !uniqueCities.isEmpty {
-                        topCitiesPhotoMosaic
-                    }
-
-                    // See all places button
-                    if !userLogs.isEmpty {
-                        seeAllPlacesButton
-                    }
+                    .padding(SonderSpacing.md)
                 }
-                .padding(SonderSpacing.md)
                 .padding(.bottom, SonderSpacing.xxl)
             } else {
                 ContentUnavailableView {
@@ -121,6 +152,7 @@ struct OtherUserProfileView: View {
                 .padding(.top, 80)
             }
         }
+        .environment(\.profileCardStyle, cardStyle)
         .background(SonderColors.cream)
         .scrollContentBackground(.hidden)
         .navigationTitle(user?.username ?? "Profile")
@@ -153,6 +185,59 @@ struct OtherUserProfileView: View {
         myPlaces = (try? modelContext.fetch(FetchDescriptor<Place>())) ?? []
     }
 
+    // MARK: - Hero Cover Section
+
+    private func heroCoverSection(_ user: User) -> some View {
+        ZStack(alignment: .bottom) {
+            // Background: blurred hero photo or warm gradient
+            if let heroURL = bestHeroPhotoURL {
+                DownsampledAsyncImage(url: heroURL, targetSize: CGSize(width: 400, height: 280)) {
+                    heroFallbackGradient
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 220)
+                .blur(radius: 20)
+                .clipped()
+            } else {
+                heroFallbackGradient
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 220)
+            }
+
+            // Gradient overlay fading to cream
+            LinearGradient(
+                colors: [.clear, SonderColors.cream.opacity(0.6), SonderColors.cream],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            // Profile header
+            profileHeader(user)
+                .padding(.bottom, SonderSpacing.sm)
+        }
+    }
+
+    private var heroFallbackGradient: some View {
+        LinearGradient(
+            colors: [SonderColors.terracotta.opacity(0.15), SonderColors.cream],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    /// Best photo URL for hero: highest-rated log with a photo
+    private var bestHeroPhotoURL: URL? {
+        let ratingOrder: [Rating] = [.mustSee, .great, .okay, .skip]
+        for rating in ratingOrder {
+            if let item = userLogs.first(where: { $0.rating == rating && $0.log.photoURL != nil }),
+               let urlString = item.log.photoURL,
+               let url = URL(string: urlString) {
+                return url
+            }
+        }
+        return nil
+    }
+
     // MARK: - Profile Header
 
     private func profileHeader(_ user: User) -> some View {
@@ -160,29 +245,56 @@ struct OtherUserProfileView: View {
             // Avatar
             if let urlString = user.avatarURL,
                let url = URL(string: urlString) {
-                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 88, height: 88)) {
+                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 100, height: 100)) {
                     avatarPlaceholder(for: user)
                 }
-                .frame(width: 88, height: 88)
+                .frame(width: 100, height: 100)
                 .clipShape(Circle())
                 .overlay(
                     Circle()
-                        .stroke(SonderColors.warmGray, lineWidth: 3)
+                        .stroke(SonderColors.cream, lineWidth: 4)
                 )
+                .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
             } else {
                 avatarPlaceholder(for: user)
                     .overlay(
                         Circle()
-                            .stroke(SonderColors.warmGray, lineWidth: 3)
+                            .stroke(SonderColors.cream, lineWidth: 4)
                     )
+                    .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
             }
 
             // Username
             Text("@\(user.username)")
-                .font(SonderTypography.title)
+                .font(SonderTypography.largeTitle)
                 .foregroundStyle(SonderColors.inkDark)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
+
+            // Archetype badge
+            if let stats = theirProfileStats, stats.totalLogs > 0 {
+                HStack(spacing: SonderSpacing.xxs) {
+                    Image(systemName: stats.archetype.icon)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(stats.archetype.displayName)
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(SonderColors.terracotta)
+                .padding(.horizontal, SonderSpacing.sm)
+                .padding(.vertical, SonderSpacing.xxs)
+                .background(SonderColors.terracotta.opacity(0.12))
+                .clipShape(Capsule())
+            }
+
+            // Bio
+            if let bio = user.bio, !bio.isEmpty {
+                Text(bio)
+                    .font(SonderTypography.subheadline)
+                    .italic()
+                    .foregroundStyle(SonderColors.inkMuted)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+            }
 
             // Journey stats subtitle
             if !userLogs.isEmpty {
@@ -198,14 +310,9 @@ struct OtherUserProfileView: View {
             }
 
             // Member since
-            HStack(spacing: SonderSpacing.xxs) {
-                Image(systemName: "leaf.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(SonderColors.sage)
-                Text("Exploring since \(user.createdAt.formatted(date: .abbreviated, time: .omitted))")
-                    .font(SonderTypography.caption)
-                    .foregroundStyle(SonderColors.inkLight)
-            }
+            Text("Journaling since \(user.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkLight)
         }
         .frame(maxWidth: .infinity)
     }
@@ -215,10 +322,10 @@ struct OtherUserProfileView: View {
             .fill(
                 SonderColors.placeholderGradient
             )
-            .frame(width: 88, height: 88)
+            .frame(width: 100, height: 100)
             .overlay {
                 Text(user.username.prefix(1).uppercased())
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .font(.system(size: 38, weight: .bold, design: .rounded))
                     .foregroundStyle(SonderColors.terracotta)
             }
     }
@@ -306,6 +413,167 @@ struct OtherUserProfileView: View {
         .disabled(isFollowLoading)
     }
 
+    // MARK: - Taste Match Section
+
+    private func tasteMatchSection(_ match: TasteMatchResult) -> some View {
+        VStack(spacing: SonderSpacing.sm) {
+            // Circular progress ring
+            ZStack {
+                Circle()
+                    .stroke(SonderColors.warmGrayDark.opacity(0.3), lineWidth: 6)
+                    .frame(width: 72, height: 72)
+                Circle()
+                    .trim(from: 0, to: CGFloat(match.overallScore))
+                    .stroke(
+                        SonderColors.terracotta,
+                        style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                    )
+                    .frame(width: 72, height: 72)
+                    .rotationEffect(.degrees(-90))
+                Text("\(match.displayPercentage)%")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(SonderColors.inkDark)
+            }
+
+            Text(match.label)
+                .font(.system(size: 17, weight: .semibold, design: .serif))
+                .foregroundStyle(SonderColors.inkDark)
+
+            Text("Based on places, ratings, and tags")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkMuted)
+        }
+        .frame(maxWidth: .infinity)
+        .profileSectionCard(tint: SonderColors.terracotta)
+    }
+
+    // MARK: - Photo Highlights
+
+    private var photoHighlights: [FeedItem] {
+        userLogs
+            .filter { $0.log.photoURL != nil && ($0.rating == .mustSee || $0.rating == .great) }
+            .sorted { ($0.rating == .mustSee ? 1 : 0) > ($1.rating == .mustSee ? 1 : 0) }
+            .prefix(10)
+            .map { $0 }
+    }
+
+    private var photoHighlightsSection: some View {
+        VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            Text("Photo highlights")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: SonderSpacing.sm) {
+                    ForEach(photoHighlights) { item in
+                        NavigationLink {
+                            FeedLogDetailView(feedItem: item)
+                        } label: {
+                            photoHighlightCard(item)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .profileSectionCard(tint: SonderColors.ochre, isFullBleed: true)
+    }
+
+    private func photoHighlightCard(_ item: FeedItem) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            if let urlString = item.log.photoURL, let url = URL(string: urlString) {
+                DownsampledAsyncImage(url: url, targetSize: CGSize(width: 180, height: 140)) {
+                    RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
+                        .fill(SonderColors.warmGrayDark.opacity(0.3))
+                }
+                .frame(width: 180, height: 140)
+                .clipped()
+            }
+
+            // Gradient overlay
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.55)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+
+            // Place name + rating badge
+            VStack(alignment: .leading, spacing: 2) {
+                Spacer()
+                HStack(spacing: 4) {
+                    Text(item.rating.emoji)
+                        .font(.system(size: 12))
+                    Text(item.place.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                }
+            }
+            .padding(SonderSpacing.sm)
+        }
+        .frame(width: 180, height: 140)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+    }
+
+    // MARK: - Enhanced Rating Section
+
+    private func enhancedRatingSection(stats: ProfileStats) -> some View {
+        let dist = stats.ratingDistribution
+        return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
+            Text("Ratings")
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkMuted)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            if dist.total > 0 {
+                GeometryReader { geo in
+                    HStack(spacing: 2) {
+                        if dist.skipCount > 0 {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(SonderColors.ratingSkip)
+                                .frame(width: geo.size.width * dist.skipPercentage)
+                        }
+                        if dist.okayCount > 0 {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(SonderColors.ratingOkay)
+                                .frame(width: geo.size.width * dist.okayPercentage)
+                        }
+                        if dist.greatCount > 0 {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(SonderColors.ratingGreat)
+                                .frame(width: geo.size.width * dist.greatPercentage)
+                        }
+                        if dist.mustSeeCount > 0 {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(SonderColors.ratingMustSee)
+                                .frame(width: geo.size.width * dist.mustSeePercentage)
+                        }
+                    }
+                }
+                .frame(height: 12)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                // Legend
+                HStack(spacing: SonderSpacing.sm) {
+                    ratingLegendItem(emoji: "\u{1F44E}", count: dist.skipCount, color: SonderColors.ratingSkip)
+                    ratingLegendItem(emoji: "\u{1F44C}", count: dist.okayCount, color: SonderColors.ratingOkay)
+                    ratingLegendItem(emoji: "\u{2B50}", count: dist.greatCount, color: SonderColors.ratingGreat)
+                    ratingLegendItem(emoji: "\u{1F525}", count: dist.mustSeeCount, color: SonderColors.ratingMustSee)
+                }
+            }
+
+            Text(dist.philosophy)
+                .font(SonderTypography.caption)
+                .foregroundStyle(SonderColors.inkMuted)
+                .italic()
+                .padding(.top, SonderSpacing.xxs)
+        }
+        .profileSectionCard(tint: SonderColors.ochre)
+    }
+
     // MARK: - Recent Activity Section
 
     private var recentActivitySection: some View {
@@ -355,9 +623,7 @@ struct OtherUserProfileView: View {
                 }
             }
         }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+        .profileSectionCard(tint: SonderColors.terracotta)
     }
 
     // MARK: - Recent Trips (Boarding Pass)
@@ -373,32 +639,7 @@ struct OtherUserProfileView: View {
     private var cityCounts: [(city: String, count: Int)] { cachedCityCounts }
     private var topTagsWithCounts: [(tag: String, count: Int)] { cachedTopTagsWithCounts }
 
-    private var ratingCounts: (skip: Int, okay: Int, great: Int, mustSee: Int) { cachedRatingCounts }
-    private var skipCount: Int { cachedRatingCounts.skip }
-    private var okayCount: Int { cachedRatingCounts.okay }
-    private var greatCount: Int { cachedRatingCounts.great }
-    private var mustSeeCount: Int { cachedRatingCounts.mustSee }
 
-    private var ratingPhilosophy: String {
-        let total = userLogs.count
-        guard total > 0 else { return "" }
-        let counts = cachedRatingCounts
-        let mustSeePct = Double(counts.mustSee) / Double(total)
-        let skipPct = Double(counts.skip) / Double(total)
-        let positivePct = Double(counts.great + counts.mustSee) / Double(total)
-
-        if mustSeePct > 0.5 {
-            return "Generous — \(Int(mustSeePct * 100))% of their places are Must-See"
-        } else if skipPct > 0.4 {
-            return "High standards — only the best make the cut"
-        } else if mustSeePct < 0.15 && total >= 3 {
-            return "A discerning palate — saves Must-See for the truly special"
-        } else if positivePct > 0.6 && total >= 3 {
-            return "Finds the good in most places — a true optimist"
-        } else {
-            return "Every place tells a story"
-        }
-    }
 
     private func cityPhotoURL(_ city: String, maxWidth: Int = 400) -> URL? {
         let cityItems = userLogs.filter { ProfileStatsService.extractCity(from: $0.place.address) == city }
@@ -522,66 +763,6 @@ struct OtherUserProfileView: View {
 
 
 
-    // MARK: - Rating Breakdown Section
-
-    private var ratingBreakdownSection: some View {
-        let total = userLogs.count
-
-        return VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            Text("Ratings")
-                .font(SonderTypography.caption)
-                .foregroundStyle(SonderColors.inkMuted)
-                .textCase(.uppercase)
-                .tracking(0.5)
-
-            if total > 0 {
-                GeometryReader { geo in
-                    HStack(spacing: 2) {
-                        if skipCount > 0 {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(SonderColors.ratingSkip)
-                                .frame(width: geo.size.width * Double(skipCount) / Double(total))
-                        }
-                        if okayCount > 0 {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(SonderColors.ratingOkay)
-                                .frame(width: geo.size.width * Double(okayCount) / Double(total))
-                        }
-                        if greatCount > 0 {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(SonderColors.ratingGreat)
-                                .frame(width: geo.size.width * Double(greatCount) / Double(total))
-                        }
-                        if mustSeeCount > 0 {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(SonderColors.ratingMustSee)
-                                .frame(width: geo.size.width * Double(mustSeeCount) / Double(total))
-                        }
-                    }
-                }
-                .frame(height: 12)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                // Legend
-                HStack(spacing: SonderSpacing.sm) {
-                    ratingLegendItem(emoji: "👎", count: skipCount, color: SonderColors.ratingSkip)
-                    ratingLegendItem(emoji: "👌", count: okayCount, color: SonderColors.ratingOkay)
-                    ratingLegendItem(emoji: "⭐", count: greatCount, color: SonderColors.ratingGreat)
-                    ratingLegendItem(emoji: "🔥", count: mustSeeCount, color: SonderColors.ratingMustSee)
-                }
-            }
-
-            Text(ratingPhilosophy)
-                .font(SonderTypography.caption)
-                .foregroundStyle(SonderColors.inkMuted)
-                .italic()
-                .padding(.top, SonderSpacing.xxs)
-        }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
-    }
-
     private func ratingLegendItem(emoji: String, count: Int, color: Color) -> some View {
         HStack(spacing: 4) {
             Circle()
@@ -612,9 +793,7 @@ struct OtherUserProfileView: View {
                 }
             }
         }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+        .profileSectionCard(tint: SonderColors.sage)
     }
 
     private func tagChip(tag: String, count: Int, isTop: Bool, maxCount: Int) -> some View {
@@ -734,9 +913,7 @@ struct OtherUserProfileView: View {
                 }
             }
         }
-        .padding(SonderSpacing.md)
-        .background(SonderColors.warmGray)
-        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+        .profileSectionCard(tint: SonderColors.warmBlue, isFullBleed: true)
     }
 
     private func cityPhotoFallback(index: Int) -> some View {
@@ -809,9 +986,7 @@ struct OtherUserProfileView: View {
                     }
                 }
             }
-            .padding(SonderSpacing.md)
-            .background(SonderColors.warmGray)
-            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+            .profileSectionCard(tint: SonderColors.warmBlue)
         }
         .buttonStyle(.plain)
     }
@@ -950,9 +1125,7 @@ struct OtherUserProfileView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(SonderColors.inkLight)
             }
-            .padding(SonderSpacing.md)
-            .background(SonderColors.warmGray)
-            .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+            .profileSectionCard(tint: SonderColors.sage)
         }
         .buttonStyle(.plain)
     }
@@ -1005,17 +1178,30 @@ struct OtherUserProfileView: View {
             cachedTopTagsWithCounts = Array(tagCounts.prefix(6).map { (tag: $0.key, count: $0.value) })
         }
 
-        // Rating counts
-        var skip = 0, okay = 0, great = 0, mustSee = 0
-        for item in userLogs {
-            switch item.rating {
-            case .skip: skip += 1
-            case .okay: okay += 1
-            case .great: great += 1
-            case .mustSee: mustSee += 1
-            }
+        // Profile stats (their stats from FeedItems, my stats from SwiftData)
+        let theirs = ProfileStatsService.computeFromFeedItems(userLogs)
+        theirProfileStats = theirs
+
+        let loggedPlaceIDs = Set(myLogs.map { $0.placeID })
+        let myUserPlaces = myPlaces.filter { loggedPlaceIDs.contains($0.id) }
+        let mine = ProfileStatsService.compute(logs: myLogs, places: myUserPlaces)
+        myProfileStats = mine
+
+        // Taste match (both need 3+ logs)
+        if theirs.totalLogs >= 3 && mine.totalLogs >= 3 {
+            let myTagSet = Set(myLogs.flatMap { $0.tags })
+            let theirTagSet = Set(userLogs.flatMap { $0.log.tags })
+            tasteMatch = ProfileStatsService.computeTasteMatch(
+                myDNA: mine.tasteDNA,
+                theirDNA: theirs.tasteDNA,
+                myTags: myTagSet,
+                theirTags: theirTagSet,
+                myRatingDist: mine.ratingDistribution,
+                theirRatingDist: theirs.ratingDistribution
+            )
+        } else {
+            tasteMatch = nil
         }
-        cachedRatingCounts = (skip, okay, great, mustSee)
 
         // In common places
         let myPlacesByID = Dictionary(myPlaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
