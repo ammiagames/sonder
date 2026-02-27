@@ -70,6 +70,35 @@ struct NearbyPlace: Identifiable {
     let photoReference: String?
 
     var id: String { placeId }
+
+    /// True if this place is a utilitarian/errand destination unlikely to be worth logging.
+    var isUtilitarianPlace: Bool {
+        types.contains(where: Self.utilitarianTypes.contains)
+    }
+
+    private static let utilitarianTypes: Set<String> = [
+        // Shipping & logistics
+        "shipping_company",
+        // Groceries & convenience
+        "grocery_store", "supermarket", "convenience_store", "wholesaler",
+        // Pharmacy & medical
+        "pharmacy", "drugstore",
+        // Banking & finance
+        "bank", "atm",
+        // Gas & auto
+        "gas_station", "car_repair", "car_wash", "car_dealer",
+        // Hardware & home improvement
+        "hardware_store", "home_improvement_store",
+        // Generic services
+        "laundry", "dry_cleaning", "locksmith", "storage",
+        "insurance_agency", "real_estate_agency", "travel_agency",
+        // Telecom & electronics repair
+        "cell_phone_store",
+        // Government & post
+        "post_office", "local_government_office", "courthouse",
+        // Parking
+        "parking",
+    ]
 }
 
 // MARK: - Google Places Service (SDK + REST photos)

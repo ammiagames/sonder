@@ -151,7 +151,7 @@ final class BulkPhotoImportService {
                 if pending > 0, let (index, places) = await group.next() {
                     pending -= 1
                     resolved += 1
-                    clusters[index].suggestedPlaces = places
+                    clusters[index].suggestedPlaces = places.filter { !$0.isUtilitarianPlace }
                     state = .resolving(progress: Double(resolved) / Double(total))
                 }
             }
