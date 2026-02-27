@@ -87,12 +87,15 @@ enum FeedItemCardShared {
     // MARK: - Photo Carousel
 
     /// Reusable photo carousel (TabView with page style).
+    /// When `showPageCounter` is true, default dots are replaced with a frosted "1/3" pill
+    /// and subtle edge shadow hints appear on multi-photo carousels.
     @ViewBuilder
     static func photoCarousel(
         photoURLs: [String],
         pageIndex: Binding<Int>,
         height: CGFloat,
-        targetImageWidth: CGFloat = 400
+        targetImageWidth: CGFloat = 400,
+        showPageCounter: Bool = false
     ) -> some View {
         if photoURLs.isEmpty {
             Rectangle()
@@ -101,16 +104,7 @@ enum FeedItemCardShared {
                 .frame(maxWidth: .infinity)
                 .clipped()
         } else {
-            let safeSelection = Binding<Int>(
-                get: {
-                    let maxIndex = max(photoURLs.count - 1, 0)
-                    return min(max(pageIndex.wrappedValue, 0), maxIndex)
-                },
-                set: { newValue in
-                    let maxIndex = max(photoURLs.count - 1, 0)
-                    pageIndex.wrappedValue = min(max(newValue, 0), maxIndex)
-                }
-            )
+            let safeSelection = safePageIndex(for: photoURLs.count, binding: pageIndex)
 
             TabView(selection: safeSelection) {
                 ForEach(photoURLs.indices, id: \.self) { index in
@@ -138,10 +132,40 @@ enum FeedItemCardShared {
                     }
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: photoURLs.count > 1 ? .automatic : .never))
+            .tabViewStyle(.page(indexDisplayMode: showPageCounter ? .never : (photoURLs.count > 1 ? .automatic : .never)))
             .frame(height: height)
             .frame(maxWidth: .infinity)
             .clipped()
+            // Frosted page counter pill (top-right)
+            .overlay(alignment: .topTrailing) {
+                if showPageCounter && photoURLs.count > 1 {
+                    PageCounterPill(current: safeSelection.wrappedValue, total: photoURLs.count, style: .compact)
+                        .padding(SonderSpacing.sm)
+                }
+            }
+            // Subtle edge shadow hints for multi-photo carousels
+            .overlay {
+                if showPageCounter && photoURLs.count > 1 {
+                    HStack(spacing: 0) {
+                        LinearGradient(
+                            colors: [.black.opacity(safeSelection.wrappedValue > 0 ? 0.05 : 0), .clear],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: 20)
+
+                        Spacer()
+
+                        LinearGradient(
+                            colors: [.clear, .black.opacity(safeSelection.wrappedValue < photoURLs.count - 1 ? 0.05 : 0)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: 20)
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
         }
     }
 }

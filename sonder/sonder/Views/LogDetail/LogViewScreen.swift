@@ -516,22 +516,7 @@ struct LogViewScreen: View {
                     maxSelectionCount: maxPhotos,
                     matching: .images
                 ) {
-                    HStack(spacing: SonderSpacing.xs) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 18))
-                        Text("Add Photos")
-                            .font(SonderTypography.body)
-                            .fontWeight(.medium)
-                    }
-                    .foregroundStyle(SonderColors.terracotta)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 64)
-                    .background(SonderColors.warmGray)
-                    .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
-                            .strokeBorder(SonderColors.terracotta.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [6]))
-                    )
+                    AddPhotosEmptyState(height: 64)
                 }
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -580,18 +565,7 @@ struct LogViewScreen: View {
                                 maxSelectionCount: maxPhotos - editTotalPhotoCount,
                                 matching: .images
                             ) {
-                                VStack(spacing: 4) {
-                                    Image(systemName: "plus")
-                                        .font(.system(size: 20, weight: .medium))
-                                        .foregroundStyle(SonderColors.inkMuted)
-                                }
-                                .frame(width: 64, height: 64)
-                                .background(SonderColors.warmGray)
-                                .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusSm))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: SonderSpacing.radiusSm)
-                                        .strokeBorder(SonderColors.inkLight.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4]))
-                                )
+                                AddMorePhotosButton(size: 64)
                             }
                         }
 

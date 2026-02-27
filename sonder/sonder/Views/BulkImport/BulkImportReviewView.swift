@@ -422,8 +422,7 @@ struct BulkImportReviewView: View {
                                             lineWidth: 2.5
                                         )
                                 )
-                                .opacity(isBeingDragged ? 0.3 : 1.0)
-                                .scaleEffect(isBeingDragged ? 0.9 : 1.0)
+                                .opacity(isBeingDragged ? 0 : 1.0)
                                 .onTapGesture {
                                     withAnimation(.easeInOut(duration: 0.15)) {
                                         if isSelected {

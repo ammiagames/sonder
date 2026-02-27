@@ -25,12 +25,14 @@ struct FullscreenPhotoViewer: View {
     }
 
     var body: some View {
+        let safeSelection = safePageIndex(for: photoURLs.count, binding: $currentIndex)
+
         ZStack {
             Color.black
                 .opacity(backgroundOpacity)
                 .ignoresSafeArea()
 
-            TabView(selection: $currentIndex) {
+            TabView(selection: safeSelection) {
                 ForEach(Array(photoURLs.enumerated()), id: \.offset) { index, urlString in
                     // Only build zoomable pages for current and adjacent photos
                     if abs(index - currentIndex) <= 1 {
@@ -70,13 +72,7 @@ struct FullscreenPhotoViewer: View {
             if photoURLs.count > 1 {
                 VStack {
                     Spacer()
-                    Text("\(currentIndex + 1) / \(photoURLs.count)")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(Color.black.opacity(0.5))
-                        .clipShape(Capsule())
+                    PageCounterPill(current: safeSelection.wrappedValue, total: photoURLs.count, style: .fullscreen)
                         .padding(.bottom, 50)
                 }
             }

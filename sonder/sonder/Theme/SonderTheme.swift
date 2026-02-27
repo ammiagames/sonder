@@ -203,6 +203,33 @@ extension View {
         modifier(ShimmerModifier())
     }
 
+    /// Adds a dashed border overlay with a rounded rectangle shape.
+    func dashedBorder(
+        color: Color = SonderColors.inkLight.opacity(0.3),
+        cornerRadius: CGFloat = SonderSpacing.radiusMd,
+        lineWidth: CGFloat = 1,
+        dash: [CGFloat] = [6, 4]
+    ) -> some View {
+        self.overlay(
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .strokeBorder(color, style: StrokeStyle(lineWidth: lineWidth, dash: dash))
+        )
+    }
+}
+
+/// Creates a Binding<Int> that clamps to valid indices for a collection of the given count.
+/// Prevents out-of-bounds crashes when TabView selection diverges from array bounds.
+func safePageIndex(for count: Int, binding: Binding<Int>) -> Binding<Int> {
+    Binding<Int>(
+        get: {
+            let maxIndex = max(count - 1, 0)
+            return min(max(binding.wrappedValue, 0), maxIndex)
+        },
+        set: { newValue in
+            let maxIndex = max(count - 1, 0)
+            binding.wrappedValue = min(max(newValue, 0), maxIndex)
+        }
+    )
 }
 
 struct ShimmerModifier: ViewModifier {
