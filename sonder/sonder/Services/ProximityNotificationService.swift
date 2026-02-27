@@ -114,6 +114,7 @@ final class ProximityNotificationService: NSObject {
     }
 
     func stopMonitoring() {
+        locationManager?.delegate = nil
         locationManager?.stopUpdatingLocation()
         locationManager = nil
         isMonitoring = false
