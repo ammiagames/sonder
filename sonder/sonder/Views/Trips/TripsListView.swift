@@ -35,6 +35,11 @@ struct TripsListView: View {
     @State private var selectedLog: Log?
     @Namespace private var tripTransition
 
+    // Cached lookups — rebuilt in refreshData()
+    @State private var cachedPlacesByID: [String: Place] = [:]
+    @State private var cachedTripsByID: [String: Trip] = [:]
+    @State private var cachedLogCountsByTripID: [String: Int] = [:]
+
     /// Trips filtered to current user (owned + collaborating)
     private var trips: [Trip] { allUserTrips }
 
@@ -54,6 +59,15 @@ struct TripsListView: View {
         )
         let allTrips = (try? modelContext.fetch(tripDescriptor)) ?? []
         allUserTrips = allTrips.filter { $0.isAccessible(by: userID) }
+
+        // Rebuild O(1) lookup caches
+        cachedPlacesByID = Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        cachedTripsByID = Dictionary(allUserTrips.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var logCounts: [String: Int] = [:]
+        for log in allUserLogs {
+            if let tripID = log.tripID { logCounts[tripID, default: 0] += 1 }
+        }
+        cachedLogCountsByTripID = logCounts
     }
 
     var body: some View {
@@ -101,10 +115,13 @@ struct TripsListView: View {
                     .navigationTransition(.zoom(sourceID: trip.id, in: tripTransition))
             }
             .navigationDestination(item: $selectedLog) { log in
-                if let place = places.first(where: { $0.id == log.placeID }) {
-                    LogViewScreen(log: log, place: place, onDelete: {
+                if let freshLog = allUserLogs.first(where: { $0.id == log.id }),
+                   let place = cachedPlacesByID[freshLog.placeID] {
+                    LogViewScreen(log: freshLog, place: place, onDelete: {
                         selectedLog = nil
                     })
+                } else {
+                    Color.clear.onAppear { selectedLog = nil }
                 }
             }
             .sheet(isPresented: $showInvitations) {
@@ -141,7 +158,7 @@ struct TripsListView: View {
             ScrollView {
                 LazyVStack(spacing: SonderSpacing.sm) {
                     ForEach(logs, id: \.id) { log in
-                        if let place = places.first(where: { $0.id == log.placeID }) {
+                        if let place = cachedPlacesByID[log.placeID] {
                             Button {
                                 selectedLog = log
                             } label: {
@@ -289,11 +306,11 @@ struct TripsListView: View {
 
     private func tripName(for log: Log) -> String? {
         guard let tripID = log.tripID else { return nil }
-        return allUserTrips.first(where: { $0.id == tripID })?.name
+        return cachedTripsByID[tripID]?.name
     }
 
     private func logCount(for trip: Trip) -> Int {
-        allUserLogs.filter { $0.tripID == trip.id }.count
+        cachedLogCountsByTripID[trip.id] ?? 0
     }
 
     private func isOwner(_ trip: Trip) -> Bool {

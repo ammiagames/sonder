@@ -25,12 +25,12 @@ struct SavedListsServiceTests {
         let (service, context, container) = try makeSUT()
         _ = container
 
-        context.insert(TestData.savedList(id: "l1", userID: "u1", name: "List 1"))
-        context.insert(TestData.savedList(id: "l2", userID: "u2", name: "List 2"))
+        context.insert(TestData.savedList(id: "l1", userID: "u1", name: "List 1", isDefault: false))
+        context.insert(TestData.savedList(id: "l2", userID: "u2", name: "List 2", isDefault: false))
         try context.save()
 
         let lists = service.getLocalLists(for: "u1")
-        #expect(lists.count == 1)
+        try #require(lists.count == 1)
         #expect(lists[0].id == "l1")
     }
 
@@ -38,12 +38,12 @@ struct SavedListsServiceTests {
         let (service, context, container) = try makeSUT()
         _ = container
 
-        context.insert(TestData.savedList(id: "l2", userID: "u1", name: "Second", sortOrder: 1))
-        context.insert(TestData.savedList(id: "l1", userID: "u1", name: "First", sortOrder: 0))
+        context.insert(TestData.savedList(id: "l2", userID: "u1", name: "Second", isDefault: false, sortOrder: 1))
+        context.insert(TestData.savedList(id: "l1", userID: "u1", name: "First", isDefault: false, sortOrder: 0))
         try context.save()
 
         let lists = service.getLocalLists(for: "u1")
-        #expect(lists.count == 2)
+        try #require(lists.count == 2)
         #expect(lists[0].id == "l1")
         #expect(lists[1].id == "l2")
     }
@@ -57,7 +57,7 @@ struct SavedListsServiceTests {
         try context.save()
 
         let lists = service.getLocalLists(for: "u1")
-        #expect(lists.count == 1)
+        try #require(lists.count == 1)
         #expect(lists[0].id == "l2")
     }
 

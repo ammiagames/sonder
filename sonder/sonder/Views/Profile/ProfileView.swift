@@ -931,10 +931,14 @@ struct FilteredLogsListView: View {
     let logs: [Log]
     @Query private var places: [Place]
 
+    private var placesByID: [String: Place] {
+        Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
     var body: some View {
         List {
             ForEach(logs, id: \.id) { log in
-                if let place = places.first(where: { $0.id == log.placeID }) {
+                if let place = placesByID[log.placeID] {
                     NavigationLink {
                         LogViewScreen(log: log, place: place)
                     } label: {

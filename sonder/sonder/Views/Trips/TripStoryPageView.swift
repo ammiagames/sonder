@@ -17,6 +17,7 @@ struct TripStoryPageView: View {
     let startIndex: Int
 
     @State private var currentIndex: Int
+    private let placesByID: [String: Place]
 
     init(logs: [Log], places: [Place], tripName: String, startIndex: Int) {
         self.logs = logs
@@ -24,6 +25,7 @@ struct TripStoryPageView: View {
         self.tripName = tripName
         self.startIndex = startIndex
         _currentIndex = State(initialValue: startIndex)
+        self.placesByID = Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
     var body: some View {
@@ -35,7 +37,7 @@ struct TripStoryPageView: View {
             // Pages
             TabView(selection: $currentIndex) {
                 ForEach(Array(logs.enumerated()), id: \.element.id) { index, log in
-                    let place = places.first(where: { $0.id == log.placeID })
+                    let place = placesByID[log.placeID]
                     StoryPage(log: log, place: place)
                         .tag(index)
                 }

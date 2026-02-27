@@ -315,10 +315,9 @@ final class SyncEngine {
     // MARK: - Log Sync
 
     private func syncPendingLogs() async throws {
-        let pending = SyncStatus.pending
-        let failed = SyncStatus.failed
+        let synced = SyncStatus.synced
         let pendingDescriptor = FetchDescriptor<Log>(
-            predicate: #Predicate { $0.syncStatus == pending || $0.syncStatus == failed }
+            predicate: #Predicate { $0.syncStatus != synced }
         )
         let pendingLogs = try modelContext.fetch(pendingDescriptor)
         logger.info("[SyncLogs] Found \(pendingLogs.count) pending/failed logs")
@@ -874,10 +873,9 @@ final class SyncEngine {
     // MARK: - Helpers
 
     func updatePendingCount() async {
-        let pending = SyncStatus.pending
-        let failed = SyncStatus.failed
+        let synced = SyncStatus.synced
         let descriptor = FetchDescriptor<Log>(
-            predicate: #Predicate { $0.syncStatus == pending || $0.syncStatus == failed }
+            predicate: #Predicate { $0.syncStatus != synced }
         )
         if let pendingLogs = try? modelContext.fetch(descriptor) {
             pendingCount = pendingLogs.filter {
@@ -897,10 +895,9 @@ final class SyncEngine {
 
     /// Get all logs that contribute to the pending badge (pending or failed, excluding active photo uploads)
     func getStuckLogs() -> [Log] {
-        let pending = SyncStatus.pending
-        let failed = SyncStatus.failed
+        let synced = SyncStatus.synced
         let descriptor = FetchDescriptor<Log>(
-            predicate: #Predicate { $0.syncStatus == pending || $0.syncStatus == failed }
+            predicate: #Predicate { $0.syncStatus != synced }
         )
         return ((try? modelContext.fetch(descriptor)) ?? []).filter {
             !$0.photoURLs.contains(where: { $0.hasPrefix("pending-upload:") })
