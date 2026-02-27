@@ -145,12 +145,27 @@ A change is “done” when:
 
 ## Multi-Agent Workflow
 
-Multiple AI agents may work on this repo simultaneously. Follow these rules to avoid conflicts:
+Multiple AI agents work on this repo concurrently. Other agents may have uncommitted or staged changes in the working directory at any time. Treat the working tree as shared mutable state.
 
-- **Always work in a git worktree.** Use `git worktree add` or Claude Code's built-in worktree support. Never work directly on `main` with uncommitted changes.
-- **Own your branch.** Each agent/session should work on its own feature branch. Name it descriptively (e.g., `feature/bulk-import`, `fix/edit-mode-ux`).
-- **Commit frequently.** Never leave work uncommitted at the end of a session. Uncommitted changes are vulnerable to other agents' git operations.
-- **NEVER run `git reset`, `git stash`, or `git checkout .` on shared branches** — these affect shared state and can destroy other agents' uncommitted work.
-- **NEVER use `git add .` or `git add -A`** — stage specific files by name to avoid accidentally committing other agents' in-progress work.
-- **Avoid overlapping files.** Coordinate so agents work on different files/features. If overlap is unavoidable, merge conflicts are resolved at merge time — much better than silent overwrites.
-- **Merge back to main** when your feature branch is complete and tested.
+**You are not the only one editing this codebase right now.** Before making any change, consider that another agent may be actively working on the same or related files. A "simple refactor" or rename on your end can silently break another agent's in-progress work.
+
+**NEVER do any of the following — they destroy other agents' in-progress work:**
+- `git reset` (any form — `--soft`, `--mixed`, `--hard`)
+- `git stash`
+- `git checkout .` or `git restore .`
+- `git clean`
+- `git checkout <other-branch>` (do not switch branches)
+
+**Safe git habits:**
+- **Stage specific files by name** (e.g., `git add path/to/file.swift`). NEVER use `git add .` or `git add -A` — this will stage other agents' unfinished work.
+- **Only commit files you changed.** If `git status` shows files you didn't touch, leave them alone.
+- **Commit frequently.** Committed work is safe; uncommitted work is vulnerable.
+- **Do not modify files another agent is working on.** If you see recent changes in a file you didn't edit, do not touch it.
+
+**Avoid drastic changes:**
+- **No sweeping renames or refactors** (renaming models, services, shared types, or widely-imported symbols). These touch many files and will conflict with every other agent's work.
+- **No large-scale file reorganization** (moving files between directories, restructuring folders). Other agents have paths hardcoded in their context.
+- **No wholesale API changes** to shared services, models, or protocols. If you need to change an interface, extend it — don't replace it.
+- **Keep changes narrow and surgical.** Touch the minimum number of files needed. If your change requires modifying more than 5 files, confirm with the user first.
+- **Prefer additive changes over modifications.** Add new functions/properties rather than changing existing signatures that other agents may depend on.
+- When in doubt, **ask the user** before proceeding with any change that could disrupt concurrent work.
