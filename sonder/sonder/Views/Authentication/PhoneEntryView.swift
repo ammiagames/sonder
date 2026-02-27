@@ -6,6 +6,51 @@
 import SwiftUI
 import AuthenticationServices
 
+// MARK: - Private Helpers
+
+/// Seeded xorshift64 RNG for deterministic decorative elements.
+private struct AuthScreenRNG: RandomNumberGenerator {
+    private var state: UInt64
+
+    init(seed: UInt64) {
+        state = seed == 0 ? 0x5DEECE66D : seed
+    }
+
+    mutating func next() -> UInt64 {
+        state ^= state << 13
+        state ^= state >> 7
+        state ^= state << 17
+        return state
+    }
+}
+
+/// Lightweight paper grain texture overlay.
+private struct AuthGrainOverlay: View {
+    let seed: UInt64
+
+    var body: some View {
+        Canvas { context, size in
+            var rng = AuthScreenRNG(seed: seed)
+
+            for _ in 0..<320 {
+                let x = CGFloat.random(in: 0...size.width, using: &rng)
+                let y = CGFloat.random(in: 0...size.height, using: &rng)
+                let w = CGFloat.random(in: 0.4...1.6, using: &rng)
+                let h = CGFloat.random(in: 0.4...1.6, using: &rng)
+                let isDark = Bool.random(using: &rng)
+                let alpha = Double.random(in: 0.02...0.07, using: &rng)
+
+                context.fill(
+                    Path(ellipseIn: CGRect(x: x, y: y, width: w, height: h)),
+                    with: .color(isDark ? Color.black.opacity(alpha) : Color.white.opacity(alpha))
+                )
+            }
+        }
+        .blendMode(.softLight)
+        .opacity(0.15)
+    }
+}
+
 /// Primary authentication screen — phone number entry with OTP flow.
 /// "Already have an account?" link reveals Apple/Google sign-in as a secondary option.
 struct PhoneEntryView: View {
@@ -16,6 +61,17 @@ struct PhoneEntryView: View {
     @State private var errorMessage: String?
     @State private var showOTPView = false
     @State private var showSecondarySignIn = false
+
+    // Entrance animation state
+    @State private var wordmarkVisible = false
+    @State private var taglineVisible = false
+    @State private var inputVisible = false
+    @State private var linkVisible = false
+    @State private var breatheScale: CGFloat = 1.0
+    @State private var buttonPop = false
+    @FocusState private var isPhoneFieldFocused: Bool
+
+    private let sonderLetters = ["s", "o", "n", "d", "e", "r"]
 
     /// Formatted E.164 phone string for OTP
     private var fullPhoneNumber: String {
@@ -42,30 +98,151 @@ struct PhoneEntryView: View {
 
     private var isValid: Bool { phoneDigits.count == 10 }
 
+    // MARK: - Decorative Background
+
+    private var decorativeBackground: some View {
+        ZStack {
+            // Warm gradient base
+            LinearGradient(
+                colors: [
+                    SonderColors.cream,
+                    Color(red: 0.97, green: 0.94, blue: 0.90)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            // Radial glow — ochre upper-right
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [SonderColors.ochre.opacity(0.12), .clear],
+                        center: UnitPoint(x: 0.85, y: 0.15),
+                        startRadius: 20,
+                        endRadius: 300
+                    )
+                )
+
+            // Radial glow — terracotta lower-left
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [SonderColors.terracotta.opacity(0.08), .clear],
+                        center: UnitPoint(x: 0.15, y: 0.80),
+                        startRadius: 20,
+                        endRadius: 280
+                    )
+                )
+
+            // Route doodles
+            GeometryReader { geo in
+                authRouteDoodles(size: geo.size)
+            }
+
+            // Paper grain
+            AuthGrainOverlay(seed: 0xA17B_5C3E)
+        }
+        .ignoresSafeArea()
+    }
+
+    @ViewBuilder
+    private func authRouteDoodles(size: CGSize) -> some View {
+        let lineWidth: CGFloat = 1.4
+        let dotSize: CGFloat = 4.8
+        let doodleColor = SonderColors.inkLight.opacity(0.12)
+
+        ZStack {
+            // Route 1 — upper area curve
+            Path { path in
+                let start = CGPoint(x: size.width * 0.12, y: size.height * 0.18)
+                let mid = CGPoint(x: size.width * 0.38, y: size.height * 0.12)
+                let end = CGPoint(x: size.width * 0.55, y: size.height * 0.22)
+                path.move(to: start)
+                path.addQuadCurve(to: mid, control: CGPoint(x: size.width * 0.24, y: size.height * 0.06))
+                path.addQuadCurve(to: end, control: CGPoint(x: size.width * 0.48, y: size.height * 0.08))
+            }
+            .stroke(doodleColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [5, 5]))
+
+            // Waypoint dots — route 1
+            Circle().fill(doodleColor).frame(width: dotSize, height: dotSize)
+                .position(x: size.width * 0.12, y: size.height * 0.18)
+            Circle().fill(doodleColor).frame(width: dotSize, height: dotSize)
+                .position(x: size.width * 0.38, y: size.height * 0.12)
+            Circle().fill(doodleColor).frame(width: dotSize, height: dotSize)
+                .position(x: size.width * 0.55, y: size.height * 0.22)
+
+            // Route 2 — lower-right
+            Path { path in
+                let start = CGPoint(x: size.width * 0.60, y: size.height * 0.78)
+                let end = CGPoint(x: size.width * 0.88, y: size.height * 0.72)
+                path.move(to: start)
+                path.addQuadCurve(to: end, control: CGPoint(x: size.width * 0.76, y: size.height * 0.88))
+            }
+            .stroke(doodleColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [5, 5]))
+
+            Circle().fill(doodleColor).frame(width: dotSize, height: dotSize)
+                .position(x: size.width * 0.60, y: size.height * 0.78)
+            Circle().fill(doodleColor).frame(width: dotSize, height: dotSize)
+                .position(x: size.width * 0.88, y: size.height * 0.72)
+
+            // Route 3 — short path mid-right
+            Path { path in
+                let start = CGPoint(x: size.width * 0.82, y: size.height * 0.35)
+                let end = CGPoint(x: size.width * 0.92, y: size.height * 0.48)
+                path.move(to: start)
+                path.addQuadCurve(to: end, control: CGPoint(x: size.width * 0.96, y: size.height * 0.38))
+            }
+            .stroke(doodleColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [4, 4]))
+
+            Circle().fill(doodleColor).frame(width: dotSize, height: dotSize)
+                .position(x: size.width * 0.82, y: size.height * 0.35)
+            Circle().fill(doodleColor).frame(width: dotSize, height: dotSize)
+                .position(x: size.width * 0.92, y: size.height * 0.48)
+        }
+    }
+
+    // MARK: - Body
+
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
 
             // Branding
             VStack(spacing: SonderSpacing.sm) {
-                Text("sonder")
-                    .font(.system(size: 48, weight: .bold, design: .serif))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [SonderColors.terracotta, SonderColors.terracotta.opacity(0.8)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
+                // Per-letter wordmark with staggered entrance
+                HStack(spacing: 0) {
+                    ForEach(Array(sonderLetters.enumerated()), id: \.offset) { index, letter in
+                        Text(letter)
+                            .font(.system(size: 48, weight: .bold, design: .serif))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [SonderColors.terracotta, SonderColors.terracotta.opacity(0.8)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .opacity(wordmarkVisible ? 1 : 0)
+                            .offset(y: wordmarkVisible ? 0 : 16)
+                            .animation(
+                                .spring(response: 0.5, dampingFraction: 0.75)
+                                    .delay(Double(index) * 0.08),
+                                value: wordmarkVisible
+                            )
+                    }
+                }
+                .scaleEffect(breatheScale)
 
                 Text("Log anything. Remember everywhere.")
                     .font(SonderTypography.body)
                     .foregroundStyle(SonderColors.inkMuted)
+                    .opacity(taglineVisible ? 1 : 0)
+                    .offset(y: taglineVisible ? 0 : 12)
+                    .animation(.easeOut(duration: 0.4).delay(0.55), value: taglineVisible)
             }
 
             Spacer()
 
-            // Phone input
+            // Phone input section
             VStack(spacing: SonderSpacing.lg) {
                 VStack(alignment: .leading, spacing: SonderSpacing.xs) {
                     Text("Phone number")
@@ -96,11 +273,20 @@ struct PhoneEntryView: View {
                         .font(SonderTypography.body)
                         .keyboardType(.phonePad)
                         .textContentType(.telephoneNumber)
+                        .focused($isPhoneFieldFocused)
                     }
                     .padding(.vertical, SonderSpacing.md)
                     .padding(.trailing, SonderSpacing.md)
                     .background(SonderColors.warmGray)
                     .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
+                            .stroke(
+                                isPhoneFieldFocused ? SonderColors.terracotta : Color.clear,
+                                lineWidth: 2
+                            )
+                            .animation(.easeInOut(duration: 0.2), value: isPhoneFieldFocused)
+                    )
                 }
 
                 // Error
@@ -125,8 +311,12 @@ struct PhoneEntryView: View {
                 .buttonStyle(WarmButtonStyle(isPrimary: true))
                 .disabled(!isValid || isLoading)
                 .opacity(isValid && !isLoading ? 1 : 0.5)
+                .scaleEffect(buttonPop ? 1.03 : 1.0)
             }
             .padding(.horizontal, SonderSpacing.lg)
+            .opacity(inputVisible ? 1 : 0)
+            .offset(y: inputVisible ? 0 : 20)
+            .animation(.easeOut(duration: 0.5).delay(0.70), value: inputVisible)
 
             Spacer()
 
@@ -143,18 +333,54 @@ struct PhoneEntryView: View {
             .font(SonderTypography.subheadline)
             .buttonStyle(.plain)
             .padding(.bottom, SonderSpacing.xxl)
+            .opacity(linkVisible ? 1 : 0)
+            .animation(.easeOut(duration: 0.35).delay(0.90), value: linkVisible)
         }
-        .background(SonderColors.cream)
+        .background(decorativeBackground)
         .fullScreenCover(isPresented: $showOTPView) {
             OTPVerificationView(phoneNumber: fullPhoneNumber)
         }
         .sheet(isPresented: $showSecondarySignIn) {
             SecondarySignInSheet()
         }
+        .onChange(of: isValid) { oldValue, newValue in
+            if newValue && !oldValue {
+                // Button pop + haptic when phone becomes valid
+                SonderHaptics.impact(.light, intensity: 0.6)
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) {
+                    buttonPop = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                        buttonPop = false
+                    }
+                }
+            }
+        }
+        .onAppear {
+            // Staggered entrance — all flags set together, individual delays in .animation() modifiers
+            wordmarkVisible = true
+            taglineVisible = true
+            inputVisible = true
+            linkVisible = true
+
+            // Breathing animation on wordmark
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                withAnimation(
+                    .easeInOut(duration: 3.0)
+                    .repeatForever(autoreverses: true)
+                ) {
+                    breatheScale = 1.01
+                }
+            }
+        }
     }
+
+    // MARK: - Actions
 
     private func sendOTP() {
         guard isValid else { return }
+        SonderHaptics.impact(.medium)
         isLoading = true
         errorMessage = nil
 
@@ -163,6 +389,7 @@ struct PhoneEntryView: View {
                 try await authService.sendPhoneOTP(phone: fullPhoneNumber)
                 showOTPView = true
             } catch {
+                print("📱 OTP send error: \(error)")
                 errorMessage = "Couldn't send code. Please try again."
             }
             isLoading = false
