@@ -23,19 +23,26 @@ struct SearchPlaceView: View {
 
     var onLogComplete: ((CLLocationCoordinate2D) -> Void)?
 
+    /// Pick mode: when set, tapping a result selects the place and dismisses
+    /// instead of navigating to preview/rating. Used by bulk import.
+    var onPlaceSelected: ((Place) -> Void)?
+
     @State private var loggedPlaceIDs: Set<String> = []
     @State private var searchText = ""
     @State private var predictions: [PlacePrediction] = []
     @State private var nearbyPlaces: [NearbyPlace] = []
     @State private var placeToLog: Place?
+    @State private var placeDetailsToPreview: PlaceDetails?
     @State private var showCustomPlace = false
     @State private var isLoadingNearby = false
     @State private var isLoadingDetails = false
     @State private var detailsError: String?
     @State private var removingPlaceIds: Set<String> = []
+    @State private var isSearching = false
     @State private var autocompleteTask: Task<Void, Never>?
     @State private var nearbyLoadTask: Task<Void, Never>?
     @State private var logDirectlyTask: Task<Void, Never>?
+    @State private var previewTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -69,11 +76,12 @@ struct SearchPlaceView: View {
                             }
                         }
                     }
+                    .padding(.top, SonderSpacing.xs)
                 }
                 .scrollDismissesKeyboard(.immediately)
             }
             .background(SonderColors.cream)
-            .navigationTitle("Log a Place")
+            .navigationTitle(onPlaceSelected != nil ? "Search for a place" : "Log a Place")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -83,12 +91,26 @@ struct SearchPlaceView: View {
                     .foregroundStyle(SonderColors.inkMuted)
                 }
 
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showCustomPlace = true
-                    } label: {
-                        Image(systemName: "mappin.circle")
-                            .foregroundStyle(SonderColors.terracotta)
+                if onPlaceSelected == nil {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            showCustomPlace = true
+                        } label: {
+                            Image(systemName: "mappin.circle")
+                                .foregroundStyle(SonderColors.terracotta)
+                        }
+                    }
+                }
+            }
+            .navigationDestination(item: $placeDetailsToPreview) { details in
+                PlacePreviewView(details: details) {
+                    // "Log This Place" tapped from preview → open rating screen directly
+                    let place = cacheService.cachePlace(from: details)
+                    if let onPlaceSelected {
+                        onPlaceSelected(place)
+                        dismiss()
+                    } else {
+                        placeToLog = place
                     }
                 }
             }
@@ -130,11 +152,8 @@ struct SearchPlaceView: View {
         .fullScreenCover(item: $placeToLog) { place in
             NavigationStack {
                 RatePlaceView(place: place) { coord in
-                    searchText = ""
-                    Task { @MainActor in
-                        placeToLog = nil
-                    }
                     onLogComplete?(coord)
+                    dismiss()
                 }
             }
         }
@@ -154,6 +173,12 @@ struct SearchPlaceView: View {
             .frame(height: 22)
             .onChange(of: searchText) { _, newValue in
                 autocompleteTask?.cancel()
+                if newValue.trimmingCharacters(in: .whitespaces).isEmpty {
+                    predictions = []
+                    isSearching = false
+                    return
+                }
+                isSearching = true
                 autocompleteTask = Task {
                     let results = await placesService.autocomplete(
                         query: newValue,
@@ -161,6 +186,7 @@ struct SearchPlaceView: View {
                     )
                     guard !Task.isCancelled else { return }
                     predictions = results
+                    isSearching = false
                 }
             }
 
@@ -181,10 +207,8 @@ struct SearchPlaceView: View {
 
     @ViewBuilder
     private var searchResultsSection: some View {
-        if placesService.isLoading {
-            ProgressView()
-                .tint(SonderColors.terracotta)
-                .padding()
+        if isSearching {
+            searchLoadingAnimation
         } else if predictions.isEmpty && !searchText.isEmpty {
             let cachedResults = cacheService.searchCachedPlaces(query: searchText)
             if cachedResults.isEmpty {
@@ -223,7 +247,7 @@ struct SearchPlaceView: View {
                 sectionHeader("Cached Places")
                 ForEach(cachedResults, id: \.id) { place in
                     Button {
-                        logPlaceDirectly(byID: place.id)
+                        showPlacePreview(byID: place.id)
                     } label: {
                         PlaceSearchRow(
                             name: place.name,
@@ -240,7 +264,7 @@ struct SearchPlaceView: View {
         } else {
             ForEach(predictions) { prediction in
                 Button {
-                    logPlaceDirectly(byID: prediction.placeId)
+                    showPlacePreview(byID: prediction.placeId)
                 } label: {
                     PlaceSearchRow(
                         name: prediction.mainText,
@@ -254,6 +278,21 @@ struct SearchPlaceView: View {
                 Divider().padding(.leading, 68)
             }
         }
+    }
+
+    private var searchLoadingAnimation: some View {
+        VStack(spacing: SonderSpacing.md) {
+            Image(systemName: "mappin.and.ellipse")
+                .font(.system(size: 36))
+                .foregroundStyle(SonderColors.terracotta)
+                .symbolEffect(.bounce, options: .repeating)
+
+            Text("Searching...")
+                .font(SonderTypography.body)
+                .foregroundStyle(SonderColors.inkMuted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, SonderSpacing.xxl)
     }
 
     // MARK: - Nearby Section
@@ -280,7 +319,7 @@ struct SearchPlaceView: View {
             sectionHeader("Nearby")
             ForEach(filteredNearby) { place in
                 Button {
-                    logPlaceDirectly(byID: place.placeId)
+                    showPlacePreview(byID: place.placeId)
                 } label: {
                     PlaceSearchRow(
                         name: place.name,
@@ -358,7 +397,7 @@ struct SearchPlaceView: View {
 
                 VStack(spacing: 0) {
                     Button {
-                        logPlaceDirectly(byID: search.placeId)
+                        showPlacePreview(byID: search.placeId)
                     } label: {
                         RecentSearchRow(
                             name: search.name,
@@ -483,7 +522,38 @@ struct SearchPlaceView: View {
         }
     }
 
+    /// Fetches place details and navigates to the place preview/details screen.
+    /// In pick mode, selects the place directly and dismisses.
+    private func showPlacePreview(byID placeId: String) {
+        previewTask?.cancel()
+        previewTask = Task {
+            isLoadingDetails = true
+            detailsError = nil
+
+            if let details = await placesService.getPlaceDetails(placeId: placeId) {
+                guard !Task.isCancelled else { return }
+                let place = cacheService.cachePlace(from: details)
+                cacheService.addRecentSearch(placeId: details.placeId, name: details.name, address: details.formattedAddress)
+                isLoadingDetails = false
+
+                if let onPlaceSelected {
+                    onPlaceSelected(place)
+                    dismiss()
+                } else {
+                    placeDetailsToPreview = details
+                }
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+
+            isLoadingDetails = false
+            detailsError = placesService.error?.localizedDescription ?? "Failed to load place details"
+        }
+    }
+
     /// Fetches place details and jumps straight to the rating screen, skipping the preview.
+    /// In pick mode, selects the place directly and dismisses.
     private func logPlaceDirectly(byID placeId: String) {
         logDirectlyTask?.cancel()
         logDirectlyTask = Task {
@@ -495,7 +565,13 @@ struct SearchPlaceView: View {
                 let place = cacheService.cachePlace(from: details)
                 cacheService.addRecentSearch(placeId: place.id, name: place.name, address: place.address)
                 isLoadingDetails = false
-                placeToLog = place
+
+                if let onPlaceSelected {
+                    onPlaceSelected(place)
+                    dismiss()
+                } else {
+                    placeToLog = place
+                }
                 return
             }
 
@@ -503,7 +579,12 @@ struct SearchPlaceView: View {
 
             if let cachedPlace = cacheService.getPlace(by: placeId) {
                 isLoadingDetails = false
-                placeToLog = cachedPlace
+                if let onPlaceSelected {
+                    onPlaceSelected(cachedPlace)
+                    dismiss()
+                } else {
+                    placeToLog = cachedPlace
+                }
                 return
             }
 
