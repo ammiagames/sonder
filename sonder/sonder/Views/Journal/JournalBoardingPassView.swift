@@ -16,6 +16,7 @@ struct JournalBoardingPassView: View {
     let orphanedLogs: [Log]
     @Binding var selectedTrip: Trip?
     @Binding var selectedLog: Log?
+    @Binding var orphanedLogSelection: OrphanedLogSelectionState
     @State private var showOrphanedLogs: Bool = true
     @State private var orphanedVisibleCount: Int = 10
     @State private var cachedPlacesByID: [String: Place] = [:]
@@ -411,40 +412,68 @@ struct JournalBoardingPassView: View {
     // MARK: - Orphaned Logs
 
     private var orphanedLogsHeader: some View {
-        Button {
-            let willExpand = !showOrphanedLogs
-            if willExpand {
-                syncOrphanedPagination()
+        HStack {
+            Button {
+                let willExpand = !showOrphanedLogs
+                if willExpand {
+                    syncOrphanedPagination()
+                }
+                SonderHaptics.impact(.soft, intensity: 0.42)
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showOrphanedLogs.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "mappin.circle")
+                        .font(.system(size: 13))
+                    Text("Not in a trip")
+                        .font(.system(size: 14, weight: .medium))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .rotationEffect(.degrees(showOrphanedLogs ? 90 : 0))
+                    Text("(\(orphanedLogs.count))")
+                        .font(.system(size: 13))
+                        .opacity(0.5)
+                }
+                .foregroundStyle(Color(red: 0.45, green: 0.50, blue: 0.58))
             }
-            SonderHaptics.impact(.soft, intensity: 0.42)
-            withAnimation(.easeInOut(duration: 0.25)) {
-                showOrphanedLogs.toggle()
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            if showOrphanedLogs && !orphanedLogs.isEmpty {
+                Button {
+                    SonderHaptics.impact(.medium, intensity: 0.55)
+                    withAnimation {
+                        orphanedLogSelection.isActive.toggle()
+                        if !orphanedLogSelection.isActive {
+                            orphanedLogSelection.selectedIDs.removeAll()
+                        }
+                    }
+                } label: {
+                    Text(orphanedLogSelection.isActive ? "Done" : "Edit")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(SonderColors.terracotta)
+                }
+                .buttonStyle(.plain)
             }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "mappin.circle")
-                    .font(.system(size: 13))
-                Text("Not in a trip")
-                    .font(.system(size: 14, weight: .medium))
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .rotationEffect(.degrees(showOrphanedLogs ? 90 : 0))
-                Text("(\(orphanedLogs.count))")
-                    .font(.system(size: 13))
-                    .opacity(0.5)
-            }
-            .foregroundStyle(Color(red: 0.45, green: 0.50, blue: 0.58))
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.plain)
         .padding(.top, 12)
     }
 
     private func orphanedLogStub(log: Log) -> some View {
         let place = placesByID[log.placeID]
+        let isSelected = orphanedLogSelection.selectedIDs.contains(log.id)
         return Button {
-            SonderHaptics.impact(.light, intensity: 0.5)
-            selectedLog = log
+            if orphanedLogSelection.isActive {
+                SonderHaptics.selectionChanged()
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    orphanedLogSelection.toggle(log.id)
+                }
+            } else {
+                SonderHaptics.impact(.light, intensity: 0.5)
+                selectedLog = log
+            }
         } label: {
             VStack(spacing: 0) {
                 // Single-row compact content
@@ -502,9 +531,29 @@ struct JournalBoardingPassView: View {
             }
             .background(.white)
             .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+            .overlay(alignment: .topTrailing) {
+                if orphanedLogSelection.isActive {
+                    SelectionCheckmark(isSelected: isSelected)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: SonderSpacing.radiusMd)
+                    .strokeBorder(isSelected ? SonderColors.terracotta : Color.clear, lineWidth: 2.5)
+            )
             .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
         }
         .buttonStyle(.plain)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .onEnded { _ in
+                    guard !orphanedLogSelection.isActive else { return }
+                    SonderHaptics.impact(.medium, intensity: 0.55)
+                    withAnimation {
+                        orphanedLogSelection.isActive = true
+                        orphanedLogSelection.selectedIDs.insert(log.id)
+                    }
+                }
+        )
     }
 
     private func loadMoreOrphanedLogs() {

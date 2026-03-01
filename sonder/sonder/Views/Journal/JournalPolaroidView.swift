@@ -15,6 +15,8 @@ struct JournalPolaroidView: View {
     let orphanedLogs: [Log]
     @Binding var selectedTrip: Trip?
     @Binding var selectedLog: Log?
+    @Binding var orphanedLogSelection: OrphanedLogSelectionState
+    @Binding var showFloatingSearch: Bool
 
     @State private var parallaxOffset: CGFloat = 0
     @State private var currentCardIndex: Int = 0
@@ -22,6 +24,9 @@ struct JournalPolaroidView: View {
     @State private var showOrphanedLogs: Bool = false
     @State private var orphanedVisibleCount: Int = 12
     private let orphanedPageSize = 12
+
+    /// Previous scroll offset for direction detection.
+    @State private var previousScrollOffset: CGFloat = 0
 
     // Cached groupings — rebuilt when data changes
     @State private var cachedPlacesByID: [String: Place] = [:]
@@ -33,7 +38,9 @@ struct JournalPolaroidView: View {
         places: [Place],
         orphanedLogs: [Log],
         selectedTrip: Binding<Trip?>,
-        selectedLog: Binding<Log?>
+        selectedLog: Binding<Log?>,
+        orphanedLogSelection: Binding<OrphanedLogSelectionState>,
+        showFloatingSearch: Binding<Bool>
     ) {
         self.trips = trips
         self.allLogs = allLogs
@@ -41,6 +48,8 @@ struct JournalPolaroidView: View {
         self.orphanedLogs = orphanedLogs
         self._selectedTrip = selectedTrip
         self._selectedLog = selectedLog
+        self._orphanedLogSelection = orphanedLogSelection
+        self._showFloatingSearch = showFloatingSearch
     }
 
     private var placesByID: [String: Place] { cachedPlacesByID }
@@ -167,6 +176,16 @@ struct JournalPolaroidView: View {
                             currentCardIndex = idx
                         }
                     }
+
+                    // Scroll direction → show/hide floating search bar
+                    let delta = newOffset - previousScrollOffset
+                    if abs(delta) > 8 {  // Dead-zone to ignore tiny jitters
+                        let scrollingUp = delta < 0
+                        if scrollingUp != showFloatingSearch {
+                            showFloatingSearch = scrollingUp
+                        }
+                        previousScrollOffset = newOffset
+                    }
                 }
             }
             .onChange(of: currentCardIndex) { _, _ in
@@ -182,6 +201,7 @@ struct JournalPolaroidView: View {
                 syncOrphanedPagination()
             }
         }
+        .clipped()
     }
 
     // MARK: - Topographic Background
@@ -769,43 +789,62 @@ struct JournalPolaroidView: View {
 
     /// "Loose memories" row, shown at the bottom of the last trip's page.
     private var looseMemoriesButton: some View {
-        Button {
-            let willExpand = !showOrphanedLogs
-            if willExpand { syncOrphanedPagination() }
-            SonderHaptics.impact(.soft, intensity: 0.42)
-            withAnimation(.easeInOut(duration: 0.25)) {
-                showOrphanedLogs.toggle()
+        HStack {
+            Button {
+                let willExpand = !showOrphanedLogs
+                if willExpand { syncOrphanedPagination() }
+                SonderHaptics.impact(.soft, intensity: 0.42)
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showOrphanedLogs.toggle()
+                }
+            } label: {
+                HStack {
+                    Text("Loose memories")
+                        .font(.system(.headline, design: .serif).weight(.semibold))
+                        .foregroundStyle(SonderColors.inkDark.opacity(0.85))
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(SonderColors.inkMuted)
+                        .rotationEffect(.degrees(showOrphanedLogs ? 90 : 0))
+                        .animation(.easeInOut(duration: 0.2), value: showOrphanedLogs)
+
+                    Text("\(orphanedLogs.count)")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(SonderColors.inkMuted)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule().fill(Color.white.opacity(0.45)).allowsHitTesting(false)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .contentShape(Rectangle())
             }
-        } label: {
-            HStack {
-                Text("Loose memories")
-                    .font(.system(.headline, design: .serif).weight(.semibold))
-                    .foregroundStyle(SonderColors.inkDark.opacity(0.85))
+            .buttonStyle(.plain)
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(SonderColors.inkMuted)
-                    .rotationEffect(.degrees(showOrphanedLogs ? 90 : 0))
-                    .animation(.easeInOut(duration: 0.2), value: showOrphanedLogs)
+            Spacer()
 
-                Spacer()
-
-                Text("\(orphanedLogs.count)")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(SonderColors.inkMuted)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule().fill(Color.white.opacity(0.45)).allowsHitTesting(false)
-                    )
-                    .contentShape(Rectangle())
+            if showOrphanedLogs && !orphanedLogs.isEmpty {
+                Button {
+                    SonderHaptics.impact(.medium, intensity: 0.55)
+                    withAnimation {
+                        orphanedLogSelection.isActive.toggle()
+                        if !orphanedLogSelection.isActive {
+                            orphanedLogSelection.selectedIDs.removeAll()
+                        }
+                    }
+                } label: {
+                    Text(orphanedLogSelection.isActive ? "Done" : "Edit")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(SonderColors.terracotta)
+                }
+                .buttonStyle(.plain)
             }
-            .contentShape(Rectangle())
-            .frame(maxWidth: .infinity, minHeight: 52, alignment: .center)
-            .padding(.vertical, 8)
-            .background(Color.white.opacity(0.001))
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, minHeight: 52, alignment: .center)
+        .padding(.vertical, 8)
+        .background(Color.white.opacity(0.001))
         .padding(.horizontal, 28)
     }
 
@@ -856,9 +895,17 @@ struct JournalPolaroidView: View {
 
     private func miniPolaroidCard(log: Log) -> some View {
         let place = placesByID[log.placeID]
+        let isSelected = orphanedLogSelection.selectedIDs.contains(log.id)
         return Button {
-            SonderHaptics.impact(.light, intensity: 0.5)
-            selectedLog = log
+            if orphanedLogSelection.isActive {
+                SonderHaptics.selectionChanged()
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    orphanedLogSelection.toggle(log.id)
+                }
+            } else {
+                SonderHaptics.impact(.light, intensity: 0.5)
+                selectedLog = log
+            }
         } label: {
             VStack(spacing: 0) {
                 ZStack {
@@ -907,9 +954,29 @@ struct JournalPolaroidView: View {
                 RoundedRectangle(cornerRadius: frameRadius, style: .continuous)
                     .stroke(Color.black.opacity(0.06), lineWidth: 0.5)
             )
+            .overlay(alignment: .topTrailing) {
+                if orphanedLogSelection.isActive {
+                    SelectionCheckmark(isSelected: isSelected)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: frameRadius, style: .continuous)
+                    .strokeBorder(isSelected ? SonderColors.terracotta : Color.clear, lineWidth: 2.5)
+            )
             .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
         }
         .buttonStyle(.plain)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .onEnded { _ in
+                    guard !orphanedLogSelection.isActive else { return }
+                    SonderHaptics.impact(.medium, intensity: 0.55)
+                    withAnimation {
+                        orphanedLogSelection.isActive = true
+                        orphanedLogSelection.selectedIDs.insert(log.id)
+                    }
+                }
+        )
     }
 
     private func loadMoreOrphanedLogs() {

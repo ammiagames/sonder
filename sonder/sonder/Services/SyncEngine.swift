@@ -791,6 +791,46 @@ final class SyncEngine {
         }
     }
 
+    /// Bulk-delete multiple logs from both local SwiftData and Supabase.
+    /// Performs a single context save and a single Supabase `.in()` delete for efficiency.
+    func bulkDeleteLogs(ids logIDs: [String]) async {
+        guard !logIDs.isEmpty else { return }
+
+        // Track all IDs as pending deletions so pull sync won't resurrect them
+        for id in logIDs {
+            pendingDeletions.insert(id.lowercased())
+        }
+
+        // Batch fetch and delete locally
+        let idsToDelete = Set(logIDs)
+        let descriptor = FetchDescriptor<Log>()
+        if let allLogs = try? modelContext.fetch(descriptor) {
+            for log in allLogs where idsToDelete.contains(log.id) {
+                _ = log.photoURLs
+                _ = log.tags
+                modelContext.delete(log)
+            }
+            do { try modelContext.save() } catch {
+                logger.error("[Sync] SwiftData bulk save failed: \(error.localizedDescription)")
+            }
+        }
+
+        // Single Supabase batch delete
+        do {
+            try await supabase
+                .from("logs")
+                .delete()
+                .in("id", values: logIDs)
+                .execute()
+            for id in logIDs {
+                pendingDeletions.remove(id.lowercased())
+            }
+        } catch {
+            logger.error("Failed to bulk delete logs from Supabase: \(error.localizedDescription)")
+            // Stay in pendingDeletions for retry on next sync
+        }
+    }
+
     /// Push a log deletion to Supabase only (local delete already done by caller).
     /// Tracks the ID in pendingDeletions for offline retry.
     func pushLogDeletion(id logID: String) async {

@@ -7,6 +7,56 @@
 
 import SwiftUI
 
+// MARK: - Orphaned Log Selection
+
+/// Selection state for multi-select bulk delete of orphaned logs.
+/// Lives in JournalContainerView and is passed as a binding to child views.
+struct OrphanedLogSelectionState {
+    var isActive = false
+    var selectedIDs: Set<String> = []
+
+    mutating func toggle(_ id: String) {
+        if selectedIDs.contains(id) {
+            selectedIDs.remove(id)
+        } else {
+            selectedIDs.insert(id)
+        }
+    }
+
+    mutating func reset() {
+        isActive = false
+        selectedIDs.removeAll()
+    }
+
+    mutating func selectAll(from logs: [Log]) {
+        selectedIDs = Set(logs.map(\.id))
+    }
+}
+
+/// Checkmark circle shown on each orphaned log card during selection mode.
+struct SelectionCheckmark: View {
+    let isSelected: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(isSelected ? SonderColors.terracotta : Color.white)
+                .frame(width: 24, height: 24)
+
+            Circle()
+                .strokeBorder(isSelected ? SonderColors.terracotta : Color.gray.opacity(0.4), lineWidth: 1.5)
+                .frame(width: 24, height: 24)
+
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .padding(8)
+    }
+}
+
 // MARK: - Card Frame Preference Key
 
 /// Preference key for collecting rendered card positions in the masonry grid.

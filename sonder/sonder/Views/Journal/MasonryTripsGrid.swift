@@ -18,6 +18,7 @@ struct MasonryTripsGrid: View {
     let filteredLogs: [Log]
     @Binding var selectedTrip: Trip?
     @Binding var selectedLog: Log?
+    @Binding var orphanedLogSelection: OrphanedLogSelectionState
     let deleteLog: (Log) -> Void
     var searchText: String = ""
 
@@ -174,48 +175,95 @@ struct MasonryTripsGrid: View {
 
     private var notInTripSection: some View {
         VStack(alignment: .leading, spacing: SonderSpacing.sm) {
-            Button {
-                let willExpand = !unassignedExpanded
-                if willExpand {
-                    syncUnassignedPagination()
-                }
-                SonderHaptics.impact(.soft, intensity: 0.42)
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    unassignedExpanded.toggle()
-                }
-            } label: {
-                HStack {
-                    Text("Not in a trip")
-                        .font(SonderTypography.caption)
-                        .foregroundStyle(SonderColors.inkMuted)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
+            HStack {
+                Button {
+                    let willExpand = !unassignedExpanded
+                    if willExpand {
+                        syncUnassignedPagination()
+                    }
+                    SonderHaptics.impact(.soft, intensity: 0.42)
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        unassignedExpanded.toggle()
+                    }
+                } label: {
+                    HStack {
+                        Text("Not in a trip")
+                            .font(SonderTypography.caption)
+                            .foregroundStyle(SonderColors.inkMuted)
+                            .textCase(.uppercase)
+                            .tracking(0.5)
 
-                    Text("(\(unassignedLogs.count))")
-                        .font(SonderTypography.caption)
-                        .foregroundStyle(SonderColors.inkLight)
+                        Text("(\(unassignedLogs.count))")
+                            .font(SonderTypography.caption)
+                            .foregroundStyle(SonderColors.inkLight)
 
-                    Spacer()
+                        Spacer()
 
-                    Image(systemName: unassignedExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(SonderColors.inkLight)
+                        Image(systemName: unassignedExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(SonderColors.inkLight)
+                    }
                 }
-                .padding(.horizontal, SonderSpacing.md)
+                .buttonStyle(.plain)
+
+                if unassignedExpanded && !unassignedLogs.isEmpty {
+                    Button {
+                        SonderHaptics.impact(.medium, intensity: 0.55)
+                        withAnimation {
+                            orphanedLogSelection.isActive.toggle()
+                            if !orphanedLogSelection.isActive {
+                                orphanedLogSelection.selectedIDs.removeAll()
+                            }
+                        }
+                    } label: {
+                        Text(orphanedLogSelection.isActive ? "Done" : "Edit")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(SonderColors.terracotta)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, SonderSpacing.md)
 
             if unassignedExpanded {
                 ForEach(visibleUnassignedLogs, id: \Log.id) { (log: Log) in
                     if let place = placesByID[log.placeID] {
+                        let isSelected = orphanedLogSelection.selectedIDs.contains(log.id)
                         Button {
-                            SonderHaptics.impact(.light, intensity: 0.5)
-                            selectedLog = log
+                            if orphanedLogSelection.isActive {
+                                SonderHaptics.selectionChanged()
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    orphanedLogSelection.toggle(log.id)
+                                }
+                            } else {
+                                SonderHaptics.impact(.light, intensity: 0.5)
+                                selectedLog = log
+                            }
                         } label: {
                             JournalLogRow(log: log, place: place, tripName: nil)
+                                .overlay(alignment: .trailing) {
+                                    if orphanedLogSelection.isActive {
+                                        SelectionCheckmark(isSelected: isSelected)
+                                    }
+                                }
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: SonderSpacing.radiusLg)
+                                        .strokeBorder(isSelected ? SonderColors.terracotta : Color.clear, lineWidth: 2.5)
+                                )
                         }
                         .buttonStyle(.plain)
                         .padding(.horizontal, SonderSpacing.md)
+                        .simultaneousGesture(
+                            LongPressGesture(minimumDuration: 0.5)
+                                .onEnded { _ in
+                                    guard !orphanedLogSelection.isActive else { return }
+                                    SonderHaptics.impact(.medium, intensity: 0.55)
+                                    withAnimation {
+                                        orphanedLogSelection.isActive = true
+                                        orphanedLogSelection.selectedIDs.insert(log.id)
+                                    }
+                                }
+                        )
                         .scrollTransition(.interactive, axis: .vertical) { content, phase in
                             let parallax = min(abs(phase.value), 1)
                             return content

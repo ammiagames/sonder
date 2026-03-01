@@ -619,4 +619,38 @@ struct SyncEngineTests {
         #expect(logs.count == 1)
         #expect(logs[0].rating == .okay)
     }
+
+    // MARK: - Bulk Delete
+
+    @Test func bulkDeleteLogs_removesMultipleFromLocalSwiftData() async throws {
+        let (engine, context, container) = try makeSUT()
+        _ = container
+
+        context.insert(TestData.log(id: "log-a", syncStatus: .synced))
+        context.insert(TestData.log(id: "log-b", syncStatus: .synced))
+        context.insert(TestData.log(id: "log-c", syncStatus: .synced))
+        try context.save()
+
+        #expect(try context.fetch(FetchDescriptor<Log>()).count == 3)
+
+        await engine.bulkDeleteLogs(ids: ["log-a", "log-c"])
+
+        let remaining = try context.fetch(FetchDescriptor<Log>())
+        #expect(remaining.count == 1)
+        #expect(remaining[0].id == "log-b")
+    }
+
+    @Test func bulkDeleteLogs_emptyIDsIsNoOp() async throws {
+        let (engine, context, container) = try makeSUT()
+        _ = container
+
+        context.insert(TestData.log(id: "log-keep", syncStatus: .synced))
+        try context.save()
+
+        await engine.bulkDeleteLogs(ids: [])
+
+        let remaining = try context.fetch(FetchDescriptor<Log>())
+        #expect(remaining.count == 1)
+        #expect(remaining[0].id == "log-keep")
+    }
 }

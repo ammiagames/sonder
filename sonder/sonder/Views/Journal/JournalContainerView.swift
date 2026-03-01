@@ -47,6 +47,11 @@ struct JournalContainerView: View {
     @State private var showAssignLogs = false
     @State private var assignLogsTask: Task<Void, Never>?
     @State private var displayStyle: JournalDisplayStyle = .polaroid
+    @State private var showFloatingSearch = true
+
+    // Multi-select bulk delete for orphaned logs
+    @State private var orphanedLogSelection = OrphanedLogSelectionState()
+    @State private var showBulkDeleteAlert = false
 
     // Cached derived data — rebuilt when source data changes
     @State private var cachedPlacesByID: [String: Place] = [:]
@@ -97,6 +102,23 @@ struct JournalContainerView: View {
 
     private var orphanedLogs: [Log] { cachedOrphanedLogs }
 
+    private var filteredOrphanedLogs: [Log] {
+        guard !debouncedSearchText.isEmpty else { return orphanedLogs }
+        let searchLower = debouncedSearchText.lowercased()
+        let dict = placesByID
+        return orphanedLogs.filter { log in
+            let place = dict[log.placeID]
+            let placeName = place?.name.lowercased() ?? ""
+            let placeAddress = place?.address.lowercased() ?? ""
+            let note = log.note?.lowercased() ?? ""
+            let tags = log.tags.joined(separator: " ").lowercased()
+            return placeName.contains(searchLower) ||
+                   placeAddress.contains(searchLower) ||
+                   note.contains(searchLower) ||
+                   tags.contains(searchLower)
+        }
+    }
+
     private var filteredLogs: [Log] {
         var logs = userLogs
         if !debouncedSearchText.isEmpty {
@@ -134,6 +156,24 @@ struct JournalContainerView: View {
                         }
 
                         tripsContent
+                            .overlay(alignment: .top) {
+                                if displayStyle == .polaroid {
+                                    let visible = showFloatingSearch || !searchText.isEmpty
+                                    polaroidSearchBar
+                                        .padding(.horizontal, SonderSpacing.lg)
+                                        .padding(.top, SonderSpacing.sm)
+                                        .offset(y: visible ? 0 : -80)
+                                        .opacity(visible ? 1 : 0)
+                                        .animation(.easeInOut(duration: 0.25), value: visible)
+                                }
+                            }
+                            .overlay(alignment: .bottom) {
+                                if orphanedLogSelection.isActive {
+                                    selectionActionBar
+                                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                                }
+                            }
+                            .animation(.easeInOut(duration: 0.25), value: orphanedLogSelection.isActive)
                     }
                 }
             }
@@ -219,14 +259,39 @@ struct JournalContainerView: View {
             .onChange(of: popToRoot) {
                 selectedLog = nil
                 selectedTrip = nil
+                orphanedLogSelection.reset()
+            }
+            .onChange(of: displayStyle) { _, _ in
+                orphanedLogSelection.reset()
+            }
+            .alert(
+                "Delete \(orphanedLogSelection.selectedIDs.count) Log\(orphanedLogSelection.selectedIDs.count == 1 ? "" : "s")?",
+                isPresented: $showBulkDeleteAlert
+            ) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    bulkDeleteSelectedLogs()
+                }
+            } message: {
+                Text("This cannot be undone.")
             }
             .onChange(of: showCreateTrip) { _, isShowing in
-                if !isShowing, newlyCreatedTrip != nil, !orphanedLogs.isEmpty {
+                if !isShowing, let trip = newlyCreatedTrip {
                     assignLogsTask?.cancel()
                     assignLogsTask = Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(300))
+                        // Wait for sheet dismiss animation to complete
+                        try? await Task.sleep(for: .milliseconds(400))
                         guard !Task.isCancelled else { return }
-                        showAssignLogs = true
+                        // Navigate to the newly created trip
+                        selectedTrip = trip
+                        // If orphaned logs exist, show assign sheet after navigation settles
+                        if !orphanedLogs.isEmpty {
+                            try? await Task.sleep(for: .milliseconds(500))
+                            guard !Task.isCancelled else { return }
+                            showAssignLogs = true
+                        } else {
+                            newlyCreatedTrip = nil
+                        }
                     }
                 }
             }
@@ -257,6 +322,7 @@ struct JournalContainerView: View {
                 filteredLogs: filteredLogs,
                 selectedTrip: $selectedTrip,
                 selectedLog: $selectedLog,
+                orphanedLogSelection: $orphanedLogSelection,
                 deleteLog: deleteLog,
                 searchText: searchText
             )
@@ -265,9 +331,11 @@ struct JournalContainerView: View {
                 trips: filteredTrips,
                 allLogs: allUserLogs,
                 places: Array(places),
-                orphanedLogs: orphanedLogs,
+                orphanedLogs: filteredOrphanedLogs,
                 selectedTrip: $selectedTrip,
-                selectedLog: $selectedLog
+                selectedLog: $selectedLog,
+                orphanedLogSelection: $orphanedLogSelection,
+                showFloatingSearch: $showFloatingSearch
             )
         case .boardingPass:
             JournalBoardingPassView(
@@ -276,7 +344,8 @@ struct JournalContainerView: View {
                 places: Array(places),
                 orphanedLogs: orphanedLogs,
                 selectedTrip: $selectedTrip,
-                selectedLog: $selectedLog
+                selectedLog: $selectedLog,
+                orphanedLogSelection: $orphanedLogSelection
             )
         }
     }
@@ -301,6 +370,35 @@ struct JournalContainerView: View {
         .padding(SonderSpacing.sm)
         .background(SonderColors.warmGray)
         .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusMd))
+    }
+
+    /// Frosted search bar that floats over the polaroid topographic background.
+    private var polaroidSearchBar: some View {
+        HStack(spacing: SonderSpacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(SonderColors.terracotta.opacity(0.7))
+            TextField("Search memories...", text: $searchText)
+                .font(.system(size: 15, weight: .regular, design: .serif))
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(SonderColors.inkMuted)
+                }
+            }
+        }
+        .padding(.horizontal, SonderSpacing.md)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: SonderSpacing.radiusLg))
+        .overlay(
+            RoundedRectangle(cornerRadius: SonderSpacing.radiusLg)
+                .strokeBorder(SonderColors.terracotta.opacity(0.15), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
     }
 
     // MARK: - Empty State
@@ -330,9 +428,55 @@ struct JournalContainerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: - Selection Action Bar
+
+    private var selectionActionBar: some View {
+        HStack(spacing: SonderSpacing.md) {
+            Button {
+                withAnimation { orphanedLogSelection.reset() }
+            } label: {
+                Text("Cancel")
+                    .font(SonderTypography.subheadline)
+                    .foregroundStyle(SonderColors.inkDark)
+            }
+
+            Spacer()
+
+            Text("\(orphanedLogSelection.selectedIDs.count) selected")
+                .font(SonderTypography.subheadline)
+                .foregroundStyle(SonderColors.inkMuted)
+
+            Spacer()
+
+            Button {
+                showBulkDeleteAlert = true
+            } label: {
+                Text("Delete")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule().fill(orphanedLogSelection.selectedIDs.isEmpty ? Color.gray : Color.red)
+                    )
+            }
+            .disabled(orphanedLogSelection.selectedIDs.isEmpty)
+        }
+        .padding(.horizontal, SonderSpacing.lg)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+    }
+
     // MARK: - Helpers
 
     private func deleteLog(_ log: Log) {
         Task { await syncEngine.deleteLog(id: log.id) }
+    }
+
+    private func bulkDeleteSelectedLogs() {
+        let idsToDelete = Array(orphanedLogSelection.selectedIDs)
+        withAnimation { orphanedLogSelection.reset() }
+        SonderHaptics.notification(.success)
+        Task { await syncEngine.bulkDeleteLogs(ids: idsToDelete) }
     }
 }
